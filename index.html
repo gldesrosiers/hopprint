@@ -306,6 +306,43 @@ body {
 .btn-delete { background: rgba(255,80,80,0.12); color: #ff6060; border: 1px solid rgba(255,80,80,0.2); margin-top: 8px; }
 .btn-delete:hover { background: rgba(255,80,80,0.2); }
 
+/* ── RATING MODAL ───────────────────────────────────────────── */
+.rating-beer { font-family: var(--font-display); font-size: 19px; font-weight: 700; margin-bottom: 2px; }
+.rating-brewery { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
+.rating-prompt { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+.rating-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.rb-btn {
+  padding: 16px 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--charcoal3);
+  color: var(--text-muted);
+  text-align: center; cursor: pointer;
+  font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
+  transition: all 0.15s;
+}
+.rb-btn .rb-icon { font-size: 22px; display: block; margin-bottom: 4px; }
+.rb-btn:hover { border-color: var(--border-orange); color: var(--text); }
+.rb-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
+.rating-fine-tune { margin-top: 18px; display: none; }
+.rating-fine-tune.show { display: block; }
+.rating-fine-tune-label { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; display: flex; justify-content: space-between; }
+.rating-fine-tune input[type="range"] {
+  width: 100%; accent-color: var(--orange);
+  height: 4px; background: var(--charcoal3); border-radius: 4px;
+}
+.rating-skip { text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-dim); cursor: pointer; letter-spacing: 0.3px; }
+.rating-skip:hover { color: var(--text-muted); }
+.rate-badge {
+  display: inline-block; margin-top: 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  color: var(--orange); background: var(--orange-glow2);
+  border: 1px solid var(--border-orange);
+  padding: 3px 9px; border-radius: 20px; cursor: pointer;
+}
+.rate-badge:hover { background: var(--orange-glow); }
+.etag.rated { color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
+
 /* ── ANALYTICS ──────────────────────────────────────────────── */
 .year-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
 .yr-btn {
@@ -551,10 +588,7 @@ body {
     <div class="ac-drop" id="drop-beerStyle"></div>
   </div>
 
-  <div class="field-row">
-    <div class="field"><input id="abv" type="number" step="0.1" min="0" max="30" placeholder="ABV %"></div>
-    <div class="field"><input id="ibu" type="number" step="1" min="0" max="200" placeholder="IBU"></div>
-  </div>
+  <div class="field"><input id="abv" type="number" step="0.1" min="0" max="30" placeholder="ABV %"></div>
 
   <div class="sec-label">📍 Where & When</div>
 
@@ -658,6 +692,24 @@ body {
   </div>
 </div>
 
+<!-- RATING MODAL -->
+<div class="modal-backdrop" id="ratingModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Have Again?</div>
+      <div class="modal-close" onclick="skipRating()">✕</div>
+    </div>
+    <div class="rating-beer" id="ratingBeerName"></div>
+    <div class="rating-brewery" id="ratingBreweryName"></div>
+    <div class="rating-buttons" id="ratingButtons"></div>
+    <div class="rating-fine-tune" id="ratingFineTune">
+      <div class="rating-fine-tune-label"><span>Fine-tune</span><span id="ratingFineTuneVal"></span></div>
+      <input type="range" id="ratingSlider" min="0" max="100" step="1" oninput="onRatingSliderInput()">
+    </div>
+    <div class="rating-skip" onclick="skipRating()">Skip for now</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -673,6 +725,11 @@ const SEED = {"beers": ["007", "1, 2, 3, 4, Fifffff", "100 Barrel Series #55: EH
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let entries = JSON.parse(localStorage.getItem('hopprint_entries') || '[]');
+// Migration: drop legacy beer_ibu field (IBU removed from schema)
+if (entries.some(e => 'beer_ibu' in e)) {
+  entries.forEach(e => { delete e.beer_ibu; });
+  localStorage.setItem('hopprint_entries', JSON.stringify(entries));
+}
 let wishlist = JSON.parse(localStorage.getItem('hopprint_wishlist') || '[]');
 let selectedServe = '';
 let selectedOccasion = '';
@@ -860,7 +917,6 @@ function onBeerSelect(name) {
   if (b.b && !document.getElementById('breweryName').value) { document.getElementById('breweryName').value = b.b; }
   if (b.s && !document.getElementById('beerStyle').value) document.getElementById('beerStyle').value = b.s;
   if (b.a && !document.getElementById('abv').value) document.getElementById('abv').value = b.a;
-  if (b.i && !document.getElementById('ibu').value) document.getElementById('ibu').value = b.i;
   if (b.bc && !document.getElementById('breweryCity').value) document.getElementById('breweryCity').value = b.bc;
   if (b.bs && !document.getElementById('breweryState').value) document.getElementById('breweryState').value = b.bs;
 }
@@ -895,7 +951,6 @@ function submitCheckin() {
     brewery_state: document.getElementById('breweryState').value.trim(),
     beer_type: document.getElementById('beerStyle').value.trim(),
     beer_abv: document.getElementById('abv').value || '',
-    beer_ibu: document.getElementById('ibu').value || '',
     venue_name: document.getElementById('venueWhere').value.trim(),
     purchase_venue: document.getElementById('purchaseVenue').value.trim(),
     created_at: document.getElementById('checkinDate').value,
@@ -903,21 +958,24 @@ function submitCheckin() {
     occasion: selectedOccasion,
     occasion_ctx: [...selectedCtx],
     comment: document.getElementById('notes').value.trim(),
+    rating: null,
+    rating_mode: null,
   };
   entries.unshift(entry);
   save();
   // Add to BEER_DB if new
   if (beerName && !BEER_DB[beerName] && entry.brewery_name) {
-    BEER_DB[beerName] = { b: entry.brewery_name, s: entry.beer_type, a: parseFloat(entry.beer_abv)||'', i: parseInt(entry.beer_ibu)||'', bc: entry.brewery_city, bs: entry.brewery_state };
+    BEER_DB[beerName] = { b: entry.brewery_name, s: entry.beer_type, a: parseFloat(entry.beer_abv)||'', bc: entry.brewery_city, bs: entry.brewery_state };
     if (!SEED.beers.includes(beerName)) SEED.beers.push(beerName);
   }
   showToast('🍻 Checked in!');
   resetForm();
   updateHeaderMeta();
+  openRatingModal(entry.id);
 }
 
 function resetForm() {
-  ['beerName','breweryName','breweryCity','breweryState','beerStyle','abv','ibu','venueWhere','purchaseVenue','notes'].forEach(id => {
+  ['beerName','breweryName','breweryCity','breweryState','beerStyle','abv','venueWhere','purchaseVenue','notes'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -930,6 +988,73 @@ function resetForm() {
   document.querySelectorAll('.ctx-pill').forEach(p => p.classList.remove('sel'));
   currentPromptIdx = (currentPromptIdx + 1) % NOTE_PROMPTS.length;
   setPrompt();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RATING MODAL — "Have Again?"
+// ═══════════════════════════════════════════════════════════════
+const RATING_BANDS = [
+  { id:'never', icon:'👎', label:'Never', base:15, min:0, max:33 },
+  { id:'maybe', icon:'🤔', label:'Maybe', base:50, min:34, max:66 },
+  { id:'definitely', icon:'🤩', label:'Definitely', base:85, min:67, max:100 },
+];
+let ratingEntryId = null;
+let ratingBand = null;
+let ratingTouchedSlider = false;
+
+function openRatingModal(id) {
+  const e = entries.find(x => x.id === id);
+  if (!e) return;
+  ratingEntryId = id;
+  ratingBand = null;
+  ratingTouchedSlider = false;
+  document.getElementById('ratingBeerName').textContent = e.beer_name;
+  document.getElementById('ratingBreweryName').textContent = e.brewery_name || '';
+  document.getElementById('ratingButtons').innerHTML = RATING_BANDS.map(b => `
+    <div class="rb-btn" id="rb-${b.id}" onclick="selectRatingBand('${b.id}')">
+      <span class="rb-icon">${b.icon}</span>${b.label}
+    </div>`).join('');
+  document.getElementById('ratingFineTune').classList.remove('show');
+  // Pre-fill if entry already has a rating
+  if (typeof e.rating === 'number') {
+    const band = RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) || RATING_BANDS[1];
+    selectRatingBand(band.id, e.rating, false);
+  }
+  document.getElementById('ratingModal').classList.add('open');
+}
+
+function selectRatingBand(bandId, presetValue, save) {
+  ratingBand = RATING_BANDS.find(b => b.id === bandId);
+  document.querySelectorAll('.rb-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById(`rb-${bandId}`).classList.add('sel');
+  const slider = document.getElementById('ratingSlider');
+  slider.min = ratingBand.min; slider.max = ratingBand.max;
+  slider.value = typeof presetValue === 'number' ? presetValue : ratingBand.base;
+  document.getElementById('ratingFineTuneVal').textContent = slider.value;
+  document.getElementById('ratingFineTune').classList.add('show');
+  ratingTouchedSlider = false;
+  if (save !== false) saveRating(parseInt(slider.value), 'live_button');
+}
+
+function onRatingSliderInput() {
+  ratingTouchedSlider = true;
+  const val = parseInt(document.getElementById('ratingSlider').value);
+  document.getElementById('ratingFineTuneVal').textContent = val;
+  saveRating(val, 'live_slider');
+}
+
+function saveRating(value, mode) {
+  const e = entries.find(x => x.id === ratingEntryId);
+  if (!e) return;
+  e.rating = value;
+  e.rating_mode = mode;
+  save();
+  renderHistory();
+}
+
+function skipRating() {
+  document.getElementById('ratingModal').classList.remove('open');
+  ratingEntryId = null;
 }
 
 function save() {
@@ -953,6 +1078,7 @@ function renderHistory() {
     const date = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
     const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
     const occ = OCCASIONS.find(o => o.id === e.occasion);
+    const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
     return `<div class="entry-card fade-up" onclick="openEdit(${e.id})">
       <div class="entry-top">
         <div>
@@ -964,14 +1090,15 @@ function renderHistory() {
         ${e.beer_type ? `<span class="etag style">${e.beer_type}</span>` : ''}
         ${e.serving_type ? `<span class="etag serve">${e.serving_type}</span>` : ''}
         ${e.beer_abv ? `<span class="etag">${e.beer_abv}% ABV</span>` : ''}
-        ${e.beer_ibu ? `<span class="etag">${e.beer_ibu} IBU</span>` : ''}
         ${e.venue_name ? `<span class="etag">📍 ${e.venue_name}</span>` : ''}
+        ${band ? `<span class="etag rated">${band.icon} ${band.label}</span>` : ''}
       </div>
       ${e.comment ? `<div class="entry-notes-preview">"${e.comment.slice(0,120)}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
       <div class="entry-foot">
         <div class="entry-date">${date}${e.purchase_venue ? ` · ${e.purchase_venue}` : ''}</div>
         <div class="entry-occ">${occ ? occ.icon + ' ' + occ.label : ''}</div>
       </div>
+      ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${e.id})">Rate it →</div>`}
     </div>`;
   }).join('');
 }
@@ -993,10 +1120,7 @@ function openEdit(id) {
       <div class="field"><input id="e_state" value="${esc(e.brewery_state)}" placeholder="State / Country"></div>
     </div>
     <div class="field"><input id="e_style" value="${esc(e.beer_type)}" placeholder="Style"></div>
-    <div class="field-row">
-      <div class="field"><input id="e_abv" type="number" step="0.1" value="${e.beer_abv}" placeholder="ABV %"></div>
-      <div class="field"><input id="e_ibu" type="number" step="1" value="${e.beer_ibu}" placeholder="IBU"></div>
-    </div>
+    <div class="field"><input id="e_abv" type="number" step="0.1" value="${e.beer_abv}" placeholder="ABV %"></div>
     <div class="sec-label">Where & When</div>
     <div class="field"><input id="e_venue" value="${esc(e.venue_name)}" placeholder="Venue"></div>
     <div class="field"><input id="e_purchase" value="${esc(e.purchase_venue)}" placeholder="Purchase venue"></div>
@@ -1005,6 +1129,11 @@ function openEdit(id) {
     <div class="serve-pills" id="editServePills">${SERVE_TYPES.map(t => `<div class="serve-pill${e.serving_type===t?' sel':''}" onclick="editServeSelect(this,'${t}')">${t}</div>`).join('')}</div>
     <div class="sec-label">Occasion</div>
     <div style="font-size:13px;color:var(--text-muted);font-weight:300;">${occ ? occ.icon + ' ' + occ.label : 'Not specified'}${e.occasion_ctx && e.occasion_ctx.length ? ' · ' + e.occasion_ctx.join(', ') : ''}</div>
+    <div class="sec-label">Have Again?</div>
+    <div style="font-size:13px;color:var(--text-muted);font-weight:300;">
+      ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `${band.icon} ${band.label} (${e.rating})` : 'Not rated yet'; })()}
+      <span class="rate-badge" style="margin-left:8px;" onclick="closeModal(); openRatingModal(${e.id})">${typeof e.rating === 'number' ? 'Change' : 'Rate it →'}</span>
+    </div>
     <div class="sec-label">Notes</div>
     <div class="field"><textarea id="e_notes">${esc(e.comment)}</textarea></div>
     <button class="btn-save" onclick="saveEdit()">Save Changes</button>
@@ -1029,7 +1158,6 @@ function saveEdit() {
   e.brewery_state = document.getElementById('e_state').value.trim();
   e.beer_type = document.getElementById('e_style').value.trim();
   e.beer_abv = document.getElementById('e_abv').value;
-  e.beer_ibu = document.getElementById('e_ibu').value;
   e.venue_name = document.getElementById('e_venue').value.trim();
   e.purchase_venue = document.getElementById('e_purchase').value.trim();
   e.created_at = document.getElementById('e_date').value;
@@ -1608,7 +1736,7 @@ function removeWish(i) {
 // ═══════════════════════════════════════════════════════════════
 function exportCSV() {
   if (!entries.length) { showToast('No entries yet'); return; }
-  const cols = ['beer_name','brewery_name','brewery_city','brewery_state','beer_type','beer_abv','beer_ibu','venue_name','purchase_venue','created_at','serving_type','occasion','comment'];
+  const cols = ['beer_name','brewery_name','brewery_city','brewery_state','beer_type','beer_abv','venue_name','purchase_venue','created_at','serving_type','occasion','rating','rating_mode','comment'];
   const csv = [cols.join(','), ...entries.map(e => cols.map(c => JSON.stringify(e[c]||'')).join(','))].join('\n');
   download('hopprint_export.csv', csv, 'text/csv');
   showToast('📄 Exported!');
@@ -1642,6 +1770,8 @@ function handleImport(event) {
         vals.push(cur);
         const obj = {};
         headers.forEach((h,i) => { obj[h] = (vals[i]||'').replace(/^"|"$/g,'').trim(); });
+        const starRating = parseFloat(obj.rating_score);
+        const hasRating = !isNaN(starRating) && starRating > 0;
         return {
           id: Date.now() + Math.random(),
           beer_name: obj.beer_name||'',
@@ -1650,7 +1780,6 @@ function handleImport(event) {
           brewery_state: obj.brewery_state||'',
           beer_type: obj.beer_type||'',
           beer_abv: obj.beer_abv||'',
-          beer_ibu: obj.beer_ibu||'',
           venue_name: obj.venue_name||'',
           purchase_venue: obj.purchase_venue||'',
           created_at: obj.created_at||'',
@@ -1658,6 +1787,8 @@ function handleImport(event) {
           occasion: '',
           occasion_ctx: [],
           comment: obj.comment||'',
+          rating: hasRating ? Math.round((starRating / 5) * 100) : null,
+          rating_mode: hasRating ? 'import' : null,
         };
       }).filter(e => e.beer_name);
       const existing = new Set(entries.map(e=>`${e.beer_name}|${e.created_at}`));
