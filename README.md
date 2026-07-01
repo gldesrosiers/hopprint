@@ -29,11 +29,6 @@ Core app is pure HTML/CSS/JS — no framework, no build step, no backend for bee
 The repo also includes standard PWA scaffolding alongside `index.html`: `manifest.json`, `sw.js` (service worker for offline app-shell caching), and an `icons/` folder. These are static assets only — no build step is introduced.
 
 In-app feedback is sent to a small Supabase table (`feedback`, insert-only via RLS) — this is unrelated to the core beer-tracking data, which remains fully local until the Stage 2 Supabase migration.
-
-## Data note
-
-Pre-2024 entries represent unique first-time beers only (not total consumption). Full tracking began January 2024.
-
 ## Roadmap
 
 - [ ] Supabase backend for cross-device sync
