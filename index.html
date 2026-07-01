@@ -343,6 +343,46 @@ body {
 .rate-badge:hover { background: var(--orange-glow); }
 .etag.rated { color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
 
+/* ── EMPTY STATE CTA ────────────────────────────────────────── */
+.empty-cta {
+  margin-top: 16px; padding: 10px 22px;
+  background: var(--orange); color: var(--charcoal);
+  font-family: var(--font-body); font-size: 13px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+  border: none; border-radius: 30px; cursor: pointer; display: inline-block;
+  transition: all 0.18s;
+}
+.empty-cta:hover { background: #f08030; transform: translateY(-1px); }
+
+/* ── FEEDBACK FAB + MODAL ───────────────────────────────────── */
+.fab-feedback {
+  position: fixed; right: 18px; bottom: 24px; z-index: 500;
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--charcoal2); border: 1px solid var(--border-orange);
+  color: var(--orange); font-size: 19px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  transition: all 0.18s;
+}
+.fab-feedback:hover { background: var(--orange-glow); transform: translateY(-2px); }
+.fb-cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.fb-cat-btn {
+  padding: 12px 6px; text-align: center; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--charcoal3); color: var(--text-muted);
+  font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer; transition: all 0.15s;
+}
+.fb-cat-btn:hover { border-color: var(--border-orange); color: var(--text); }
+.fb-cat-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
+.fb-tab-note { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+
+/* ── WELCOME MODAL ──────────────────────────────────────────── */
+.welcome-lede { font-size: 14px; color: var(--text-muted); font-weight: 300; line-height: 1.55; margin-bottom: 18px; }
+.welcome-tabs-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.welcome-tab-row { display: flex; gap: 12px; align-items: flex-start; }
+.welcome-tab-icon { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
+.welcome-tab-copy strong { display: block; font-size: 14px; color: var(--text); }
+.welcome-tab-copy span { font-size: 12px; color: var(--text-dim); font-weight: 300; }
+
 /* ── ANALYTICS ──────────────────────────────────────────────── */
 .year-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
 .yr-btn {
@@ -533,7 +573,7 @@ body {
 /* ── EMPTY STATE ─────────────────────────────────────────────── */
 .empty { text-align: center; padding: 60px 20px; color: var(--text-dim); }
 .empty-icon { font-size: 44px; margin-bottom: 10px; }
-.empty p { font-size: 15px; font-weight: 300; line-height: 1.5; }
+.empty p { font-size: 15px; font-weight: 300; line-height: 1.5; white-space: pre-line; }
 
 /* ── ANIMATIONS ─────────────────────────────────────────────── */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
@@ -710,6 +750,43 @@ body {
   </div>
 </div>
 
+<!-- FEEDBACK FAB -->
+<div class="fab-feedback" onclick="openFeedbackModal()" title="Send feedback">💬</div>
+
+<!-- FEEDBACK MODAL -->
+<div class="modal-backdrop" id="feedbackModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Send Feedback</div>
+      <div class="modal-close" onclick="closeFeedbackModal()">✕</div>
+    </div>
+    <div class="sec-label">What's this about?</div>
+    <div class="fb-cat-grid" id="fbCatGrid"></div>
+    <div class="field"><textarea id="fbMessage" placeholder="What's on your mind? Bug, idea, something confusing — anything goes."></textarea></div>
+    <div class="fb-tab-note" id="fbTabNote"></div>
+    <button class="btn-checkin" onclick="submitFeedback()">Send Feedback</button>
+  </div>
+</div>
+
+<!-- WELCOME MODAL -->
+<div class="modal-backdrop" id="welcomeModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Welcome to Hopprint 🍺</div>
+      <div class="modal-close" onclick="closeWelcomeModal()">✕</div>
+    </div>
+    <div class="welcome-lede">A personal beer log that's actually yours — no paywalled exports, no clutter. Just your check-ins, your data, your taste.</div>
+    <div class="welcome-tabs-list">
+      <div class="welcome-tab-row"><span class="welcome-tab-icon">🍻</span><div class="welcome-tab-copy"><strong>Check In</strong><span>Log a beer in a few seconds</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon">📖</span><div class="welcome-tab-copy"><strong>My Beers</strong><span>Your full check-in history</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon">📊</span><div class="welcome-tab-copy"><strong>Analytics</strong><span>Trends once you've logged a few</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon">🌱</span><div class="welcome-tab-copy"><strong>Profile</strong><span>Your flavor identity — unlocks at 10 check-ins</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon">🎲</span><div class="welcome-tab-copy"><strong>Discover</strong><span>Personalized recommendations as you go</span></div></div>
+    </div>
+    <button class="btn-checkin" onclick="closeWelcomeModal()">Let's Go</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -763,6 +840,15 @@ const OCCASIONS = [
 
 const CTX_TAGS = ['With food','Outdoors','Celebrating','Trying something new','Winding down','Working through a pack','Post-work','Weekend'];
 
+// ═══════════════════════════════════════════════════════════════
+// FEEDBACK (Supabase)
+// ═══════════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://sacbsvhdnqcgqvlkdpyx.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_j-nLuWwpptohpmW5CkSomA_tGonZtuM';
+const FEEDBACK_CATEGORIES = ['Bug', 'Idea', 'Confusion', 'Other'];
+let currentTab = 'checkin';
+let fbCategory = null;
+
 const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','Side Pull','Taster'];
 
 const DISC_MODES = [
@@ -793,6 +879,8 @@ function init() {
 
   updateHeaderMeta();
   renderWishlist();
+  buildFeedbackCatGrid();
+  maybeShowWelcome();
 
   document.addEventListener('click', e => {
     if (!e.target.closest('.ac-wrap')) closeAllDrops();
@@ -1057,6 +1145,72 @@ function skipRating() {
   ratingEntryId = null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// FEEDBACK
+// ═══════════════════════════════════════════════════════════════
+const FEEDBACK_CAT_ICONS = { Bug: '🐞', Idea: '💡', Confusion: '😕', Other: '💬' };
+const TAB_LABELS = { checkin: 'Check In', history: 'My Beers', analytics: 'Analytics', profile: 'Profile', discover: 'Discover' };
+
+function buildFeedbackCatGrid() {
+  document.getElementById('fbCatGrid').innerHTML = FEEDBACK_CATEGORIES.map(c => `
+    <div class="fb-cat-btn" id="fbcat-${c}" onclick="selectFbCategory('${c}')">${FEEDBACK_CAT_ICONS[c]} ${c}</div>`).join('');
+}
+
+function selectFbCategory(cat) {
+  fbCategory = cat;
+  document.querySelectorAll('.fb-cat-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById(`fbcat-${cat}`).classList.add('sel');
+}
+
+function openFeedbackModal() {
+  fbCategory = null;
+  document.querySelectorAll('.fb-cat-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('fbMessage').value = '';
+  document.getElementById('fbTabNote').textContent = `You're on: ${TAB_LABELS[currentTab] || currentTab}`;
+  document.getElementById('feedbackModal').classList.add('open');
+}
+
+function closeFeedbackModal() {
+  document.getElementById('feedbackModal').classList.remove('open');
+}
+
+async function submitFeedback() {
+  const message = document.getElementById('fbMessage').value.trim();
+  if (!message) { showToast('⚠️ Add a quick note first'); return; }
+  const category = fbCategory || 'Other';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ category, message, tab: currentTab, user_agent: navigator.userAgent }),
+    });
+    if (!res.ok) throw new Error('Request failed');
+    showToast('💬 Feedback sent — thank you!');
+    closeFeedbackModal();
+  } catch (err) {
+    showToast('⚠️ Could not send — check your connection');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WELCOME (first-run)
+// ═══════════════════════════════════════════════════════════════
+function maybeShowWelcome() {
+  if (entries.length === 0 && !localStorage.getItem('hopprint_welcomed')) {
+    document.getElementById('welcomeModal').classList.add('open');
+  }
+}
+
+function closeWelcomeModal() {
+  document.getElementById('welcomeModal').classList.remove('open');
+  localStorage.setItem('hopprint_welcomed', '1');
+}
+
 function save() {
   localStorage.setItem('hopprint_entries', JSON.stringify(entries));
 }
@@ -1071,7 +1225,9 @@ function renderHistory() {
   );
   const list = document.getElementById('historyList');
   if (!filtered.length) {
-    list.innerHTML = `<div class="empty"><div class="empty-icon">🍺</div><p>${entries.length ? 'No matches found.' : 'No check-ins yet.\nLog your first beer!'}</p></div>`;
+    list.innerHTML = entries.length
+      ? `<div class="empty"><div class="empty-icon">🍺</div><p>No matches found.</p></div>`
+      : `<div class="empty"><div class="empty-icon">🍺</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log Your First Beer</button></div>`;
     return;
   }
   list.innerHTML = filtered.map(e => {
@@ -1216,7 +1372,7 @@ function renderAnalytics() {
   </div>`;
 
   if (!es.length) {
-    inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">📊</div><p>No data for this period.</p></div>`;
+    inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">📊</div><p>No data for this period.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
     return;
   }
 
@@ -1480,7 +1636,7 @@ function setAnalyticsYear(year, btn) {
 function renderProfile() {
   const inner = document.getElementById('profileInner');
   if (entries.length < 10) {
-    inner.innerHTML = `<div class="empty"><div class="empty-icon">🌱</div><p>Log at least 10 beers to unlock your flavor profile.</p></div>`;
+    inner.innerHTML = `<div class="empty"><div class="empty-icon">🌱</div><p>Log at least 10 beers to unlock your flavor profile.\n${entries.length}/10 so far — keep going!</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
     return;
   }
 
@@ -1672,7 +1828,7 @@ function generateRecs() {
   }
 
   if (!recs.length) {
-    el.innerHTML = `<div class="empty"><p>Not enough data to generate recommendations in this mode yet. Keep logging!</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
     return;
   }
 
@@ -1832,6 +1988,7 @@ function showToast(msg) {
 // TABS
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
+  currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
