@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hopprint">
 <meta name="theme-color" content="#242223">
 <title>Hopprint</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -736,7 +741,7 @@ body {
 <div class="modal-backdrop" id="ratingModal">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Would you drink this beer again?</div>
+      <div class="modal-title">Have Again?</div>
       <div class="modal-close" onclick="skipRating()">✕</div>
     </div>
     <div class="rating-beer" id="ratingBeerName"></div>
@@ -2015,6 +2020,12 @@ document.getElementById('screen-discover').insertAdjacentHTML('beforeend', `
 `);
 
 init();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
