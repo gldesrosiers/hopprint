@@ -741,7 +741,7 @@ body {
 <div class="modal-backdrop" id="ratingModal">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Have Again?</div>
+      <div class="modal-title">Would you drink this beer again??</div>
       <div class="modal-close" onclick="skipRating()">✕</div>
     </div>
     <div class="rating-beer" id="ratingBeerName"></div>
@@ -1084,7 +1084,7 @@ function resetForm() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RATING MODAL — "Have Again?"
+// RATING MODAL — "Would you drink this beer again?"
 // ═══════════════════════════════════════════════════════════════
 const RATING_BANDS = [
   { id:'never', icon:'👎', label:'Never', base:15, min:0, max:33 },
@@ -1290,7 +1290,7 @@ function openEdit(id) {
     <div class="serve-pills" id="editServePills">${SERVE_TYPES.map(t => `<div class="serve-pill${e.serving_type===t?' sel':''}" onclick="editServeSelect(this,'${t}')">${t}</div>`).join('')}</div>
     <div class="sec-label">Occasion</div>
     <div style="font-size:13px;color:var(--text-muted);font-weight:300;">${occ ? occ.icon + ' ' + occ.label : 'Not specified'}${e.occasion_ctx && e.occasion_ctx.length ? ' · ' + e.occasion_ctx.join(', ') : ''}</div>
-    <div class="sec-label">Have Again?</div>
+    <div class="sec-label">Would you drink this beer again?</div>
     <div style="font-size:13px;color:var(--text-muted);font-weight:300;">
       ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `${band.icon} ${band.label} (${e.rating})` : 'Not rated yet'; })()}
       <span class="rate-badge" style="margin-left:8px;" onclick="closeModal(); openRatingModal(${e.id})">${typeof e.rating === 'number' ? 'Change' : 'Rate it →'}</span>
