@@ -15,6 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="style_matrix.js"></script>
+<script src="proximity_engine.js"></script>
 <style>
 /* ── DESIGN TOKENS ─────────────────────────────────────────── */
 :root {
@@ -537,10 +539,11 @@ body {
 
 .rec-card {
   background: var(--charcoal2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px; margin-bottom: 8px;
+  border-radius: 18px; padding: 16px; margin-bottom: 8px;
 }
 .rec-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.rec-name { font-family: var(--font-display); font-size: 16px; font-weight: 700; line-height: 1.2; }
+.rec-name { font-family: var(--font-display); font-size: 19px; font-weight: 700; line-height: 1.2; }
+.rec-name.muted { color: var(--text-muted); }
 .rec-brewery { font-size: 13px; color: var(--text-muted); margin-top: 2px; font-weight: 300; }
 .rec-why { font-size: 13px; color: var(--text-muted); margin-top: 9px; font-style: italic; font-weight: 300; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 9px; }
 .rec-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
@@ -553,6 +556,25 @@ body {
 }
 .rec-save:hover { background: rgba(189,219,143,0.15); }
 .rec-save.saved { color: var(--text-dim); border-color: var(--border); background: none; }
+.rec-actions { display: flex; gap: 6px; align-items: flex-start; flex-shrink: 0; }
+.rec-dismiss {
+  font-size: 15px; cursor: pointer; color: var(--text-dim); padding: 4px 6px;
+  border-radius: 4px; margin-top: 2px; transition: all 0.15s; line-height: 1;
+}
+.rec-dismiss:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.rec-badge {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 7px;
+}
+.badge-wheelhouse { background: var(--orange); color: var(--charcoal); }
+.badge-adjacent { background: var(--lime); color: var(--charcoal); }
+.badge-wildcard-confident { background: var(--grass); color: var(--text); }
+.badge-wildcard-hedged { background: transparent; border: 1px dashed var(--grass); color: var(--avocado); }
+.badge-random { background: var(--charcoal3); color: var(--text-muted); border: 1px solid var(--border); }
+.rec-starve-note {
+  font-size: 12px; color: var(--text-dim); font-style: italic; font-weight: 300;
+  text-align: center; margin-top: 10px; padding: 0 8px;
+}
 
 /* ── WISHLIST ────────────────────────────────────────────────── */
 .wish-card {
@@ -862,6 +884,141 @@ const DISC_MODES = [
   { id:'wildcard', icon:'🎲', name:'Way Outside', desc:'Styles you rarely or never drink' },
   { id:'random', icon:'🎰', name:'Random', desc:'Anything goes — surprise me' },
 ];
+
+// ═══════════════════════════════════════════════════════════════
+// RECOMMENDATION ENGINE — signal model, suppression, orchestration
+// (uses STYLE_MATRIX + buildNeighborIndex/scoreRecommendation/generateRationale
+// from style_matrix.js and proximity_engine.js, loaded via <script> above)
+// ═══════════════════════════════════════════════════════════════
+
+let NEIGHBOR_INDEX = null;
+function getNeighborIndex() {
+  if (!NEIGHBOR_INDEX) NEIGHBOR_INDEX = buildNeighborIndex(STYLE_MATRIX, 6);
+  return NEIGHBOR_INDEX;
+}
+
+// Per-user signal model: affinity/familiarity/novelty per style, derived
+// from rated check-ins only (unrated check-ins don't carry affinity signal
+// yet — they still count as "tried" for history purposes elsewhere in the
+// app, but the recommender can't learn taste from a beer with no rating).
+// Recency-weighted with a 180-day half-life so old ratings fade gently
+// rather than being hard-cut. Thresholds are first-pass placeholders per
+// the handoff doc and will need recalibration once real usage data flows.
+function computeSignalModel(entriesList) {
+  const now = Date.now();
+  const byStyle = {};
+  entriesList.forEach(e => {
+    const style = e.beer_type;
+    if (!style || !STYLE_MATRIX[style]) return;
+    if (e.rating === null || e.rating === undefined) return;
+    const days = (now - new Date(e.created_at).getTime()) / 86400000;
+    const weight = Math.pow(0.5, days / 180);
+    if (!byStyle[style]) byStyle[style] = { sumW: 0, sumWR: 0, count: 0 };
+    byStyle[style].sumW += weight;
+    byStyle[style].sumWR += weight * e.rating;
+    byStyle[style].count += 1;
+  });
+  const signalData = {};
+  const userAffinityMap = {};
+  Object.entries(byStyle).forEach(([style, d]) => {
+    const avg0to100 = d.sumWR / d.sumW;
+    const affinity = 1 + (avg0to100 / 100) * 4; // map 0-100 rating to 1-5 matrix scale
+    const familiarity = Math.min(5, d.count * 0.75);
+    const novelty = Math.max(0, 1 - d.count / 8);
+    signalData[style] = { affinity, familiarity, novelty, count: d.count };
+    userAffinityMap[style] = affinity;
+  });
+  return { signalData, userAffinityMap };
+}
+
+// Suppression / rotation tracking — per style, per mode, independently.
+// Windows are midpoints of the ranges locked in the handoff doc.
+const SUPPRESSION_WINDOWS = { wheelhouse: 4, adjacent: 8, wildcard: 18, random: 6 };
+
+function loadSuppression() {
+  return JSON.parse(localStorage.getItem('hopprint_rec_suppression') || '[]');
+}
+function saveSuppression(list) {
+  localStorage.setItem('hopprint_rec_suppression', JSON.stringify(list));
+}
+function isStyleSuppressed(style, mode, windowDays, suppressionList) {
+  if (windowDays <= 0) return false;
+  const now = Date.now();
+  return suppressionList.some(s => s.style === style && s.mode === mode && (now - s.timestamp) < windowDays * 86400000);
+}
+function recordShown(styles, mode) {
+  if (!styles.length) return;
+  const list = loadSuppression();
+  const now = Date.now();
+  styles.forEach(style => list.push({ style, mode, timestamp: now }));
+  const cutoff = now - 25 * 86400000; // prune anything older than the longest window
+  saveSuppression(list.filter(s => s.timestamp > cutoff));
+}
+function dismissRec(style, mode, btn) {
+  recordShown([style], mode);
+  const card = btn.closest('.rec-card');
+  if (card) card.remove();
+}
+
+function pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex) {
+  return Object.keys(STYLE_MATRIX)
+    .map(style => {
+      const result = scoreRecommendation(style, signalData, userAffinityMap, neighborIndex, mode, STYLE_MATRIX);
+      result.count = (signalData[style] && signalData[style].count) || 0;
+      return result;
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+// Starvation fallback ladder: (1) halve window, (2) ignore suppression
+// entirely for this mode, before honestly showing fewer cards.
+function buildAffinityRecs(mode, entriesList, loggedBeers) {
+  const { signalData, userAffinityMap } = computeSignalModel(entriesList);
+  const neighborIndex = getNeighborIndex();
+  const ranked = pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex);
+  const target = 5;
+  const baseWindow = SUPPRESSION_WINDOWS[mode];
+  const attempts = [baseWindow, baseWindow / 2, 0];
+  const suppressionList = loadSuppression();
+  let cards = [];
+  for (const windowDays of attempts) {
+    cards = [];
+    const usedBeers = new Set();
+    for (const result of ranked) {
+      if (cards.length >= target) break;
+      if (isStyleSuppressed(result.style, mode, windowDays, suppressionList)) continue;
+      // Negative recommendations are internal-only (used to suppress bad Wildcard
+      // picks) and must never render as a card — filter them out here rather than
+      // relying on generateRationale's own negative-branch text staying unused.
+      if (result.source !== 'direct' && result.predictedAffinity < 2.5) continue;
+      const beerEntry = Object.entries(BEER_DB).find(([name, b]) =>
+        b.s === result.style && !loggedBeers.has(name) && !usedBeers.has(name));
+      if (!beerEntry) continue;
+      usedBeers.add(beerEntry[0]);
+      cards.push({ name: beerEntry[0], brewery: beerEntry[1].b || '', style: result.style, abv: beerEntry[1].a || '', result });
+    }
+    if (cards.length >= target) break;
+  }
+  return { cards, starved: cards.length < target };
+}
+
+function wildcardConfidence(result) {
+  if (result.source === 'direct') return null;
+  const positive = (result.contributors || []).filter(c => c.affinity >= 2.5);
+  if (positive.length >= 2) return 'confident';
+  if (positive.length === 1) return 'hedged';
+  return 'insufficient';
+}
+
+function rationaleFor(card, mode) {
+  if (mode === 'random') return 'A completely random pick — adventure awaits.';
+  const result = card.result;
+  if (result.source === 'direct') {
+    if (mode === 'wheelhouse') return `One of your go-tos — you've had this style ${result.count} times and keep rating it near the top.`;
+    if (mode === 'adjacent') return `You've only had this a handful of times, but you've rated it well every time. Feels like one to revisit.`;
+  }
+  return generateRationale(result, mode);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
@@ -1771,87 +1928,76 @@ function generateRecs() {
   const el = document.getElementById('recResults');
   el.innerHTML = '';
 
-  const es = entries.filter(e => new Date(e.created_at).getFullYear() >= 2024).length >= 20
-    ? entries.filter(e => new Date(e.created_at).getFullYear() >= 2024)
-    : entries;
-
-  const styleCounts = countBy(es, 'beer_type');
-  const topStyles = Object.entries(styleCounts).sort((a,b)=>b[1]-a[1]).map(([s])=>s);
-  const styleParents = [...new Set(topStyles.map(s=>s.split(' - ')[0]))];
-  const stateCounts = countBy(es.filter(e=>e.brewery_state), 'brewery_state');
-  const topStates = Object.entries(stateCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([s])=>s);
-  const loggedBeers = new Set(es.map(e=>e.beer_name));
-  const abvNums = es.filter(e=>e.beer_abv).map(e=>parseFloat(e.beer_abv));
-  const avgAbv = abvNums.reduce((a,b)=>a+b,0)/(abvNums.length||1);
-
-  let recs = [];
   const mode = discoverMode || 'wheelhouse';
-
-  // Pull candidates from BEER_DB not recently logged
-  const candidates = Object.entries(BEER_DB).filter(([name]) => !loggedBeers.has(name));
+  const loggedBeers = new Set(entries.map(e => e.beer_name));
+  let cards = [];
+  let starved = false;
 
   if (mode === 'random') {
-    const shuffled = [...candidates].sort(() => Math.random()-0.5).slice(0,5);
-    recs = shuffled.map(([name, b]) => ({ name, brewery: b.b||'', style: b.s||'', abv: b.a||'', ibu: b.i||'', why: 'A completely random pick — adventure awaits.' }));
-  } else if (mode === 'wheelhouse') {
-    recs = candidates
-      .filter(([_, b]) => b.s && topStyles.slice(0,5).includes(b.s) && b.bs && topStates.includes(b.bs))
-      .sort(() => Math.random()-0.5).slice(0,5)
-      .map(([name, b]) => ({ name, brewery: b.b||'', style: b.s||'', abv: b.a||'', ibu: b.i||'',
-        why: `Matches your top style (${b.s}) from a region you love (${b.bs}).` }));
-    if (recs.length < 3) {
-      const extra = candidates.filter(([_, b]) => b.s && topStyles.slice(0,8).includes(b.s)).sort(()=>Math.random()-0.5).slice(0, 5-recs.length).map(([name, b]) => ({ name, brewery: b.b||'', style: b.s||'', abv: b.a||'', ibu: b.i||'', why: `Style match: ${b.s}.` }));
-      recs = [...recs, ...extra];
-    }
-  } else if (mode === 'adjacent') {
-    const ADJACENT = {
-      'IPA': ['Pale Ale', 'Lager'],
-      'Lager': ['Pilsner', 'Kölsch', 'Blonde / Golden Ale'],
-      'Stout': ['Porter', 'Brown Ale'],
-      'Pale Ale': ['IPA', 'Blonde / Golden Ale'],
-      'Porter': ['Stout', 'Brown Ale'],
-      'Farmhouse Ale': ['Sour', 'Belgian Blonde'],
-      'Sour': ['Farmhouse Ale', 'Wheat Beer'],
-      'Wheat Beer': ['Kölsch', 'Blonde / Golden Ale'],
-    };
-    const adjParents = styleParents.flatMap(p => ADJACENT[p]||[]).filter(Boolean);
-    recs = candidates
-      .filter(([_,b]) => b.s && adjParents.some(ap => b.s.startsWith(ap)))
-      .sort(()=>Math.random()-0.5).slice(0,5)
-      .map(([name,b]) => ({ name, brewery:b.b||'', style:b.s||'', abv:b.a||'', ibu:b.i||'',
-        why: `Adjacent to your style comfort zone — familiar-ish hop character or fermentation profile.` }));
-  } else if (mode === 'wildcard') {
-    const rareStyles = Object.entries(countBy(es, 'beer_type')).filter(([,c])=>c<=2).map(([s])=>s.split(' - ')[0]);
-    const neverStyles = SEED.styles.map(s=>s.split(' - ')[0]).filter(p => !styleParents.includes(p));
-    const targetParents = [...new Set([...rareStyles, ...neverStyles])];
-    recs = candidates
-      .filter(([_,b]) => b.s && targetParents.some(p => b.s.startsWith(p)))
-      .sort(()=>Math.random()-0.5).slice(0,5)
-      .map(([name,b]) => ({ name, brewery:b.b||'', style:b.s||'', abv:b.a||'', ibu:b.i||'',
-        why: `Way outside your usual pattern — a style you've rarely or never tried.` }));
+    const suppressionList = loadSuppression();
+    const windowDays = SUPPRESSION_WINDOWS.random;
+    const candidates = Object.entries(BEER_DB).filter(([name, b]) =>
+      !loggedBeers.has(name) && !(b.s && isStyleSuppressed(b.s, 'random', windowDays, suppressionList)));
+    const pool = candidates.length >= 5 ? candidates : Object.entries(BEER_DB).filter(([name]) => !loggedBeers.has(name));
+    cards = [...pool].sort(() => Math.random() - 0.5).slice(0, 5)
+      .map(([name, b]) => ({ name, brewery: b.b || '', style: b.s || '', abv: b.a || '', result: { source: 'direct' } }));
+  } else {
+    const built = buildAffinityRecs(mode, entries, loggedBeers);
+    cards = built.cards;
+    starved = built.starved;
   }
 
-  if (!recs.length) {
+  if (!cards.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
     return;
   }
 
-  el.innerHTML = recs.map((r, i) => {
-    const wl = wishlist.find(w => w.name === r.name);
+  el.innerHTML = cards.map((c, i) => {
+    const wl = wishlist.find(w => w.name === c.name);
+    let badgeHtml = '';
+    let nameClass = '';
+    if (mode === 'random') {
+      badgeHtml = `<span class="rec-badge badge-random">Random</span>`;
+    } else if (mode === 'wheelhouse') {
+      badgeHtml = `<span class="rec-badge badge-wheelhouse">In Your Wheelhouse</span>`;
+    } else if (mode === 'adjacent') {
+      badgeHtml = `<span class="rec-badge badge-adjacent">Slightly Outside</span>`;
+    } else if (mode === 'wildcard') {
+      const conf = wildcardConfidence(c.result);
+      if (conf === 'confident') {
+        badgeHtml = `<span class="rec-badge badge-wildcard-confident">Wildcard</span>`;
+      } else {
+        badgeHtml = `<span class="rec-badge badge-wildcard-hedged">Wildcard</span>`;
+        nameClass = 'muted';
+      }
+    }
+    const why = rationaleFor(c, mode);
     return `<div class="rec-card fade-up" style="animation-delay:${i*0.06}s">
       <div class="rec-top">
         <div>
-          <div class="rec-name">${r.name}</div>
-          <div class="rec-brewery">${r.brewery}${r.abv ? ` · ${r.abv}% ABV` : ''}</div>
+          ${badgeHtml}
+          <div class="rec-name ${nameClass}">${c.name}</div>
+          <div class="rec-brewery">${c.brewery}${c.abv ? ` · ${c.abv}% ABV` : ''}</div>
         </div>
-        <div class="rec-save ${wl?'saved':''}" id="wl-${i}" onclick="toggleWishlist('${r.name.replace(/'/g,"\\'")}','${(r.brewery||'').replace(/'/g,"\\'")}','${(r.style||'').replace(/'/g,"\\'")}',${i})">
-          ${wl ? '✓ Saved' : '+ Save'}
+        <div class="rec-actions">
+          <div class="rec-save ${wl?'saved':''}" id="wl-${i}" onclick="toggleWishlist('${c.name.replace(/'/g,"\\'")}','${(c.brewery||'').replace(/'/g,"\\'")}','${(c.style||'').replace(/'/g,"\\'")}',${i})">
+            ${wl ? '✓ Saved' : '+ Save'}
+          </div>
+          <div class="rec-dismiss" onclick="dismissRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}', this)">✕</div>
         </div>
       </div>
-      <div class="rec-tags">${r.style ? `<span class="etag style">${r.style}</span>` : ''}</div>
-      <div class="rec-why">${r.why}</div>
+      <div class="rec-tags">${c.style ? `<span class="etag style">${c.style}</span>` : ''}</div>
+      ${why ? `<div class="rec-why">${why}</div>` : ''}
     </div>`;
   }).join('');
+
+  const styleNames = mode === 'random' ? cards.map(c => c.style).filter(Boolean) : cards.map(c => c.style);
+  recordShown(styleNames, mode);
+
+  if (starved) {
+    const modeName = (DISC_MODES.find(m => m.id === mode) || {}).name || mode;
+    el.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">Only ${cards.length} pick${cards.length===1?'':'s'} today — your ${modeName} history is still pretty focused. More will show up as you explore.</div>`);
+  }
 }
 
 function toggleWishlist(name, brewery, style, idx) {
