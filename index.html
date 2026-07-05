@@ -739,7 +739,20 @@ body {
 
   <div id="wishlistSection" style="margin-top:8px">
     <div class="sec-label">📌 Wish List</div>
-    <div id="wishlistItems"></div>
+    <div class="field ac-wrap">
+      <input id="wishBeerName" type="text" placeholder="Beer name" autocomplete="off">
+      <div class="ac-drop" id="drop-wishBeerName"></div>
+    </div>
+    <div class="field ac-wrap">
+      <input id="wishBreweryName" type="text" placeholder="Brewery" autocomplete="off">
+      <div class="ac-drop" id="drop-wishBreweryName"></div>
+    </div>
+    <div class="field ac-wrap">
+      <input id="wishStyle" type="text" placeholder="Style (optional)" autocomplete="off">
+      <div class="ac-drop" id="drop-wishStyle"></div>
+    </div>
+    <button class="btn-action" onclick="addWishlistItem()">+ Add to Wish List</button>
+    <div id="wishlistItems" style="margin-top:12px"></div>
   </div>
 
 </div>
@@ -967,9 +980,10 @@ function pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex) {
     .sort((a, b) => b.score - a.score);
 }
 
-// Starvation fallback ladder: (1) halve window, (2) ignore suppression
-// entirely for this mode, before honestly showing fewer cards.
-function buildAffinityRecs(mode, entriesList, loggedBeers) {
+// Style-only recommendations: no specific-beer lookup, so no candidate-pool
+// exhaustion is possible here. Starvation ladder now only has to work around
+// suppression (a style recently shown), not beer availability.
+function buildAffinityRecs(mode, entriesList) {
   const { signalData, userAffinityMap } = computeSignalModel(entriesList);
   const neighborIndex = getNeighborIndex();
   const ranked = pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex);
@@ -980,7 +994,6 @@ function buildAffinityRecs(mode, entriesList, loggedBeers) {
   let cards = [];
   for (const windowDays of attempts) {
     cards = [];
-    const usedBeers = new Set();
     for (const result of ranked) {
       if (cards.length >= target) break;
       if (isStyleSuppressed(result.style, mode, windowDays, suppressionList)) continue;
@@ -988,11 +1001,7 @@ function buildAffinityRecs(mode, entriesList, loggedBeers) {
       // picks) and must never render as a card — filter them out here rather than
       // relying on generateRationale's own negative-branch text staying unused.
       if (result.source !== 'direct' && result.predictedAffinity < 2.5) continue;
-      const beerEntry = Object.entries(BEER_DB).find(([name, b]) =>
-        b.s === result.style && !loggedBeers.has(name) && !usedBeers.has(name));
-      if (!beerEntry) continue;
-      usedBeers.add(beerEntry[0]);
-      cards.push({ name: beerEntry[0], brewery: beerEntry[1].b || '', style: result.style, abv: beerEntry[1].a || '', result });
+      cards.push({ style: result.style, result });
     }
     if (cards.length >= target) break;
   }
@@ -1034,6 +1043,9 @@ function init() {
   setupAC('beerStyle', SEED.styles);
   setupAC('venueWhere', SEED.venues);
   setupAC('purchaseVenue', SEED.purchase);
+  setupAC('wishBeerName', SEED.beers);
+  setupAC('wishBreweryName', SEED.breweries);
+  setupAC('wishStyle', SEED.styles);
 
   updateHeaderMeta();
   renderWishlist();
@@ -1932,20 +1944,24 @@ function generateRecs() {
   el.innerHTML = '';
 
   const mode = discoverMode || 'wheelhouse';
-  const loggedBeers = new Set(entries.map(e => e.beer_name));
   let cards = [];
   let starved = false;
 
   if (mode === 'random') {
+    // Random stays beer-specific (paired with its style) and allows repeats —
+    // "surprise me with anything" doesn't carry the same unobtainability risk
+    // as a targeted pick, so it keeps sampling straight from BEER_DB.
     const suppressionList = loadSuppression();
     const windowDays = SUPPRESSION_WINDOWS.random;
-    const candidates = Object.entries(BEER_DB).filter(([name, b]) =>
-      !loggedBeers.has(name) && !(b.s && isStyleSuppressed(b.s, 'random', windowDays, suppressionList)));
-    const pool = candidates.length >= 5 ? candidates : Object.entries(BEER_DB).filter(([name]) => !loggedBeers.has(name));
+    const allBeers = Object.entries(BEER_DB);
+    const candidates = allBeers.filter(([name, b]) => !(b.s && isStyleSuppressed(b.s, 'random', windowDays, suppressionList)));
+    const pool = candidates.length >= 5 ? candidates : allBeers;
     cards = [...pool].sort(() => Math.random() - 0.5).slice(0, 5)
       .map(([name, b]) => ({ name, brewery: b.b || '', style: b.s || '', abv: b.a || '', result: { source: 'direct' } }));
   } else {
-    const built = buildAffinityRecs(mode, entries, loggedBeers);
+    // Wheelhouse / Adjacent / Wildcard now recommend a style, not a specific
+    // beer — see buildAffinityRecs for why.
+    const built = buildAffinityRecs(mode, entries);
     cards = built.cards;
     starved = built.starved;
   }
@@ -1956,7 +1972,6 @@ function generateRecs() {
   }
 
   el.innerHTML = cards.map((c, i) => {
-    const wl = wishlist.find(w => w.name === c.name);
     let badgeHtml = '';
     let nameClass = '';
     if (mode === 'random') {
@@ -1975,27 +1990,29 @@ function generateRecs() {
       }
     }
     const why = rationaleFor(c, mode);
+    // Random is still beer-specific (name + brewery/ABV, style as a tag).
+    // Wheelhouse/Adjacent/Wildcard recommend a style, so the style name is
+    // the headline and there's no brewery/ABV/tag line to show.
+    const headline = mode === 'random' ? c.name : c.style;
+    const subhead = mode === 'random' ? `${c.brewery || ''}${c.abv ? ` · ${c.abv}% ABV` : ''}` : '';
+    const styleTag = mode === 'random' && c.style ? `<div class="rec-tags"><span class="etag style">${c.style}</span></div>` : '';
     return `<div class="rec-card fade-up" style="animation-delay:${i*0.06}s">
       <div class="rec-top">
         <div>
           ${badgeHtml}
-          <div class="rec-name ${nameClass}">${c.name}</div>
-          <div class="rec-brewery">${c.brewery}${c.abv ? ` · ${c.abv}% ABV` : ''}</div>
+          <div class="rec-name ${nameClass}">${headline}</div>
+          ${subhead ? `<div class="rec-brewery">${subhead}</div>` : ''}
         </div>
         <div class="rec-actions">
-          <div class="rec-save ${wl?'saved':''}" id="wl-${i}" onclick="toggleWishlist('${c.name.replace(/'/g,"\\'")}','${(c.brewery||'').replace(/'/g,"\\'")}','${(c.style||'').replace(/'/g,"\\'")}',${i})">
-            ${wl ? '✓ Saved' : '+ Save'}
-          </div>
           <div class="rec-dismiss" onclick="dismissRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}', this)">✕</div>
         </div>
       </div>
-      <div class="rec-tags">${c.style ? `<span class="etag style">${c.style}</span>` : ''}</div>
+      ${styleTag}
       ${why ? `<div class="rec-why">${why}</div>` : ''}
     </div>`;
   }).join('');
 
-  const styleNames = mode === 'random' ? cards.map(c => c.style).filter(Boolean) : cards.map(c => c.style);
-  recordShown(styleNames, mode);
+  recordShown(cards.map(c => c.style).filter(Boolean), mode);
 
   if (starved) {
     const modeName = (DISC_MODES.find(m => m.id === mode) || {}).name || mode;
@@ -2003,25 +2020,26 @@ function generateRecs() {
   }
 }
 
-function toggleWishlist(name, brewery, style, idx) {
-  const existing = wishlist.findIndex(w => w.name === name);
-  const btn = document.getElementById(`wl-${idx}`);
-  if (existing >= 0) {
-    wishlist.splice(existing,1);
-    if (btn) { btn.textContent = '+ Save'; btn.classList.remove('saved'); }
-  } else {
-    wishlist.push({ name, brewery, style, added: new Date().toISOString() });
-    if (btn) { btn.textContent = '✓ Saved'; btn.classList.add('saved'); }
-  }
+function addWishlistItem() {
+  const nameEl = document.getElementById('wishBeerName');
+  const breweryEl = document.getElementById('wishBreweryName');
+  const styleEl = document.getElementById('wishStyle');
+  const name = nameEl.value.trim();
+  const brewery = breweryEl.value.trim();
+  const style = styleEl.value.trim();
+  if (!name) { showToast('Enter a beer name'); return; }
+  wishlist.push({ name, brewery, style, added: new Date().toISOString() });
   localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+  nameEl.value = ''; breweryEl.value = ''; styleEl.value = '';
   renderWishlist();
+  showToast('📌 Added to wish list');
 }
 
 function renderWishlist() {
   const el = document.getElementById('wishlistItems');
   if (!el) return;
   if (!wishlist.length) {
-    el.innerHTML = `<div style="font-size:13px;color:var(--text-dim);font-weight:300;padding:8px 0;">Beers you save from recommendations will appear here.</div>`;
+    el.innerHTML = `<div style="font-size:13px;color:var(--text-dim);font-weight:300;padding:8px 0;">Beers you're hoping to find will appear here.</div>`;
     return;
   }
   el.innerHTML = wishlist.map((w, i) => `
