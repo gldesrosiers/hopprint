@@ -485,6 +485,17 @@ body {
 }
 .profile-desc { font-size: 14px; color: var(--text-muted); font-weight: 300; line-height: 1.5; }
 
+.hopprint-radar { position: relative; margin: 4px 0 6px; }
+.hopprint-legend {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+  gap: 14px; margin-bottom: 14px; font-size: 12px; color: var(--text-muted);
+}
+.hp-key { display: inline-flex; align-items: center; gap: 6px; }
+.hp-swatch { display: inline-block; width: 18px; height: 0; border-top-width: 2px; border-top-style: solid; }
+.hp-solid { border-top-color: var(--orange); }
+.hp-dashed { border-top-style: dashed; border-top-color: var(--lime); }
+.hp-note-dim { color: var(--text-dim); font-size: 11px; font-weight: 300; }
+
 .profile-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 9px; }
 .pstat {
   background: var(--charcoal2); border: 1px solid var(--border);
@@ -509,7 +520,7 @@ body {
 .trend-row:last-child { border-bottom: none; }
 .trend-icon { font-size: 18px; flex-shrink: 0; }
 .trend-label { font-size: 13px; font-weight: 500; flex: 1; }
-.trend-val { font-size: 13px; color: var(--orange); font-weight: 600; font-family: var(--font-display); }
+.trend-val { font-size: 13px; color: var(--orange); font-weight: 600; font-family: var(--font-display); max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 
 /* ── DISCOVER ───────────────────────────────────────────────── */
 .discover-step {
@@ -1218,6 +1229,7 @@ function submitCheckin() {
     comment: document.getElementById('notes').value.trim(),
     rating: null,
     rating_mode: null,
+    source: 'live',
   };
   entries.unshift(entry);
   save();
@@ -1557,7 +1569,7 @@ function renderAnalytics() {
   const breweries = new Set(es.map(e=>e.brewery_name).filter(Boolean)).size;
   const styles = new Set(es.map(e=>e.beer_type).filter(Boolean)).size;
   const venues = new Set(es.map(e=>e.venue_name).filter(Boolean)).size;
-  const homeCount = es.filter(e=>e.venue_name==='Untappd at Home'||!e.venue_name).length;
+  const homeCount = es.filter(isHomeEntry).length;
   const homePct = Math.round(homeCount/es.length*100);
   const avgAbv = es.filter(e=>e.beer_abv).length ? (es.filter(e=>e.beer_abv).reduce((s,e)=>s+parseFloat(e.beer_abv),0)/es.filter(e=>e.beer_abv).length).toFixed(1) : '—';
 
@@ -1566,7 +1578,11 @@ function renderAnalytics() {
   es.forEach(e => { const d = new Date(e.created_at).getDay(); dowCounts[(d+6)%7]++; });
   const maxDow = Math.max(...dowCounts,1);
   const dowLabels = ['M','T','W','T','F','S','S'];
-  const dowColors = ['#5a5450','#5a5450','#5a5450','#5a5450','#e97324','#e97324','#c45e18'];
+  // Highlight the user's actual top-3 days (never hardcode specific days —
+  // "personal data as proxy for the general user" drift class).
+  const topDowSet = new Set(
+    dowCounts.map((c,i)=>[c,i]).filter(([c])=>c>0).sort((a,b)=>b[0]-a[0]).slice(0,3).map(([,i])=>i)
+  );
 
   // Monthly
   const monthCounts = Array(12).fill(0);
@@ -1592,7 +1608,7 @@ function renderAnalytics() {
   const maxBrew = topBrews[0]?.[1]||1;
 
   // Venues (excl home)
-  const venueCounts = countBy(es.filter(e=>e.venue_name&&e.venue_name!=='Untappd at Home'), 'venue_name');
+  const venueCounts = countBy(es.filter(e=>e.venue_name&&e.venue_name!==HOME_VENUE), 'venue_name');
   const topVenues = Object.entries(venueCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const maxVenue = topVenues[0]?.[1]||1;
 
@@ -1626,8 +1642,6 @@ function renderAnalytics() {
   });
   const yoyYears = Object.keys(byYear).sort();
 
-  // Note: pre-2024 caveat
-
   inner.innerHTML = yearHTML + `
 
   <div class="stat-grid">
@@ -1642,7 +1656,7 @@ function renderAnalytics() {
     <div class="chart-sub">When you're most likely to open one</div>
     <div class="dow-chart">${dowCounts.map((c,i)=>`
       <div class="dow-col">
-        <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c/maxDow*100)}%;background:${dowColors[i]};opacity:${i>=4?1:0.55}"></div></div>
+        <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c/maxDow*100)}%;background:${topDowSet.has(i)?'#e97324':'#5a5450'};opacity:${topDowSet.has(i)?1:0.55}"></div></div>
         <div class="dow-lbl">${dowLabels[i]}</div>
         <div class="dow-val">${c}</div>
       </div>`).join('')}
@@ -1809,6 +1823,114 @@ function setAnalyticsYear(year, btn) {
 // ═══════════════════════════════════════════════════════════════
 // PROFILE
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// HOPPRINT — flavor fingerprint (Phase B)
+// ═══════════════════════════════════════════════════════════════
+// The eight STYLE_MATRIX dimensions, in matrix order. Keeping this order
+// fixed matters: it's the axis order of the radar AND the field order of the
+// snapshot vector (§8/D3), so all-time vs. trailing shapes and any future
+// stored snapshots stay aligned and comparable.
+const HOPPRINT_DIMS = ['bitterness','sweetness','roast','body','fruit','carbonation','alcohol','haze'];
+const HOPPRINT_DIM_LABELS = { bitterness:'Bitter', sweetness:'Sweet', roast:'Roast', body:'Body', fruit:'Fruit', carbonation:'Carb', alcohol:'ABV', haze:'Haze' };
+
+// Project a list of check-ins through STYLE_MATRIX into one 8-value flavor
+// vector. Weight per style = log-damped familiarity × affinity shading.
+//   familiarity: ln(1 + total check-ins of the style)  — every check-in
+//     counts, rated or not, so the print is meaningful even with no ratings.
+//     Log-damping keeps a 200-deep NEIPA habit from flattening everything.
+//   affinity: the same recency-weighted (180-day half-life) rating signal the
+//     Discover engine uses, mapped to the 1–5 matrix scale. Rated check-ins
+//     only. Shading multiplier = 0.4 + 0.2·affinity → 1.0 at the neutral
+//     midpoint (affinity 3 / "Maybe"), up to 1.4 for loved styles, down to
+//     0.6 for disliked ones. Never zero: a style you drink but don't love is
+//     still part of your print, just pulled in less.
+//   Styles with no matrix vector (e.g. Cider, Root Beer) contribute nothing.
+// Returns the vector plus the diagnostics the gate and snapshots need.
+// Designed for reuse: §8 snapshots call this with a time-bounded list.
+function computeHopprint(entriesList) {
+  const now = Date.now();
+  const byStyle = {};
+  entriesList.forEach(e => {
+    const style = e.beer_type;
+    if (!style || !STYLE_MATRIX[style]) return;
+    if (!byStyle[style]) byStyle[style] = { count: 0, sumW: 0, sumWR: 0 };
+    byStyle[style].count += 1;
+    if (e.rating !== null && e.rating !== undefined) {
+      const days = (now - new Date(e.created_at).getTime()) / 86400000;
+      // Skip the recency weighting for an unparseable date rather than letting
+      // NaN poison the style's affinity (and cascade into the whole vector);
+      // the check-in still counts toward familiarity above.
+      if (Number.isFinite(days)) {
+        const w = Math.pow(0.5, days / 180);
+        byStyle[style].sumW += w;
+        byStyle[style].sumWR += w * e.rating;
+      }
+    }
+  });
+
+  const sums = {}; HOPPRINT_DIMS.forEach(d => sums[d] = 0);
+  let weightSum = 0;
+  const matchedStyles = Object.keys(byStyle).length;
+  Object.entries(byStyle).forEach(([style, d]) => {
+    const familiarity = Math.log(1 + d.count);
+    let affMult = 1.0;
+    if (d.sumW > 0) {
+      const avg0to100 = d.sumWR / d.sumW;
+      const affinity = 1 + (avg0to100 / 100) * 4; // 0–100 → 1–5, matches signal model
+      affMult = 0.4 + 0.2 * affinity;             // neutral 1.0 at affinity 3
+    }
+    const w = familiarity * affMult;
+    weightSum += w;
+    const vec = STYLE_MATRIX[style];
+    HOPPRINT_DIMS.forEach(dim => { sums[dim] += w * vec[dim]; });
+  });
+
+  const vector = HOPPRINT_DIMS.map(dim => weightSum > 0 ? sums[dim] / weightSum : 0);
+  return { vector, weightSum, matchedStyles, count: entriesList.filter(e => e.beer_type && STYLE_MATRIX[e.beer_type]).length };
+}
+
+// Hand-rolled SVG radar. Two overlaid shapes: all-time (solid orange, filled)
+// and trailing-12-month (dashed lime outline). Solid-vs-dashed is the app's
+// locked confidence-differentiation pattern; no dots. Grid rings are placed on
+// the same 1–5 value→radius mapping as the shapes, so a blob reads honestly
+// against the labeled scale rather than being stretched to look spiky.
+function buildHopprintSVG(allTime, trailing) {
+  const W = 320, H = 296, cx = W/2, cy = 150, R = 96;
+  const floor = 0.10; // value 1 sits at 10% radius so it stays visible, not collapsed
+  const n = HOPPRINT_DIMS.length;
+  const ang = i => (-Math.PI/2) + (i * 2*Math.PI/n); // start at top, clockwise
+  const rOf = v => { const c = Math.max(1, Math.min(5, v)); return R * (floor + (c-1)/4 * (1-floor)); };
+  const pt = (i, r) => [cx + r*Math.cos(ang(i)), cy + r*Math.sin(ang(i))];
+  const poly = vec => vec.map((v,i) => pt(i, rOf(v)).map(x=>x.toFixed(1)).join(',')).join(' ');
+
+  // grid rings (values 1..5) + spokes
+  let grid = '';
+  for (let k=1; k<=5; k++) {
+    const rr = R * (floor + (k-1)/4 * (1-floor));
+    const ring = Array.from({length:n}, (_,i)=>pt(i,rr).map(x=>x.toFixed(1)).join(',')).join(' ');
+    grid += `<polygon points="${ring}" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
+  }
+  for (let i=0;i<n;i++){ const [x,y]=pt(i,R); grid += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`; }
+
+  // axis labels
+  let labels = '';
+  for (let i=0;i<n;i++){
+    const [lx,ly] = pt(i, R+16);
+    const anchor = Math.abs(lx-cx) < 6 ? 'middle' : (lx > cx ? 'start' : 'end');
+    const dy = ly < cy-4 ? '0' : (ly > cy+4 ? '0.7em' : '0.32em');
+    labels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" dy="${dy}" font-size="10" font-weight="600" fill="var(--text-muted)" font-family="var(--font-display)">${HOPPRINT_DIM_LABELS[HOPPRINT_DIMS[i]]}</text>`;
+  }
+
+  const allShape = `<polygon points="${poly(allTime)}" fill="rgba(233,115,36,0.18)" stroke="var(--orange)" stroke-width="2" stroke-linejoin="round"/>`;
+  const trailShape = trailing
+    ? `<polygon points="${poly(trailing)}" fill="none" stroke="var(--lime)" stroke-width="2" stroke-dasharray="4 3" stroke-linejoin="round"/>`
+    : '';
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:340px;display:block;margin:0 auto" role="img" aria-label="Your flavor fingerprint across eight dimensions">
+    ${grid}${trailShape}${allShape}${labels}
+  </svg>`;
+}
+
 function renderProfile() {
   const inner = document.getElementById('profileInner');
   if (entries.length < 10) {
@@ -1840,13 +1962,35 @@ function renderProfile() {
   const abvLabel = avgAbv < 5 ? 'session-minded' : avgAbv < 6.5 ? 'moderate-strength' : avgAbv < 8 ? 'hop-forward strength' : 'high-gravity';
 
   // Generate identity string
+  // LOCALIZATION DEBT (Stage 3): regionMap only covers New England states.
+  // Any other state (or non-US region) falls through to the raw code, which is
+  // fine today but must be replaced with a full state/region lookup before
+  // multi-user launch. Do not expand ad hoc — resolve properly in Stage 3.
   const regionMap = {'MA':'Massachusetts','RI':'Rhode Island','ME':'Maine','NH':'New Hampshire','VT':'Vermont','CT':'Connecticut'};
   const regionName = regionMap[topState] || topState;
   const identity = regionName ? `${regionName} loyalist with a ${styleParent.toLowerCase()} lean` : `${styleParent} enthusiast`;
 
-  // Exploration score
   const uniqueBreweries = new Set(useEntries.map(e=>e.brewery_name).filter(Boolean)).size;
-  const explorationScore = Math.round(uniqueBreweries / useEntries.length * 100);
+
+  // Explore Rate: share of check-ins in the last 90 days that introduced a
+  // first-time brewery OR first-time style, judged against the user's full
+  // history. Unlike uniqueBreweries/total (which can only decay as a user
+  // logs more), this stays live: it rewards current exploration and settles
+  // naturally for loyal stretches. Null when there are no recent check-ins.
+  const EXPLORE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+  const exploreNow = Date.now();
+  const seenBrew = new Set(), seenStyle = new Set();
+  let recentTotal = 0, recentFirstTime = 0;
+  [...entries].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).forEach(e => {
+    const t = new Date(e.created_at).getTime();
+    const isRecent = !isNaN(t) && (exploreNow - t) <= EXPLORE_WINDOW_MS && t <= exploreNow + 24*60*60*1000;
+    const firstBrew = e.brewery_name && !seenBrew.has(e.brewery_name);
+    const firstStyle = e.beer_type && !seenStyle.has(e.beer_type);
+    if (isRecent) { recentTotal++; if (firstBrew || firstStyle) recentFirstTime++; }
+    if (e.brewery_name) seenBrew.add(e.brewery_name);
+    if (e.beer_type) seenStyle.add(e.beer_type);
+  });
+  const explorationScore = recentTotal ? Math.round(recentFirstTime / recentTotal * 100) : null;
 
   // ABV trend
   const sorted = [...useEntries].filter(e=>e.beer_abv).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
@@ -1857,7 +2001,7 @@ function renderProfile() {
   const abvTrend = avgSec > avgFirst + 0.2 ? '📈 trending stronger' : avgSec < avgFirst - 0.2 ? '📉 trending lighter' : '→ holding steady';
 
   // Home pct
-  const homePct = Math.round(useEntries.filter(e=>!e.venue_name||e.venue_name==='Untappd at Home').length/useEntries.length*100);
+  const homePct = Math.round(useEntries.filter(isHomeEntry).length/useEntries.length*100);
 
   // DOW peak
   const dowCounts = Array(7).fill(0);
@@ -1871,6 +2015,9 @@ function renderProfile() {
   const prevYrEs = entries.filter(e => new Date(e.created_at).getFullYear() === curYear - 1);
 
   // Season analysis
+  // LOCALIZATION DEBT (Stage 3): month buckets assume northern-hemisphere
+  // seasons. Southern-hemisphere users would see inverted labels. Fine for a
+  // single-user app; needs a hemisphere-aware mapping before public launch.
   const seasonCounts = {Spring:0, Summer:0, Fall:0, Winter:0};
   useEntries.forEach(e => {
     const m = new Date(e.created_at).getMonth();
@@ -1881,9 +2028,38 @@ function renderProfile() {
   });
   const peakSeason = Object.entries(seasonCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'Summer';
 
+  // Hopprint radar — computed from FULL history (true all-time), not the 2024+
+  // identity heuristic, with a trailing-12-month overlay to make taste
+  // evolution visible. Guard future-dated entries out of the trailing window.
+  const HP_now = Date.now();
+  const HP_yearAgo = HP_now - 365 * 86400000;
+  const allTimeHP = computeHopprint(entries);
+  const trailingEntries = entries.filter(e => {
+    const t = new Date(e.created_at).getTime();
+    return !isNaN(t) && t >= HP_yearAgo && t <= HP_now + 86400000;
+  });
+  const trailingHP = computeHopprint(trailingEntries);
+  // Only overlay the trailing shape when it has enough substance to be honest.
+  const showTrailing = trailingHP.matchedStyles >= 3 && trailingHP.count >= 5;
+  const hopprintSVG = allTimeHP.matchedStyles > 0
+    ? buildHopprintSVG(allTimeHP.vector, showTrailing ? trailingHP.vector : null)
+    : '';
+  // Honest copy under the shape rather than fake precision (handoff §5 gate).
+  let hopprintNote = '';
+  if (allTimeHP.matchedStyles === 0) {
+    hopprintNote = `Log a few beers with a known style and your flavor fingerprint appears here.`;
+  } else if (allTimeHP.matchedStyles < 4) {
+    hopprintNote = `Your hopprint sharpens as you log more styles — ${allTimeHP.matchedStyles} so far.`;
+  } else if (showTrailing) {
+    hopprintNote = `<span class="hp-key"><span class="hp-swatch hp-solid"></span>All time</span><span class="hp-key"><span class="hp-swatch hp-dashed"></span>Last 12 months</span>`;
+  } else {
+    hopprintNote = `<span class="hp-key"><span class="hp-swatch hp-solid"></span>All time</span><span class="hp-note-dim">— log more this year to see how it's shifting</span>`;
+  }
+
   inner.innerHTML = `
   <div class="profile-hero fade-up">
     <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin-bottom:6px;">YOUR HOPPRINT</div>
+    ${hopprintSVG ? `<div class="hopprint-radar">${hopprintSVG}</div><div class="hopprint-legend">${hopprintNote}</div>` : (hopprintNote ? `<div class="hopprint-legend" style="margin-bottom:10px">${hopprintNote}</div>` : '')}
     <div class="profile-identity">"${identity}"</div>
     <div class="profile-desc">You're a ${abvLabel} ${serving} with a loyalty streak — ${topBrewPct}% of your check-ins come from a single brewery. ${peakSeason} is your peak season, and ${peakDow} is your most likely drinking night.</div>
   </div>
@@ -1891,7 +2067,7 @@ function renderProfile() {
   <div class="profile-stats">
     <div class="pstat"><div class="pstat-num">${useEntries.length}</div><div class="pstat-label">Check-ins</div></div>
     <div class="pstat"><div class="pstat-num">${uniqueBreweries}</div><div class="pstat-label">Breweries</div></div>
-    <div class="pstat"><div class="pstat-num">${explorationScore}%</div><div class="pstat-label">Explore Rate</div></div>
+    <div class="pstat"><div class="pstat-num">${explorationScore === null ? '—' : explorationScore + '%'}</div><div class="pstat-label">90-Day Explore</div></div>
   </div>
 
   ${curYrEs.length >= 5 ? `
@@ -1914,7 +2090,7 @@ function renderProfile() {
       <div class="trend-row"><div class="trend-icon">🏠</div><div class="trend-label">Drinks at home</div><div class="trend-val">${homePct}%</div></div>
       <div class="trend-row"><div class="trend-icon">🗺️</div><div class="trend-label">Top region</div><div class="trend-val">${regionName || topState || '—'}</div></div>
       <div class="trend-row"><div class="trend-icon">🍺</div><div class="trend-label">Dominant style</div><div class="trend-val">${styleParent || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">❤️</div><div class="trend-label">Most loyal to</div><div class="trend-val">${topBrew ? topBrew.split(' ')[0] : '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">❤️</div><div class="trend-label">Most loyal to</div><div class="trend-val" title="${topBrew || ''}">${topBrew || '—'}</div></div>
       <div class="trend-row"><div class="trend-icon">📅</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
     </div>
   </div>
@@ -2063,7 +2239,7 @@ function removeWish(i) {
 // ═══════════════════════════════════════════════════════════════
 function exportCSV() {
   if (!entries.length) { showToast('No entries yet'); return; }
-  const cols = ['beer_name','brewery_name','brewery_city','brewery_state','beer_type','beer_abv','venue_name','purchase_venue','created_at','serving_type','occasion','rating','rating_mode','comment'];
+  const cols = ['beer_name','brewery_name','brewery_city','brewery_state','beer_type','beer_abv','venue_name','purchase_venue','created_at','serving_type','occasion','rating','rating_mode','source','comment'];
   const csv = [cols.join(','), ...entries.map(e => cols.map(c => JSON.stringify(e[c]||'')).join(','))].join('\n');
   download('hopprint_export.csv', csv, 'text/csv');
   showToast('📄 Exported!');
@@ -2116,6 +2292,7 @@ function handleImport(event) {
           comment: obj.comment||'',
           rating: hasRating ? Math.round((starRating / 5) * 100) : null,
           rating_mode: hasRating ? 'import' : null,
+          source: 'import',
         };
       }).filter(e => e.beer_name);
       const existing = new Set(entries.map(e=>`${e.beer_name}|${e.created_at}`));
@@ -2139,6 +2316,22 @@ function download(filename, content, type) {
 // ═══════════════════════════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════════════════════════
+// Untappd's magic string for at-home check-ins. Keep as a named constant —
+// it appears in analytics, profile, and venue filtering.
+const HOME_VENUE = 'Untappd at Home';
+
+// Is this check-in "at home"?
+// - Explicit home venue always counts.
+// - A missing venue counts as home ONLY for non-live entries (Untappd imports
+//   and legacy pre-`source` data, which is overwhelmingly imported). A live
+//   check-in where the user simply skipped the venue field is NOT home.
+// TODO(stage2): once `source` is stamped on every entry, tighten the missing-
+// venue rule to `e.source === 'import'` explicitly.
+function isHomeEntry(e) {
+  if (e.venue_name === HOME_VENUE) return true;
+  return !e.venue_name && e.source !== 'live';
+}
+
 function countBy(arr, key) {
   const out = {};
   arr.forEach(e => { const v = e[key]; if (v) out[v]=(out[v]||0)+1; });
