@@ -569,12 +569,15 @@ body {
 }
 .rec-save:hover { background: rgba(189,219,143,0.15); }
 .rec-save.saved { color: var(--text-dim); border-color: var(--border); background: none; }
-.rec-actions { display: flex; gap: 6px; align-items: flex-start; flex-shrink: 0; }
-.rec-dismiss {
-  font-size: 15px; cursor: pointer; color: var(--text-dim); padding: 4px 6px;
-  border-radius: 4px; margin-top: 2px; transition: all 0.15s; line-height: 1;
+.rec-footer { display: flex; border-top: 1px solid var(--border); margin-top: 12px; }
+.rec-footer-btn {
+  flex: 1; text-align: center; padding: 11px 6px 3px; font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted); cursor: pointer;
+  transition: all 0.15s; font-family: var(--font-body); user-select: none;
 }
-.rec-dismiss:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.rec-footer-btn:first-child { border-right: 1px solid var(--border); }
+.rec-footer-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.rec-footer-btn.negative:hover { color: var(--orange); }
 .rec-badge {
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
   text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 7px;
@@ -618,6 +621,118 @@ body {
 /* ── ANIMATIONS ─────────────────────────────────────────────── */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .fade-up { animation: fadeUp 0.35s ease both; }
+
+/* ═══ PHASE C — ANALYTICS EXPLORATION ════════════════════════════ */
+
+/* Tappable rank rows (drill-down affordance) */
+.rank-row.drill { cursor: pointer; border-radius: 5px; transition: background 0.12s; }
+.rank-row.drill:hover { background: var(--orange-glow2); }
+.rank-row.drill .rank-val { color: var(--text-muted); }
+
+/* Segmented toggle (new-vs-repeat dimension, reusable) */
+.seg-toggle { display: inline-flex; gap: 0; background: var(--charcoal3); border-radius: var(--radius-sm); padding: 3px; margin-bottom: 14px; }
+.seg-btn { padding: 6px 13px; font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-dim); border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+.seg-btn.active { background: var(--orange); color: var(--charcoal); }
+.seg-btn:not(.active):hover { color: var(--text-muted); }
+
+/* Compare toggle (vs. prior year) */
+.cmp-toggle { display: inline-flex; align-items: center; gap: 7px; margin: -4px 0 16px; padding: 7px 12px; background: var(--charcoal2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+.cmp-toggle:hover { border-color: var(--border-orange); }
+.cmp-toggle.active { border-color: var(--border-orange); color: var(--orange); background: var(--orange-glow2); }
+.cmp-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }
+.cmp-toggle.active .cmp-dot { background: currentColor; }
+
+/* Stat-card delta line (comparison mode) */
+.stat-delta { font-size: 11px; font-weight: 700; margin-top: 3px; letter-spacing: 0.3px; }
+.stat-delta.up { color: var(--lime); }
+.stat-delta.down { color: var(--text-dim); }
+.stat-delta.flat { color: var(--text-dim); }
+
+/* New-vs-repeat headline */
+.nvr-headline { font-size: 12px; color: var(--text-muted); font-weight: 300; margin-bottom: 12px; }
+.nvr-headline b { color: var(--orange); font-weight: 700; }
+.nvr-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--text-dim); }
+.nvr-legend-item { display: flex; align-items: center; gap: 6px; }
+.nvr-swatch { width: 11px; height: 11px; border-radius: 2px; }
+.nvr-swatch.new { background: var(--orange); }
+.nvr-swatch.repeat { background: #5a5450; }
+
+/* Milestones */
+.ms-list { display: flex; flex-direction: column; gap: 2px; }
+.ms-row { display: flex; align-items: center; gap: 11px; padding: 9px 6px; border-bottom: 1px solid var(--border); }
+.ms-row:last-child { border-bottom: none; }
+.ms-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+.ms-body { flex: 1; min-width: 0; }
+.ms-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.ms-sub { font-size: 12px; color: var(--text-dim); font-weight: 300; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-date { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+.firsts-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.first-chip { font-size: 11px; padding: 5px 9px; background: var(--charcoal3); border-radius: 6px; color: var(--text-muted); }
+.first-chip b { color: var(--text); font-weight: 600; }
+.firsts-lead { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); margin: 16px 0 2px; }
+
+/* Band analytics */
+.band-insight { font-size: 13.5px; line-height: 1.5; color: var(--text-muted); font-weight: 300; margin-bottom: 4px; }
+.band-insight b { color: var(--text); font-weight: 600; }
+.band-sub { margin-top: 16px; }
+.band-sub-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+.band-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.band-item:last-child { border-bottom: none; }
+.band-item-name { color: var(--text); font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.band-item-meta { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+
+/* ABV histogram (CSS columns) */
+.abv-chart { display: flex; align-items: flex-end; gap: 5px; height: 120px; margin-bottom: 8px; }
+.abv-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.abv-bar-wrap { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.abv-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 3px; background: #5a5450; transition: height 0.4s; }
+.abv-bar.peak { background: var(--orange); }
+.abv-lbl { font-size: 9px; color: var(--text-dim); text-align: center; line-height: 1.1; }
+.abv-val { font-size: 10px; color: var(--text-dim); }
+.abv-avg { font-size: 12px; color: var(--text-muted); }
+.abv-avg b { color: var(--orange); font-weight: 700; }
+
+/* ═══ DRILL-DOWN PANEL ═══════════════════════════════════════════ */
+.drill-head { margin-bottom: 4px; }
+.drill-kicker { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--orange); margin-bottom: 5px; }
+.drill-name { font-family: var(--font-display); font-size: 22px; font-weight: 700; line-height: 1.15; }
+.drill-summary { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-weight: 300; }
+.drill-section { margin-top: 22px; }
+.drill-section-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 11px; }
+.drill-empty { padding: 30px 10px; text-align: center; color: var(--text-dim); font-size: 14px; }
+
+/* Band distribution bar */
+.band-bar { display: flex; height: 30px; border-radius: 7px; overflow: hidden; background: var(--charcoal3); }
+.band-seg { display: flex; align-items: center; justify-content: center; font-size: 13px; min-width: 2px; }
+.band-seg.band-definitely { background: var(--lime); }
+.band-seg.band-maybe { background: var(--orange-dim); }
+.band-seg.band-never { background: #5a5450; }
+.band-key { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.band-key-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+.band-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.band-swatch.band-definitely { background: var(--lime); }
+.band-swatch.band-maybe { background: var(--orange-dim); }
+.band-swatch.band-never { background: #5a5450; }
+
+/* Mini rank rows inside a panel (non-interactive) */
+.mini-row { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+.mini-bar-wrap { flex: 1; position: relative; background: var(--charcoal3); border-radius: 4px; height: 24px; overflow: hidden; display: flex; align-items: center; }
+.mini-bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--orange-glow); border-radius: 4px; }
+.mini-label { position: relative; z-index: 1; padding: 0 9px; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-val { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+
+/* Sparkline (panel over-time) */
+.spark-row { display: flex; align-items: flex-end; gap: 2px; height: 60px; overflow-x: auto; }
+.spark-col { flex: 1; min-width: 4px; height: 100%; display: flex; align-items: flex-end; }
+.spark-bar { width: 100%; background: var(--orange); border-radius: 2px 2px 0 0; min-height: 4px; opacity: 0.8; }
+.spark-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-dim); }
+
+/* First-time block */
+.drill-first { background: var(--charcoal3); border-radius: var(--radius-sm); padding: 12px 13px; }
+.drill-first-beer { font-family: var(--font-display); font-size: 15px; font-weight: 700; }
+.drill-first-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; font-weight: 300; }
+.drill-first-note { font-size: 12px; color: var(--text-dim); font-style: italic; margin-top: 8px; line-height: 1.4; }
+
 </style>
 </head>
 <body>
@@ -803,6 +918,16 @@ body {
 <div class="fab-feedback" onclick="openFeedbackModal()" title="Send feedback">💬</div>
 
 <!-- FEEDBACK MODAL -->
+<div class="modal-backdrop" id="drillModal" onclick="if(event.target===this)closeDrill()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Details</div>
+      <div class="modal-close" onclick="closeDrill()">✕</div>
+    </div>
+    <div id="drillBody"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="feedbackModal">
   <div class="modal">
     <div class="modal-header">
@@ -861,6 +986,13 @@ let selectedServe = '';
 let selectedOccasion = '';
 let selectedCtx = [];
 let discoverMode = '';
+// One card on screen at a time — the rest of a generated batch sits here as
+// a queue so dismissing a pick can pull the next-best one instantly instead
+// of re-running the whole affinity/suppression pipeline on every tap.
+let discoverQueue = [];
+let discoverQueueMode = '';
+let discoverStarved = false;
+let discoverUsedFallback = false;
 let currentPromptIdx = 0;
 let analyticsYear = 'all';
 let analyticsCharts = {};
@@ -906,6 +1038,26 @@ const DISC_MODES = [
   { id:'random', icon:'🎰', name:'Random', desc:'Anything goes — surprise me' },
 ];
 
+// Resolve a raw beer_type string (as stored on an entry — could come from
+// live check-in autocomplete, CSV import, or years-old data) to the exact
+// STYLE_MATRIX key it means, tolerating trivial formatting drift (case,
+// stray whitespace, curly vs straight quotes/dashes) that shouldn't be able
+// to silently zero out a user's entire affinity signal. Never mutates stored
+// data — this only affects which matrix vector a lookup resolves to.
+let STYLE_KEY_INDEX = null;
+function normalizeStyleKey(s) {
+  return s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/[\u2018\u2019]/g, "'").replace(/[\u2013\u2014]/g, '-');
+}
+function resolveMatrixStyle(rawStyle) {
+  if (!rawStyle) return null;
+  if (STYLE_MATRIX[rawStyle]) return rawStyle; // fast path — exact match, the common case
+  if (!STYLE_KEY_INDEX) {
+    STYLE_KEY_INDEX = {};
+    Object.keys(STYLE_MATRIX).forEach(k => { STYLE_KEY_INDEX[normalizeStyleKey(k)] = k; });
+  }
+  return STYLE_KEY_INDEX[normalizeStyleKey(rawStyle)] || null;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // RECOMMENDATION ENGINE — signal model, suppression, orchestration
 // (uses STYLE_MATRIX + buildNeighborIndex/scoreRecommendation/generateRationale
@@ -929,8 +1081,8 @@ function computeSignalModel(entriesList) {
   const now = Date.now();
   const byStyle = {};
   entriesList.forEach(e => {
-    const style = e.beer_type;
-    if (!style || !STYLE_MATRIX[style]) return;
+    const style = resolveMatrixStyle(e.beer_type);
+    if (!style) return;
     if (e.rating === null || e.rating === undefined) return;
     const days = (now - new Date(e.created_at).getTime()) / 86400000;
     const weight = Math.pow(0.5, days / 180);
@@ -975,10 +1127,55 @@ function recordShown(styles, mode) {
   const cutoff = now - 25 * 86400000; // prune anything older than the longest window
   saveSuppression(list.filter(s => s.timestamp > cutoff));
 }
-function dismissRec(style, mode, btn) {
+function showAnotherRec() {
+  // Neutral cycle — no extra suppression stamp beyond the normal
+  // shown-at-render entry every card already gets. This is "not this one
+  // specifically, just show me the next best thing," not a taste signal.
+  renderNextRec();
+}
+
+function notInterestedRec(style, mode) {
+  // Explicit negative signal — re-stamp suppression to *now* on top of the
+  // shown-at-render entry, so this style is pushed out further than one
+  // that was simply shown and cycled past.
   recordShown([style], mode);
-  const card = btn.closest('.rec-card');
-  if (card) card.remove();
+  renderNextRec();
+}
+
+// Styles the user has actually logged, weighted by log-damped frequency —
+// used ONLY as a last-resort ranking signal when there isn't a single rated
+// check-in anywhere to build real taste affinity from (computeSignalModel
+// returns an empty userAffinityMap in that case). Without this, Discover's
+// wheelhouse/adjacent/wildcard modes go completely silent for a "log
+// everything, rate nothing" user — which contradicts the locked "rating
+// sparsity is the norm, not an edge case" principle. This must never claim
+// to know a *preference*, only a *habit*: pseudo-affinity stays clamped to a
+// narrow, neutral-or-above band (3.0–4.2) — frequency is evidence of a
+// habit, not evidence of dislike — and callers must render an honestly
+// distinct rationale for it (see rationaleFor), never the taste-confidence
+// copy real ratings earn.
+function buildFamiliarityFallbackSignal(entriesList) {
+  const counts = {};
+  entriesList.forEach(e => {
+    const style = resolveMatrixStyle(e.beer_type);
+    if (!style) return;
+    counts[style] = (counts[style] || 0) + 1;
+  });
+  const styles = Object.keys(counts);
+  if (!styles.length) return null; // genuinely no matched-style history — nothing to fall back to
+
+  const signalData = {};
+  const userAffinityMap = {};
+  const maxCount = Math.max(...styles.map(s => counts[s]));
+  styles.forEach(style => {
+    const count = counts[style];
+    const familiarity = Math.min(5, Math.log(1 + count) * 1.5);
+    const pseudoAffinity = 3.0 + 1.2 * (Math.log(1 + count) / Math.log(1 + maxCount));
+    const novelty = Math.max(0, 1 - count / 8);
+    signalData[style] = { affinity: pseudoAffinity, familiarity, novelty, count };
+    userAffinityMap[style] = pseudoAffinity;
+  });
+  return { signalData, userAffinityMap };
 }
 
 function pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex) {
@@ -995,9 +1192,25 @@ function pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex) {
 // exhaustion is possible here. Starvation ladder now only has to work around
 // suppression (a style recently shown), not beer availability.
 function buildAffinityRecs(mode, entriesList) {
-  const { signalData, userAffinityMap } = computeSignalModel(entriesList);
+  let { signalData, userAffinityMap } = computeSignalModel(entriesList);
+  let usedFallback = false;
+  if (Object.keys(userAffinityMap).length === 0) {
+    // No rated check-ins anywhere, so real taste affinity can't be computed
+    // at all (not "sparse" — zero). Fall back to ranking by drinking
+    // frequency rather than returning nothing. Genuinely empty history (no
+    // matched styles at all, e.g. brand-new account) still falls through to
+    // the real "not enough data" empty state below via an empty `ranked`.
+    const fallback = buildFamiliarityFallbackSignal(entriesList);
+    if (fallback) { signalData = fallback.signalData; userAffinityMap = fallback.userAffinityMap; usedFallback = true; }
+  }
   const neighborIndex = getNeighborIndex();
   const ranked = pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex);
+  // Every result in a fallback pass is frequency-derived, not taste-derived —
+  // normalize the source label uniformly (regardless of the internal
+  // direct/blended/transferred distinction scoreRecommendation assigned)
+  // so the UI renders one honest rationale rather than mixing real-taste
+  // and frequency-only copy in the same list.
+  if (usedFallback) ranked.forEach(r => { r.source = 'familiarity_fallback'; });
   const target = 5;
   const baseWindow = SUPPRESSION_WINDOWS[mode];
   const attempts = [baseWindow, baseWindow / 2, 0];
@@ -1011,12 +1224,12 @@ function buildAffinityRecs(mode, entriesList) {
       // Negative recommendations are internal-only (used to suppress bad Wildcard
       // picks) and must never render as a card — filter them out here rather than
       // relying on generateRationale's own negative-branch text staying unused.
-      if (result.source !== 'direct' && result.predictedAffinity < 2.5) continue;
+      if (result.source !== 'direct' && result.source !== 'familiarity_fallback' && result.predictedAffinity < 2.5) continue;
       cards.push({ style: result.style, result });
     }
     if (cards.length >= target) break;
   }
-  return { cards, starved: cards.length < target };
+  return { cards, starved: cards.length < target, usedFallback };
 }
 
 function wildcardConfidence(result) {
@@ -1030,6 +1243,15 @@ function wildcardConfidence(result) {
 function rationaleFor(card, mode) {
   if (mode === 'random') return 'A completely random pick — adventure awaits.';
   const result = card.result;
+  if (result.source === 'familiarity_fallback') {
+    // No rated check-ins exist yet, so this list is ranked by drinking
+    // frequency, not taste — say so plainly rather than borrowing the
+    // confidence language real ratings earn (see buildFamiliarityFallbackSignal).
+    const times = result.count || 0;
+    if (mode === 'wheelhouse') return `You've logged this style ${times} time${times===1?'':'s'} — no ratings yet, so this is based on how often you reach for it. Rate a few check-ins to sharpen these picks.`;
+    if (mode === 'adjacent') return `Close in flavor to styles you log often. Rate a few check-ins and this list gets more precise.`;
+    return `Haven't seen this one in your history — suggested from your drinking habits, not rated taste, since there's no rating data yet.`;
+  }
   if (result.source === 'direct') {
     if (mode === 'wheelhouse') return `One of your go-tos — you've had this style ${result.count} times and keep rating it near the top.`;
     if (mode === 'adjacent') return `You've only had this a handful of times, but you've rated it well every time. Feels like one to revisit.`;
@@ -1545,96 +1767,457 @@ Chart.defaults.plugins.tooltip.bodyColor = '#9a9490';
 Chart.defaults.plugins.tooltip.padding = 9;
 Chart.defaults.plugins.tooltip.cornerRadius = 7;
 
+// ═══════════════════════════════════════════════════════════════
+// ANALYTICS SHARED HELPERS (Phase C) — build once, render twice.
+// Every drill-down panel and every top-level module composes from
+// these, so the number behind a chart and the number inside a panel
+// can never disagree.
+// ═══════════════════════════════════════════════════════════════
+
+// Map a stored 0–100 rating to its display band (or null when unrated).
+// Bands are the ONLY rating language shown to users (D1); the numeric
+// score stays internal to affinity math and never surfaces.
+function bandOf(rating) {
+  if (typeof rating !== 'number') return null;
+  return RATING_BANDS.find(b => rating >= b.min && rating <= b.max) || null;
+}
+
+// Band distribution over a set of check-ins. Counts only rated entries,
+// returns the three tallies plus the rated total so callers can gate on
+// sample size. Imports are included on purpose — this is a static
+// aggregate, not a taste-trajectory claim (handoff §4.4).
+function bandDistribution(list) {
+  const d = { never: 0, maybe: 0, definitely: 0, rated: 0, total: list.length };
+  list.forEach(e => { const b = bandOf(e.rating); if (!b) return; d.rated++; d[b.id]++; });
+  return d;
+}
+
+// Monthly YYYY-MM → count over a list. Skips unparseable dates.
+function monthlyCounts(list) {
+  const m = {};
+  list.forEach(e => {
+    const dt = new Date(e.created_at);
+    if (isNaN(dt)) return;
+    const k = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    m[k] = (m[k] || 0) + 1;
+  });
+  return m;
+}
+
+// Earliest check-in of a list, by created_at. Ignores unparseable dates.
+function firstCheckin(list) {
+  let best = null, bestT = Infinity;
+  list.forEach(e => { const t = new Date(e.created_at).getTime(); if (!isNaN(t) && t < bestT) { bestT = t; best = e; } });
+  return best;
+}
+
+// Date label helpers. Guard bad dates rather than rendering "Invalid Date".
+function fmtMonthYear(s) { const d = new Date(s); return isNaN(d) ? '—' : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); }
+function fmtDay(s) { const d = new Date(s); return isNaN(d) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+
+// Ids of the check-ins that are the FIRST occurrence of their value for a
+// field, judged across ALL history in chronological order. The new-vs-repeat
+// module uses this so "first-time" means first-time ever, even when a single
+// year is on screen. Ties on identical timestamps resolve to array order
+// (stable sort) — a coin flip that doesn't affect the aggregate counts.
+function firstOccurrenceIds(field) {
+  const seen = new Set(), ids = new Set();
+  [...entries]
+    .filter(e => e[field])
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .forEach(e => { if (!seen.has(e[field])) { seen.add(e[field]); ids.add(e.id); } });
+  return ids;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DRILL-DOWN PANEL (Phase C 6.1) — one generic slide-up panel,
+// parameterized by entity type. Panels are ALWAYS all-time for the
+// tapped entity (regardless of the active year filter): the question a
+// drill answers is "my whole history with X", and the first-ever
+// check-in only makes sense against full history. Sections gate
+// themselves — a sparse entity renders a shorter, honest panel rather
+// than one padded with empty modules.
+// ═══════════════════════════════════════════════════════════════
+const DRILL_CONFIG = {
+  style:    { field: 'beer_type',      label: 'Style',        secondaries: [['brewery_name', 'Breweries'], ['beer_name', 'Beers']] },
+  brewery:  { field: 'brewery_name',   label: 'Brewery',      secondaries: [['beer_type', 'Styles'], ['beer_name', 'Beers'], ['venue_name', 'Venues']] },
+  venue:    { field: 'venue_name',     label: 'Venue',        secondaries: [['beer_type', 'Styles'], ['brewery_name', 'Breweries']] },
+  purchase: { field: 'purchase_venue', label: 'Purchase spot',secondaries: [['brewery_name', 'Breweries'], ['beer_type', 'Styles']] },
+  state:    { field: 'brewery_state',  label: 'Origin',       secondaries: [['brewery_name', 'Breweries'], ['beer_type', 'Styles']] },
+  beer:     { field: 'beer_name',      label: 'Beer',         secondaries: [['venue_name', 'Venues']] },
+};
+let drillType = null, drillKey = null;
+
+function openDrill(type, key) {
+  const cfg = DRILL_CONFIG[type];
+  if (!cfg || !key) return;
+  drillType = type; drillKey = key;
+  document.getElementById('drillBody').innerHTML = buildDrillPanel(type, key);
+  document.getElementById('drillModal').classList.add('open');
+}
+function closeDrill() {
+  document.getElementById('drillModal').classList.remove('open');
+  drillType = null; drillKey = null;
+}
+
+function buildDrillPanel(type, key) {
+  const cfg = DRILL_CONFIG[type];
+  if (!cfg || !key) return `<div class="drill-empty">Nothing logged here yet.</div>`;
+  const list = entries.filter(e => e[cfg.field] === key);
+  if (!list.length) return `<div class="drill-empty">Nothing logged here yet.</div>`;
+
+  const n = list.length;
+  const first = firstCheckin(list);
+  const uniqueBeers = new Set(list.map(e => e.beer_name).filter(Boolean)).size;
+
+  // Header + one-line summary — always shown.
+  const summaryBits = [`${n} check-in${n === 1 ? '' : 's'}`];
+  if (type !== 'beer' && uniqueBeers) summaryBits.push(`${uniqueBeers} beer${uniqueBeers === 1 ? '' : 's'}`);
+  if (first) summaryBits.push(`since ${fmtMonthYear(first.created_at)}`);
+  let html = `<div class="drill-head">
+    <div class="drill-kicker">${esc(cfg.label)}</div>
+    <div class="drill-name">${esc(key)}</div>
+    <div class="drill-summary">${summaryBits.join(' · ')}</div>
+  </div>`;
+
+  // Band distribution — only with ≥3 rated check-ins (below that it's noise).
+  const bd = bandDistribution(list);
+  if (bd.rated >= 3) html += drillBandSection(bd);
+
+  // Secondary breakdowns — each only when it has >1 distinct value to show.
+  cfg.secondaries.forEach(([field, title]) => {
+    const counts = countBy(list, field);
+    if (Object.keys(counts).length > 1) html += drillRankSection(title, counts);
+  });
+
+  // Over time — only when the history spans ≥3 distinct months.
+  const mc = monthlyCounts(list);
+  if (Object.keys(mc).length >= 3) html += drillTrendSection(mc);
+
+  // First-ever check-in — always, when we can date one.
+  if (first) {
+    const metaBits = [esc(first.brewery_name || ''), fmtDay(first.created_at)].filter(Boolean);
+    if (first.venue_name) metaBits.push(esc(first.venue_name));
+    html += `<div class="drill-section">
+      <div class="drill-section-title">First time</div>
+      <div class="drill-first">
+        <div class="drill-first-beer">${esc(first.beer_name)}</div>
+        <div class="drill-first-meta">${metaBits.join(' · ')}</div>
+        ${first.comment ? `<div class="drill-first-note">"${esc(first.comment.slice(0, 160))}${first.comment.length > 160 ? '…' : ''}"</div>` : ''}
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function drillBandSection(bd) {
+  const seg = (id, count) => {
+    if (!count) return '';
+    const pct = Math.round(count / bd.rated * 100);
+    const meta = RATING_BANDS.find(b => b.id === id);
+    return `<div class="band-seg band-${id}" style="flex:${count}" title="${meta.label}: ${count}">${pct >= 12 ? meta.icon : ''}</div>`;
+  };
+  return `<div class="drill-section">
+    <div class="drill-section-title">How you've rated it</div>
+    <div class="band-bar">${seg('definitely', bd.definitely)}${seg('maybe', bd.maybe)}${seg('never', bd.never)}</div>
+    <div class="band-key">
+      <span class="band-key-item"><span class="band-swatch band-definitely"></span>Definitely ${bd.definitely}</span>
+      <span class="band-key-item"><span class="band-swatch band-maybe"></span>Maybe ${bd.maybe}</span>
+      <span class="band-key-item"><span class="band-swatch band-never"></span>Never ${bd.never}</span>
+    </div>
+  </div>`;
+}
+
+function drillRankSection(title, counts) {
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const max = rows[0][1] || 1;
+  return `<div class="drill-section">
+    <div class="drill-section-title">${esc(title)}</div>
+    <div>${rows.map(([k, c]) => `
+      <div class="mini-row">
+        <div class="mini-bar-wrap"><div class="mini-bar" style="width:${Math.round(c / max * 100)}%"></div><span class="mini-label">${esc(k)}</span></div>
+        <div class="mini-val">${c}</div>
+      </div>`).join('')}</div>
+  </div>`;
+}
+
+function drillTrendSection(mc) {
+  const keys = Object.keys(mc).sort();
+  const max = Math.max(...keys.map(k => mc[k]), 1);
+  return `<div class="drill-section">
+    <div class="drill-section-title">Over time</div>
+    <div class="spark-row">${keys.map(k => `<div class="spark-col" title="${k}: ${mc[k]}"><div class="spark-bar" style="height:${Math.max(6, Math.round(mc[k] / max * 100))}%"></div></div>`).join('')}</div>
+    <div class="spark-axis"><span>${fmtMonthYear(keys[0] + '-01')}</span><span>${fmtMonthYear(keys[keys.length - 1] + '-01')}</span></div>
+  </div>`;
+}
+
+// A tappable top-level rank row. The `›` and hover style signal it opens
+// a panel. data-key carries the (HTML-escaped) key so quotes/apostrophes
+// in brewery and beer names survive round-tripping through the attribute.
+function drillRow(rank, key, count, max, grad, type) {
+  return `<div class="rank-row drill" data-key="${esc(key)}" onclick="openDrill('${type}', this.dataset.key)">
+    <div class="rank-num">${rank}</div>
+    <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(count / max * 100)}%;background:${grad}">${esc(key)}</div></div>
+    <div class="rank-val">${count} ›</div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FIRSTS & MILESTONES (Phase C 6.2.2) — curated, not exhaustive.
+// Round-number achievement moments + most-recent style firsts.
+// Superlative framing, never gamified badges (handoff §9).
+// ═══════════════════════════════════════════════════════════════
+const MS_CHECKIN_STEPS = [100, 250, 500, 1000, 1500, 2000, 2500, 3000];
+const MS_BREWERY_STEPS = [25, 50, 100, 150, 200, 250, 300];
+const MS_STYLE_STEPS = [25, 50, 75, 100, 125, 150];
+
+function computeMilestones() {
+  const sorted = [...entries]
+    .filter(e => e.created_at && !isNaN(new Date(e.created_at)))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const out = [];
+
+  MS_CHECKIN_STEPS.forEach(step => {
+    if (sorted.length >= step) out.push({ icon: '🍺', label: `${step.toLocaleString()}th check-in`, sub: sorted[step - 1].beer_name || '', date: sorted[step - 1].created_at });
+  });
+
+  const seenB = new Set(); const bMile = {};
+  sorted.forEach(e => { if (e.brewery_name && !seenB.has(e.brewery_name)) { seenB.add(e.brewery_name); if (MS_BREWERY_STEPS.includes(seenB.size)) bMile[seenB.size] = e; } });
+  MS_BREWERY_STEPS.forEach(step => { if (bMile[step]) out.push({ icon: '🏭', label: `${step}th brewery`, sub: bMile[step].brewery_name, date: bMile[step].created_at }); });
+
+  const seenS = new Set(); const sMile = {};
+  sorted.forEach(e => { if (e.beer_type && !seenS.has(e.beer_type)) { seenS.add(e.beer_type); if (MS_STYLE_STEPS.includes(seenS.size)) sMile[seenS.size] = e; } });
+  MS_STYLE_STEPS.forEach(step => { if (sMile[step]) out.push({ icon: '🎨', label: `${step}th style`, sub: sMile[step].beer_type, date: sMile[step].created_at }); });
+
+  return out.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function recentStyleFirsts(limit) {
+  const seen = new Set(); const firsts = [];
+  [...entries]
+    .filter(e => e.beer_type && e.created_at && !isNaN(new Date(e.created_at)))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .forEach(e => { if (!seen.has(e.beer_type)) { seen.add(e.beer_type); firsts.push(e); } });
+  return firsts.slice(-limit).reverse();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BAND ANALYTICS (Phase C 6.2.5 / C+) — wheelhouse-vs-most-logged,
+// consistently loved, unfinished business. Band language only (D1),
+// scores never surfaced. Static aggregates, so imports participate.
+// ═══════════════════════════════════════════════════════════════
+function computeBandAnalytics(list) {
+  const byStyle = {}, styleTotals = {}, byBeer = {};
+  list.forEach(e => {
+    if (e.beer_type) styleTotals[e.beer_type] = (styleTotals[e.beer_type] || 0) + 1;
+    const b = bandOf(e.rating);
+    if (!b) return;
+    if (e.beer_type) {
+      if (!byStyle[e.beer_type]) byStyle[e.beer_type] = { rated: 0, never: 0, maybe: 0, definitely: 0 };
+      byStyle[e.beer_type].rated++; byStyle[e.beer_type][b.id]++;
+    }
+    if (e.beer_name) {
+      if (!byBeer[e.beer_name]) byBeer[e.beer_name] = { rated: 0, definitely: 0, brewery: e.brewery_name || '' };
+      byBeer[e.beer_name].rated++; if (b.id === 'definitely') byBeer[e.beer_name].definitely++;
+    }
+  });
+
+  const mostLogged = Object.entries(styleTotals).sort((a, b) => b[1] - a[1])[0] || null;
+  const eligible = Object.entries(byStyle).filter(([, d]) => d.rated >= 4); // [style, {...}]
+  const defShare = d => d.definitely / d.rated;
+  const wheelhouse = eligible.length ? [...eligible].sort((a, b) => defShare(b[1]) - defShare(a[1]))[0] : null;
+  const loved = Object.entries(byBeer)
+    .filter(([, d]) => d.rated >= 2 && d.definitely === d.rated)
+    .sort((a, b) => b[1].rated - a[1].rated).slice(0, 5);
+  const unfinished = eligible
+    .filter(([, d]) => defShare(d) < 0.34)
+    .sort((a, b) => b[1].rated - a[1].rated).slice(0, 4);
+
+  return { mostLogged, wheelhouse, loved, unfinished };
+}
+
+function buildBandCard(list) {
+  const ba = computeBandAnalytics(list);
+  const parts = [];
+
+  if (ba.wheelhouse) {
+    const whStyle = ba.wheelhouse[0];
+    if (ba.mostLogged && ba.mostLogged[0] !== whStyle) {
+      parts.push(`<div class="band-insight">You reach for <b>${esc(ba.mostLogged[0])}</b> more than anything — but it's <b>${esc(whStyle)}</b> you say Definitely to most often.</div>`);
+    } else {
+      parts.push(`<div class="band-insight"><b>${esc(whStyle)}</b> is both what you log most and what you rate highest. A real wheelhouse.</div>`);
+    }
+  }
+
+  if (ba.loved.length) {
+    parts.push(`<div class="band-sub">
+      <div class="band-sub-title">Never once turned down</div>
+      ${ba.loved.map(([name, d]) => `<div class="band-item"><span class="band-item-name">${esc(name)}</span><span class="band-item-meta">${esc(d.brewery)}${d.brewery ? ' · ' : ''}${d.rated}×</span></div>`).join('')}
+    </div>`);
+  }
+
+  if (ba.unfinished.length) {
+    parts.push(`<div class="band-sub">
+      <div class="band-sub-title">Still figuring out</div>
+      ${ba.unfinished.map(([style, d]) => `<div class="band-item"><span class="band-item-name">${esc(style)}</span><span class="band-item-meta">${d.rated} rated · mostly Maybe</span></div>`).join('')}
+    </div>`);
+  }
+
+  if (!parts.length) return '';
+  return `<div class="chart-card fade-up">
+    <div class="chart-title">Your Ratings, Read Back</div>
+    <div class="chart-sub">What the Definitelys and Maybes add up to</div>
+    ${parts.join('')}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANALYTICS — from report to exploration surface (Phase C)
+// ═══════════════════════════════════════════════════════════════
+let nvrField = 'brewery_name';
+let analyticsCompare = false;
+
+function setNvrField(field) { nvrField = field; renderAnalytics(); }
+function toggleAnalyticsCompare() { analyticsCompare = !analyticsCompare; renderAnalytics(); }
+
+const NVR_LABELS = { brewery_name: 'breweries', beer_type: 'styles', beer_name: 'beers' };
+
 function renderAnalytics() {
   const inner = document.getElementById('analyticsInner');
-  Object.values(analyticsCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+  Object.values(analyticsCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
   analyticsCharts = {};
 
-  const years = [...new Set(entries.map(e => new Date(e.created_at).getFullYear()))].filter(Boolean).sort((a,b)=>b-a);
+  const years = [...new Set(entries.map(e => new Date(e.created_at).getFullYear()))].filter(Boolean).sort((a, b) => b - a);
   const getEntries = () => analyticsYear === 'all' ? entries : entries.filter(e => new Date(e.created_at).getFullYear() === analyticsYear);
   const es = getEntries();
 
+  // Comparison mode only applies to a specific year that HAS a prior year of
+  // data. Force it off otherwise so state can't get stranded on.
+  const prevYear = (analyticsYear !== 'all') ? analyticsYear - 1 : null;
+  const prevYrEntries = prevYear !== null ? entries.filter(e => new Date(e.created_at).getFullYear() === prevYear) : [];
+  const canCompare = prevYrEntries.length > 0;
+  if (!canCompare) analyticsCompare = false;
+
   // Year selector
   let yearHTML = `<div class="year-row">
-    <div class="yr-btn ${analyticsYear==='all'?'active':''}" onclick="setAnalyticsYear('all',this)">All Time</div>
-    ${years.map(y => `<div class="yr-btn ${analyticsYear===y?'active':''}" onclick="setAnalyticsYear(${y},this)">${y}</div>`).join('')}
+    <div class="yr-btn ${analyticsYear === 'all' ? 'active' : ''}" onclick="setAnalyticsYear('all',this)">All Time</div>
+    ${years.map(y => `<div class="yr-btn ${analyticsYear === y ? 'active' : ''}" onclick="setAnalyticsYear(${y},this)">${y}</div>`).join('')}
   </div>`;
+  if (canCompare) {
+    yearHTML += `<div class="cmp-toggle ${analyticsCompare ? 'active' : ''}" onclick="toggleAnalyticsCompare()"><span class="cmp-dot"></span>Compare to ${prevYear}</div>`;
+  }
 
   if (!es.length) {
     inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">📊</div><p>No data for this period.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
     return;
   }
 
-  // Compute stats
-  const breweries = new Set(es.map(e=>e.brewery_name).filter(Boolean)).size;
-  const styles = new Set(es.map(e=>e.beer_type).filter(Boolean)).size;
-  const venues = new Set(es.map(e=>e.venue_name).filter(Boolean)).size;
+  // ── Core stats ──
+  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
+  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
+  const venues = new Set(es.map(e => e.venue_name).filter(Boolean)).size;
   const homeCount = es.filter(isHomeEntry).length;
-  const homePct = Math.round(homeCount/es.length*100);
-  const avgAbv = es.filter(e=>e.beer_abv).length ? (es.filter(e=>e.beer_abv).reduce((s,e)=>s+parseFloat(e.beer_abv),0)/es.filter(e=>e.beer_abv).length).toFixed(1) : '—';
+  const homePct = Math.round(homeCount / es.length * 100);
+  const abvVals = es.filter(e => e.beer_abv).map(e => parseFloat(e.beer_abv)).filter(v => !isNaN(v));
+  const avgAbv = abvVals.length ? (abvVals.reduce((s, v) => s + v, 0) / abvVals.length).toFixed(1) : '—';
 
-  // DOW
+  // Comparison deltas (only used when analyticsCompare).
+  const prevBreweries = new Set(prevYrEntries.map(e => e.brewery_name).filter(Boolean)).size;
+  const prevStyles = new Set(prevYrEntries.map(e => e.beer_type).filter(Boolean)).size;
+  const pct = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
+  const deltaLine = (cur, prev) => {
+    const p = pct(cur, prev);
+    if (p === null) return `<div class="stat-delta flat">new vs ${prevYear}</div>`;
+    if (p > 0) return `<div class="stat-delta up">+${p}% vs ${prevYear}</div>`;
+    if (p < 0) return `<div class="stat-delta down">${p}% vs ${prevYear}</div>`;
+    return `<div class="stat-delta flat">same as ${prevYear}</div>`;
+  };
+
+  // ── DOW (Phase A: highlight follows the user's real top-3 days) ──
   const dowCounts = Array(7).fill(0);
-  es.forEach(e => { const d = new Date(e.created_at).getDay(); dowCounts[(d+6)%7]++; });
-  const maxDow = Math.max(...dowCounts,1);
-  const dowLabels = ['M','T','W','T','F','S','S'];
-  // Highlight the user's actual top-3 days (never hardcode specific days —
-  // "personal data as proxy for the general user" drift class).
-  const topDowSet = new Set(
-    dowCounts.map((c,i)=>[c,i]).filter(([c])=>c>0).sort((a,b)=>b[0]-a[0]).slice(0,3).map(([,i])=>i)
-  );
+  es.forEach(e => { const d = new Date(e.created_at).getDay(); dowCounts[(d + 6) % 7]++; });
+  const maxDow = Math.max(...dowCounts, 1);
+  const dowLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const topDowSet = new Set(dowCounts.map((c, i) => [c, i]).filter(([c]) => c > 0).sort((a, b) => b[0] - a[0]).slice(0, 3).map(([, i]) => i));
 
-  // Monthly
+  // ── Monthly / timeline ──
   const monthCounts = Array(12).fill(0);
   es.forEach(e => monthCounts[new Date(e.created_at).getMonth()]++);
+  const prevMonthCounts = Array(12).fill(0);
+  prevYrEntries.forEach(e => prevMonthCounts[new Date(e.created_at).getMonth()]++);
 
-  // Timeline
-  const timelineMap = {};
-  es.forEach(e => {
-    const d = new Date(e.created_at);
-    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    timelineMap[k] = (timelineMap[k]||0)+1;
-  });
+  const timelineMap = monthlyCounts(es);
   const tlKeys = Object.keys(timelineMap).sort();
 
-  // Styles
+  // ── New vs repeat (6.2.1) ──
+  const nvrFirstIds = firstOccurrenceIds(nvrField);
+  const nvrTotal = {}, nvrFirst = {};
+  es.forEach(e => {
+    const dt = new Date(e.created_at); if (isNaN(dt)) return;
+    const k = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    if (!(k in nvrTotal)) { nvrTotal[k] = 0; nvrFirst[k] = 0; }
+    nvrTotal[k]++; if (nvrFirstIds.has(e.id)) nvrFirst[k]++;
+  });
+  const nvrKeys = Object.keys(nvrTotal).sort();
+  const nvrNewArr = nvrKeys.map(k => nvrFirst[k]);
+  const nvrRepeatArr = nvrKeys.map(k => nvrTotal[k] - nvrFirst[k]);
+  const nvrTotalFirst = nvrNewArr.reduce((a, b) => a + b, 0);
+  const nvrTotalAll = nvrKeys.reduce((a, k) => a + nvrTotal[k], 0);
+  const nvrSharePct = nvrTotalAll ? Math.round(nvrTotalFirst / nvrTotalAll * 100) : 0;
+  const showNvr = nvrKeys.length >= 2;
+
+  // ── ABV histogram (6.2.4) ──
+  const ABV_BINS = [[0, 4, '<4'], [4, 5, '4–5'], [5, 6, '5–6'], [6, 7, '6–7'], [7, 8, '7–8'], [8, 9, '8–9'], [9, 10, '9–10'], [10, 999, '10+']];
+  const abvHist = ABV_BINS.map(() => 0);
+  abvVals.forEach(v => { const i = ABV_BINS.findIndex(([lo, hi]) => v >= lo && v < hi); if (i >= 0) abvHist[i]++; });
+  const abvMax = Math.max(...abvHist, 1);
+  const avgAbvNum = abvVals.length ? abvVals.reduce((s, v) => s + v, 0) / abvVals.length : null;
+  const avgBinIdx = avgAbvNum === null ? -1 : ABV_BINS.findIndex(([lo, hi]) => avgAbvNum >= lo && avgAbvNum < hi);
+  const showAbv = abvVals.length >= 8;
+
+  // ── Milestones (6.2.2) ──
+  let milestones = computeMilestones();
+  if (analyticsYear !== 'all') milestones = milestones.filter(m => new Date(m.date).getFullYear() === analyticsYear);
+  milestones = milestones.slice(0, 8);
+  const firsts = analyticsYear === 'all' ? recentStyleFirsts(8) : recentStyleFirsts(30).filter(e => new Date(e.created_at).getFullYear() === analyticsYear).slice(0, 8);
+  const showMilestones = milestones.length > 0 || firsts.length > 0;
+
+  // ── Rank lists ──
   const styleCounts = countBy(es, 'beer_type');
-  const topStyles = Object.entries(styleCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  const maxStyle = topStyles[0]?.[1]||1;
-
-  // Breweries
+  const topStyles = Object.entries(styleCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const maxStyle = topStyles[0]?.[1] || 1;
   const brewCounts = countBy(es, 'brewery_name');
-  const topBrews = Object.entries(brewCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxBrew = topBrews[0]?.[1]||1;
-
-  // Venues (excl home)
-  const venueCounts = countBy(es.filter(e=>e.venue_name&&e.venue_name!==HOME_VENUE), 'venue_name');
-  const topVenues = Object.entries(venueCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxVenue = topVenues[0]?.[1]||1;
-
-  // States
-  const stateCounts = countBy(es.filter(e=>e.brewery_state), 'brewery_state');
-  const topStates = Object.entries(stateCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxState = topStates[0]?.[1]||1;
-
-  // Serve
-  const serveCounts = countBy(es.filter(e=>e.serving_type), 'serving_type');
-
-  // Purchase
-  const purchCounts = countBy(es.filter(e=>e.purchase_venue), 'purchase_venue');
-  const topPurch = Object.entries(purchCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxPurch = topPurch[0]?.[1]||1;
-
-  // Most repeated beers
+  const topBrews = Object.entries(brewCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxBrew = topBrews[0]?.[1] || 1;
+  const venueCounts = countBy(es.filter(e => e.venue_name && e.venue_name !== HOME_VENUE), 'venue_name');
+  const topVenues = Object.entries(venueCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxVenue = topVenues[0]?.[1] || 1;
+  const stateCounts = countBy(es.filter(e => e.brewery_state), 'brewery_state');
+  const topStates = Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxState = topStates[0]?.[1] || 1;
+  const serveCounts = countBy(es.filter(e => e.serving_type), 'serving_type');
+  const purchCounts = countBy(es.filter(e => e.purchase_venue), 'purchase_venue');
+  const topPurch = Object.entries(purchCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxPurch = topPurch[0]?.[1] || 1;
   const beerCounts = countBy(es, 'beer_name');
-  const topBeers = Object.entries(beerCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxBeer = topBeers[0]?.[1]||1;
+  const topBeers = Object.entries(beerCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxBeer = topBeers[0]?.[1] || 1;
 
-  // YoY (all time only)
+  // Gradients (kept identical to the previous static lists).
+  const GRAD = {
+    style: 'linear-gradient(90deg,rgba(233,115,36,0.22),rgba(233,115,36,0.06))',
+    venue: 'linear-gradient(90deg,rgba(189,219,143,0.18),rgba(189,219,143,0.05))',
+    brewery: 'linear-gradient(90deg,rgba(233,115,36,0.18),rgba(233,115,36,0.05))',
+    state: 'linear-gradient(90deg,rgba(5,106,56,0.3),rgba(5,106,56,0.08))',
+    beer: 'linear-gradient(90deg,rgba(143,198,64,0.2),rgba(143,198,64,0.05))',
+    purchase: 'linear-gradient(90deg,rgba(233,115,36,0.15),rgba(233,115,36,0.04))',
+  };
+
+  // ── YoY ──
   const byYear = {};
   entries.forEach(e => {
     const y = new Date(e.created_at).getFullYear();
-    if (!byYear[y]) byYear[y] = {total:0, abvs:[], styles:new Set(), breweries:new Set()};
+    if (!byYear[y]) byYear[y] = { total: 0, abvs: [], styles: new Set(), breweries: new Set() };
     byYear[y].total++;
     if (e.beer_abv) byYear[y].abvs.push(parseFloat(e.beer_abv));
     if (e.beer_type) byYear[y].styles.add(e.beer_type);
@@ -1642,21 +2225,53 @@ function renderAnalytics() {
   });
   const yoyYears = Object.keys(byYear).sort();
 
+  // ── Assemble ──
   inner.innerHTML = yearHTML + `
 
   <div class="stat-grid">
-    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div><div class="stat-sub">${breweries} breweries · ${styles} styles</div></div>
-    <div class="stat-card" style="--accent:var(--avocado)"><div class="stat-num">${avgAbv}%</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
-    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${homePct}%</div><div class="stat-label">At Home</div><div class="stat-sub">${es.filter(e=>e.serving_type==='Can').length} cans</div></div>
-    <div class="stat-card" style="--accent:var(--grass)"><div class="stat-num">${es.filter(e=>e.comment).length}</div><div class="stat-label">With Notes</div><div class="stat-sub">${Math.round(es.filter(e=>e.comment).length/es.length*100)}% of check-ins</div></div>
+    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${analyticsCompare ? deltaLine(es.length, prevYrEntries.length) : `<div class="stat-sub">${breweries} breweries · ${styles} styles</div>`}</div>
+    <div class="stat-card" style="--accent:var(--avocado)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
+    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${analyticsCompare ? deltaLine(breweries, prevBreweries) : `<div class="stat-sub">${homePct}% at home</div>`}</div>
+    <div class="stat-card" style="--accent:var(--grass)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
   </div>
+
+  ${showNvr ? `
+  <div class="chart-card fade-up">
+    <div class="chart-title">New vs. Repeat</div>
+    <div class="chart-sub">How much of your logging is fresh ground</div>
+    <div class="seg-toggle">
+      <div class="seg-btn ${nvrField === 'brewery_name' ? 'active' : ''}" onclick="setNvrField('brewery_name')">Breweries</div>
+      <div class="seg-btn ${nvrField === 'beer_type' ? 'active' : ''}" onclick="setNvrField('beer_type')">Styles</div>
+      <div class="seg-btn ${nvrField === 'beer_name' ? 'active' : ''}" onclick="setNvrField('beer_name')">Beers</div>
+    </div>
+    <div class="nvr-headline"><b>${nvrSharePct}%</b> of ${analyticsYear === 'all' ? 'all' : analyticsYear} check-ins were a first-time ${NVR_LABELS[nvrField].replace(/s$/, '')}.</div>
+    <div style="height:150px;position:relative"><canvas id="chartNvr"></canvas></div>
+    <div class="nvr-legend">
+      <span class="nvr-legend-item"><span class="nvr-swatch new"></span>First time</span>
+      <span class="nvr-legend-item"><span class="nvr-swatch repeat"></span>Repeat</span>
+    </div>
+  </div>` : ''}
+
+  ${showMilestones ? `
+  <div class="chart-card fade-up">
+    <div class="chart-title">Firsts & Milestones</div>
+    <div class="chart-sub">The moments worth a screenshot</div>
+    ${milestones.length ? `<div class="ms-list">${milestones.map(m => `
+      <div class="ms-row">
+        <div class="ms-icon">${m.icon}</div>
+        <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
+        <div class="ms-date">${fmtMonthYear(m.date)}</div>
+      </div>`).join('')}</div>` : ''}
+    ${firsts.length ? `<div class="firsts-lead">${analyticsYear === 'all' ? 'Latest new styles' : 'New styles this year'}</div>
+      <div class="firsts-strip">${firsts.map(e => `<span class="first-chip"><b>${esc(e.beer_type)}</b> · ${fmtMonthYear(e.created_at)}</span>`).join('')}</div>` : ''}
+  </div>` : ''}
 
   <div class="chart-card">
     <div class="chart-title">By Day of Week</div>
     <div class="chart-sub">When you're most likely to open one</div>
-    <div class="dow-chart">${dowCounts.map((c,i)=>`
+    <div class="dow-chart">${dowCounts.map((c, i) => `
       <div class="dow-col">
-        <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c/maxDow*100)}%;background:${topDowSet.has(i)?'#e97324':'#5a5450'};opacity:${topDowSet.has(i)?1:0.55}"></div></div>
+        <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c / maxDow * 100)}%;background:${topDowSet.has(i) ? '#e97324' : '#5a5450'};opacity:${topDowSet.has(i) ? 1 : 0.55}"></div></div>
         <div class="dow-lbl">${dowLabels[i]}</div>
         <div class="dow-val">${c}</div>
       </div>`).join('')}
@@ -1665,7 +2280,7 @@ function renderAnalytics() {
 
   <div class="chart-card">
     <div class="chart-title">Monthly Pattern</div>
-    <div class="chart-sub">Seasonal drinking rhythm</div>
+    <div class="chart-sub">${analyticsCompare ? `${analyticsYear} vs ${prevYear}` : 'Seasonal drinking rhythm'}</div>
     <div style="height:140px;position:relative"><canvas id="chartMonth"></canvas></div>
   </div>
 
@@ -1675,16 +2290,26 @@ function renderAnalytics() {
     <div style="height:150px;position:relative"><canvas id="chartTimeline"></canvas></div>
   </div>
 
-  <div class="chart-card">
-    <div class="chart-title">Top Styles</div>
-    <div class="chart-sub">Your most-consumed categories</div>
-    <div class="rank-list">${topStyles.map(([s,c],i)=>`
-      <div class="rank-row">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(c/maxStyle*100)}%;background:linear-gradient(90deg,rgba(233,115,36,0.22),rgba(233,115,36,0.06))">${s}</div></div>
-        <div class="rank-val">${c}</div>
+  ${showAbv ? `
+  <div class="chart-card fade-up">
+    <div class="chart-title">ABV Spread</div>
+    <div class="chart-sub">Whether you settle in one lane or roam</div>
+    <div class="abv-chart">${ABV_BINS.map(([, , lbl], i) => `
+      <div class="abv-col">
+        <div class="abv-val">${abvHist[i] || ''}</div>
+        <div class="abv-bar-wrap"><div class="abv-bar ${i === avgBinIdx ? 'peak' : ''}" style="height:${Math.round(abvHist[i] / abvMax * 100)}%"></div></div>
+        <div class="abv-lbl">${lbl}</div>
       </div>`).join('')}
     </div>
+    <div class="abv-avg">Average <b>${avgAbv}%</b> — the highlighted bar</div>
+  </div>` : ''}
+
+  ${buildBandCard(es)}
+
+  <div class="chart-card">
+    <div class="chart-title">Top Styles</div>
+    <div class="chart-sub">Tap any row to dig in</div>
+    <div class="rank-list">${topStyles.map(([s, c], i) => drillRow(i + 1, s, c, maxStyle, GRAD.style, 'style')).join('')}</div>
   </div>
 
   <div class="chart-card">
@@ -1696,61 +2321,31 @@ function renderAnalytics() {
   <div class="chart-card">
     <div class="chart-title">Top Venues</div>
     <div class="chart-sub">Where you drink out (excl. home)</div>
-    <div class="rank-list">${topVenues.map(([v,c],i)=>`
-      <div class="rank-row">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(c/maxVenue*100)}%;background:linear-gradient(90deg,rgba(189,219,143,0.18),rgba(189,219,143,0.05))">${v}</div></div>
-        <div class="rank-val">${c}</div>
-      </div>`).join('')}
-    </div>
+    <div class="rank-list">${topVenues.map(([v, c], i) => drillRow(i + 1, v, c, maxVenue, GRAD.venue, 'venue')).join('')}</div>
   </div>
 
   <div class="chart-card">
     <div class="chart-title">Top Breweries</div>
-    <div class="chart-sub">Your most-visited producers</div>
-    <div class="rank-list">${topBrews.map(([b,c],i)=>`
-      <div class="rank-row">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(c/maxBrew*100)}%;background:linear-gradient(90deg,rgba(233,115,36,0.18),rgba(233,115,36,0.05))">${b}</div></div>
-        <div class="rank-val">${c}</div>
-      </div>`).join('')}
-    </div>
+    <div class="chart-sub">Tap any row to dig in</div>
+    <div class="rank-list">${topBrews.map(([b, c], i) => drillRow(i + 1, b, c, maxBrew, GRAD.brewery, 'brewery')).join('')}</div>
   </div>
 
   <div class="chart-card">
     <div class="chart-title">Brewery Origin</div>
     <div class="chart-sub">Where your beer comes from</div>
-    <div class="rank-list">${topStates.map(([s,c],i)=>`
-      <div class="rank-row">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(c/maxState*100)}%;background:linear-gradient(90deg,rgba(5,106,56,0.3),rgba(5,106,56,0.08))">${s}</div></div>
-        <div class="rank-val">${c}</div>
-      </div>`).join('')}
-    </div>
+    <div class="rank-list">${topStates.map(([s, c], i) => drillRow(i + 1, s, c, maxState, GRAD.state, 'state')).join('')}</div>
   </div>
 
   <div class="chart-card">
     <div class="chart-title">Go-To Beers</div>
     <div class="chart-sub">Most repeated check-ins</div>
-    <div class="rank-list">${topBeers.map(([b,c],i)=>`
-      <div class="rank-row">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(c/maxBeer*100)}%;background:linear-gradient(90deg,rgba(143,198,64,0.2),rgba(143,198,64,0.05))">${b}</div></div>
-        <div class="rank-val">${c}</div>
-      </div>`).join('')}
-    </div>
+    <div class="rank-list">${topBeers.map(([b, c], i) => drillRow(i + 1, b, c, maxBeer, GRAD.beer, 'beer')).join('')}</div>
   </div>
 
   <div class="chart-card">
     <div class="chart-title">Where You Buy</div>
     <div class="chart-sub">Top purchase venues</div>
-    <div class="rank-list">${topPurch.map(([p,c],i)=>`
-      <div class="rank-row">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(c/maxPurch*100)}%;background:linear-gradient(90deg,rgba(233,115,36,0.15),rgba(233,115,36,0.04))">${p}</div></div>
-        <div class="rank-val">${c}</div>
-      </div>`).join('')}
-    </div>
+    <div class="rank-list">${topPurch.map(([p, c], i) => drillRow(i + 1, p, c, maxPurch, GRAD.purchase, 'purchase')).join('')}</div>
   </div>
 
   ${analyticsYear === 'all' ? `
@@ -1762,7 +2357,7 @@ function renderAnalytics() {
       <thead><tr><th>Year</th><th>Check-ins</th><th>Styles</th><th>Breweries</th><th>Avg ABV</th></tr></thead>
       <tbody>${yoyYears.map(y => {
         const d = byYear[y];
-        const abv = d.abvs.length ? (d.abvs.reduce((a,b)=>a+b,0)/d.abvs.length).toFixed(1)+'%' : '—';
+        const abv = d.abvs.length ? (d.abvs.reduce((a, b) => a + b, 0) / d.abvs.length).toFixed(1) + '%' : '—';
         return `<tr><td style="color:var(--orange);font-weight:700">${y}</td><td>${d.total}</td><td>${d.styles.size}</td><td>${d.breweries.size}</td><td>${abv}</td></tr>`;
       }).join('')}</tbody>
     </table>
@@ -1775,39 +2370,55 @@ function renderAnalytics() {
   </div>` : ''}
   `;
 
-  // Draw charts
+  // ── Draw charts ──
   requestAnimationFrame(() => {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const g = 'rgba(255,255,255,0.04)';
 
     if (document.getElementById('chartMonth')) {
+      const monthDatasets = analyticsCompare
+        ? [
+            { label: String(analyticsYear), data: monthCounts, backgroundColor: 'rgba(233,115,36,0.85)', borderRadius: 3 },
+            { label: String(prevYear), data: prevMonthCounts, backgroundColor: 'rgba(143,198,64,0.5)', borderRadius: 3 },
+          ]
+        : [{ data: monthCounts, backgroundColor: months.map((_, i) => `rgba(233,115,36,${0.25 + monthCounts[i] / Math.max(...monthCounts, 1) * 0.6})`), borderRadius: 3 }];
       analyticsCharts.month = new Chart(document.getElementById('chartMonth'), {
         type: 'bar',
-        data: { labels: months, datasets: [{ data: monthCounts, backgroundColor: months.map((_,i) => `rgba(233,115,36,${0.25+monthCounts[i]/Math.max(...monthCounts)*0.6})`), borderRadius: 3 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid:{display:false}, ticks:{font:{size:10}} }, y: { grid:{color:g}, ticks:{font:{size:10}} } } }
+        data: { labels: months, datasets: monthDatasets },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: analyticsCompare, labels: { font: { size: 10 }, boxWidth: 10 } } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { grid: { color: g }, ticks: { font: { size: 10 } } } } }
       });
     }
     if (document.getElementById('chartTimeline') && tlKeys.length) {
       analyticsCharts.tl = new Chart(document.getElementById('chartTimeline'), {
         type: 'line',
-        data: { labels: tlKeys, datasets: [{ data: tlKeys.map(k=>timelineMap[k]), borderColor:'#e97324', backgroundColor:'rgba(233,115,36,0.07)', fill:true, tension:0.4, pointRadius:1.5 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid:{display:false}, ticks:{maxTicksLimit:10, font:{size:10}} }, y: { grid:{color:g}, ticks:{font:{size:10}} } } }
+        data: { labels: tlKeys, datasets: [{ data: tlKeys.map(k => timelineMap[k]), borderColor: '#e97324', backgroundColor: 'rgba(233,115,36,0.07)', fill: true, tension: 0.4, pointRadius: 1.5 }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 10 } } }, y: { grid: { color: g }, ticks: { font: { size: 10 } } } } }
+      });
+    }
+    if (document.getElementById('chartNvr')) {
+      analyticsCharts.nvr = new Chart(document.getElementById('chartNvr'), {
+        type: 'bar',
+        data: { labels: nvrKeys, datasets: [
+          { label: 'First time', data: nvrNewArr, backgroundColor: '#e97324', borderRadius: 2 },
+          { label: 'Repeat', data: nvrRepeatArr, backgroundColor: '#5a5450', borderRadius: 2 },
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 9 } } }, y: { stacked: true, grid: { color: g }, ticks: { font: { size: 10 } } } } }
       });
     }
     if (document.getElementById('chartServe')) {
       const sl = Object.keys(serveCounts);
-      const clrs = ['#e97324','#bddb8f','#8fc640','#056a38','#c45e18','#f5b84d','#a0c050','#7aa830'];
+      const clrs = ['#e97324', '#bddb8f', '#8fc640', '#056a38', '#c45e18', '#f5b84d', '#a0c050', '#7aa830'];
       analyticsCharts.serve = new Chart(document.getElementById('chartServe'), {
         type: 'doughnut',
-        data: { labels: sl, datasets: [{ data: sl.map(l=>serveCounts[l]), backgroundColor: clrs, borderWidth:0, hoverOffset:5 }] },
-        options: { responsive: true, maintainAspectRatio: false, cutout:'60%', plugins: { legend: { display:true, position:'right', labels:{ font:{size:11}, padding:10, boxWidth:10 } } } }
+        data: { labels: sl, datasets: [{ data: sl.map(l => serveCounts[l]), backgroundColor: clrs, borderWidth: 0, hoverOffset: 5 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: true, position: 'right', labels: { font: { size: 11 }, padding: 10, boxWidth: 10 } } } }
       });
     }
     if (document.getElementById('chartYoY')) {
       analyticsCharts.yoy = new Chart(document.getElementById('chartYoY'), {
         type: 'bar',
-        data: { labels: yoyYears, datasets: [{ data: yoyYears.map(y=>byYear[y].total), backgroundColor:'rgba(233,115,36,0.7)', borderRadius:5 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { x:{grid:{display:false}}, y:{grid:{color:g}} } }
+        data: { labels: yoyYears, datasets: [{ data: yoyYears.map(y => byYear[y].total), backgroundColor: 'rgba(233,115,36,0.7)', borderRadius: 5 }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: g } } } }
       });
     }
   });
@@ -1815,6 +2426,7 @@ function renderAnalytics() {
 
 function setAnalyticsYear(year, btn) {
   analyticsYear = year;
+  analyticsCompare = false;
   document.querySelectorAll('.yr-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderAnalytics();
@@ -1844,15 +2456,18 @@ const HOPPRINT_DIM_LABELS = { bitterness:'Bitter', sweetness:'Sweet', roast:'Roa
 //     midpoint (affinity 3 / "Maybe"), up to 1.4 for loved styles, down to
 //     0.6 for disliked ones. Never zero: a style you drink but don't love is
 //     still part of your print, just pulled in less.
-//   Styles with no matrix vector (e.g. Cider, Root Beer) contribute nothing.
+//   Styles with no matrix vector contribute nothing (the 153-style matrix
+//   covers everything in Hopprint's own style list, including edge cases
+//   like Root Beer and Cider — a miss here means an imported/typo'd style
+//   string that doesn't resolve via resolveMatrixStyle either).
 // Returns the vector plus the diagnostics the gate and snapshots need.
 // Designed for reuse: §8 snapshots call this with a time-bounded list.
 function computeHopprint(entriesList) {
   const now = Date.now();
   const byStyle = {};
   entriesList.forEach(e => {
-    const style = e.beer_type;
-    if (!style || !STYLE_MATRIX[style]) return;
+    const style = resolveMatrixStyle(e.beer_type);
+    if (!style) return;
     if (!byStyle[style]) byStyle[style] = { count: 0, sumW: 0, sumWR: 0 };
     byStyle[style].count += 1;
     if (e.rating !== null && e.rating !== undefined) {
@@ -1886,7 +2501,7 @@ function computeHopprint(entriesList) {
   });
 
   const vector = HOPPRINT_DIMS.map(dim => weightSum > 0 ? sums[dim] / weightSum : 0);
-  return { vector, weightSum, matchedStyles, count: entriesList.filter(e => e.beer_type && STYLE_MATRIX[e.beer_type]).length };
+  return { vector, weightSum, matchedStyles, count: entriesList.filter(e => resolveMatrixStyle(e.beer_type)).length };
 }
 
 // Hand-rolled SVG radar. Two overlaid shapes: all-time (solid orange, filled)
@@ -2122,11 +2737,13 @@ function generateRecs() {
   const mode = discoverMode || 'wheelhouse';
   let cards = [];
   let starved = false;
+  let usedFallback = false;
 
   if (mode === 'random') {
     // Random stays beer-specific (paired with its style) and allows repeats —
     // "surprise me with anything" doesn't carry the same unobtainability risk
-    // as a targeted pick, so it keeps sampling straight from BEER_DB.
+    // as a targeted pick, so it keeps sampling straight from BEER_DB. Still
+    // pulls a small batch — just held as a queue, one shown at a time.
     const suppressionList = loadSuppression();
     const windowDays = SUPPRESSION_WINDOWS.random;
     const allBeers = Object.entries(BEER_DB);
@@ -2136,64 +2753,94 @@ function generateRecs() {
       .map(([name, b]) => ({ name, brewery: b.b || '', style: b.s || '', abv: b.a || '', result: { source: 'direct' } }));
   } else {
     // Wheelhouse / Adjacent / Wildcard now recommend a style, not a specific
-    // beer — see buildAffinityRecs for why.
+    // beer — see buildAffinityRecs for why. Still ranks a small batch — just
+    // held as a queue, one shown at a time.
     const built = buildAffinityRecs(mode, entries);
     cards = built.cards;
     starved = built.starved;
+    usedFallback = built.usedFallback;
   }
 
   if (!cards.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    discoverQueue = [];
     return;
   }
 
-  el.innerHTML = cards.map((c, i) => {
-    let badgeHtml = '';
-    let nameClass = '';
-    if (mode === 'random') {
-      badgeHtml = `<span class="rec-badge badge-random">Random</span>`;
-    } else if (mode === 'wheelhouse') {
-      badgeHtml = `<span class="rec-badge badge-wheelhouse">In Your Wheelhouse</span>`;
-    } else if (mode === 'adjacent') {
-      badgeHtml = `<span class="rec-badge badge-adjacent">Slightly Outside</span>`;
-    } else if (mode === 'wildcard') {
-      const conf = wildcardConfidence(c.result);
-      if (conf === 'confident') {
-        badgeHtml = `<span class="rec-badge badge-wildcard-confident">Wildcard</span>`;
-      } else {
-        badgeHtml = `<span class="rec-badge badge-wildcard-hedged">Wildcard</span>`;
-        nameClass = 'muted';
-      }
-    }
-    const why = rationaleFor(c, mode);
-    // Random is still beer-specific (name + brewery/ABV, style as a tag).
-    // Wheelhouse/Adjacent/Wildcard recommend a style, so the style name is
-    // the headline and there's no brewery/ABV/tag line to show.
-    const headline = mode === 'random' ? c.name : c.style;
-    const subhead = mode === 'random' ? `${c.brewery || ''}${c.abv ? ` · ${c.abv}% ABV` : ''}` : '';
-    const styleTag = mode === 'random' && c.style ? `<div class="rec-tags"><span class="etag style">${c.style}</span></div>` : '';
-    return `<div class="rec-card fade-up" style="animation-delay:${i*0.06}s">
-      <div class="rec-top">
-        <div>
-          ${badgeHtml}
-          <div class="rec-name ${nameClass}">${headline}</div>
-          ${subhead ? `<div class="rec-brewery">${subhead}</div>` : ''}
-        </div>
-        <div class="rec-actions">
-          <div class="rec-dismiss" onclick="dismissRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}', this)">✕</div>
-        </div>
-      </div>
-      ${styleTag}
-      ${why ? `<div class="rec-why">${why}</div>` : ''}
-    </div>`;
-  }).join('');
+  discoverQueue = cards;
+  discoverQueueMode = mode;
+  discoverStarved = starved;
+  discoverUsedFallback = usedFallback;
+  renderNextRec();
+}
 
-  recordShown(cards.map(c => c.style).filter(Boolean), mode);
+// Renders exactly one pick from discoverQueue — the single-card format this
+// was built for. Dismissing pulls the next queued pick instead of vanishing
+// to blank; running out points back at "Find My Next Beer" rather than
+// silently re-querying, since a fresh tap is the honest place to re-ask
+// affinity/suppression for a new batch.
+function renderNextRec() {
+  const el = document.getElementById('recResults');
+  const mode = discoverQueueMode;
 
-  if (starved) {
-    const modeName = (DISC_MODES.find(m => m.id === mode) || {}).name || mode;
-    el.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">Only ${cards.length} pick${cards.length===1?'':'s'} today — your ${modeName} history is still pretty focused. More will show up as you explore.</div>`);
+  if (!discoverQueue.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
+    return;
   }
+
+  const c = discoverQueue.shift();
+  let badgeHtml = '';
+  let nameClass = '';
+  if (mode === 'random') {
+    badgeHtml = `<span class="rec-badge badge-random">Random</span>`;
+  } else if (mode === 'wheelhouse') {
+    badgeHtml = `<span class="rec-badge badge-wheelhouse">In Your Wheelhouse</span>`;
+  } else if (mode === 'adjacent') {
+    badgeHtml = `<span class="rec-badge badge-adjacent">Slightly Outside</span>`;
+  } else if (mode === 'wildcard') {
+    const conf = wildcardConfidence(c.result);
+    if (conf === 'confident') {
+      badgeHtml = `<span class="rec-badge badge-wildcard-confident">Wildcard</span>`;
+    } else {
+      badgeHtml = `<span class="rec-badge badge-wildcard-hedged">Wildcard</span>`;
+      nameClass = 'muted';
+    }
+  }
+  const why = rationaleFor(c, mode);
+  // Random is still beer-specific (name + brewery/ABV, style as a tag).
+  // Wheelhouse/Adjacent/Wildcard recommend a style, so the style name is
+  // the headline and there's no brewery/ABV/tag line to show.
+  const headline = mode === 'random' ? c.name : c.style;
+  const subhead = mode === 'random' ? `${c.brewery || ''}${c.abv ? ` · ${c.abv}% ABV` : ''}` : '';
+  const styleTag = mode === 'random' && c.style ? `<div class="rec-tags"><span class="etag style">${c.style}</span></div>` : '';
+
+  el.innerHTML = `<div class="rec-card fade-up">
+    <div class="rec-top">
+      <div>
+        ${badgeHtml}
+        <div class="rec-name ${nameClass}">${headline}</div>
+        ${subhead ? `<div class="rec-brewery">${subhead}</div>` : ''}
+      </div>
+    </div>
+    ${styleTag}
+    ${why ? `<div class="rec-why">${why}</div>` : ''}
+    <div class="rec-footer">
+      <div class="rec-footer-btn" onclick="showAnotherRec()">🔄 Show Another</div>
+      <div class="rec-footer-btn negative" onclick="notInterestedRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}')">✕ Not Interested</div>
+    </div>
+  </div>`;
+
+  recordShown([c.style].filter(Boolean), mode);
+
+  let notes = '';
+  if (discoverUsedFallback) {
+    notes += `<div class="rec-starve-note">No rated check-ins yet, so this is ranked by what you log most, not what you'd like most. Rate a few and this sharpens.</div>`;
+  }
+  if (discoverStarved && !discoverQueue.length) {
+    const modeName = (DISC_MODES.find(m => m.id === mode) || {}).name || mode;
+    notes += `<div class="rec-starve-note">Your ${modeName} history is still pretty focused — more variety will show up as you explore.</div>`;
+  }
+  if (notes) el.insertAdjacentHTML('beforeend', notes);
 }
 
 function addWishlistItem() {
@@ -2301,6 +2948,25 @@ function handleImport(event) {
       save();
       updateHeaderMeta();
       showToast(`✅ Imported ${newOnes.length} entries`);
+
+      // Diagnostic, not decoration: style-match and rating coverage directly
+      // determine whether Discover's wheelhouse/adjacent/wildcard modes will
+      // have anything to work with (see buildAffinityRecs / resolveMatrixStyle).
+      // Only surface this when it reveals something actionable — a clean
+      // import shouldn't nag the user with a status report.
+      const diagEl = document.getElementById('importDiagnostic');
+      if (diagEl && newOnes.length) {
+        const matched = newOnes.filter(e => resolveMatrixStyle(e.beer_type)).length;
+        const rated = newOnes.filter(e => e.rating !== null).length;
+        const matchPct = Math.round(matched / newOnes.length * 100);
+        if (matchPct < 90) {
+          diagEl.innerHTML = `<div class="rec-starve-note">${matched} of ${newOnes.length} imported check-ins matched a known style (${matchPct}%) — the rest won't count toward Discover or your hopprint. This usually means a style name in the CSV doesn't line up with Hopprint's style list.</div>`;
+        } else if (rated === 0 && matched > 0) {
+          diagEl.innerHTML = `<div class="rec-starve-note">None of these ${newOnes.length} check-ins have a star rating in the CSV, so Discover will rank by how often you log a style rather than how much you like it until you rate a few.</div>`;
+        } else {
+          diagEl.innerHTML = '';
+        }
+      }
     } catch(err) { showToast('❌ Import failed'); }
   };
   reader.readAsText(file);
@@ -2375,6 +3041,7 @@ document.getElementById('screen-discover').insertAdjacentHTML('beforeend', `
     <button class="btn-action" onclick="exportJSON()">📦 Export JSON</button>
     <button class="btn-action" onclick="importUntappd()">📥 Import from Untappd CSV</button>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImport(event)">
+    <div id="importDiagnostic"></div>
   </div>
 `);
 
