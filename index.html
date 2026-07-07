@@ -2546,6 +2546,275 @@ function buildHopprintSVG(allTime, trailing) {
   </svg>`;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CONDITIONAL COPY ENGINE (Phase D)
+// ═══════════════════════════════════════════════════════════════
+// One engine, two eventual consumers. Phase D wires up the Profile hero;
+// Phase D+ will register an analytics zone set against the SAME selectCopy()
+// with zero engine changes — that reuse is the whole point of the abstraction.
+//
+// Each candidate is { id, zone, priority, condition, render }:
+//   condition(ctx) → bool : the data predicate. A candidate only competes if
+//     it returns true. This is where the locked "every sentence earns its
+//     place" principle lives — nothing renders because a field merely exists.
+//   priority : higher wins its zone. Ties break by registry order, so the
+//     output is fully deterministic: same data always yields the same copy
+//     (an identity should feel stable, not shuffle on every render).
+//   render(ctx) → html : a complete friend-voice sentence, no trailing period
+//     (the assembler adds punctuation). All entity names pass through esc().
+//     Band language only — a raw 0–100 rating score must never appear (D1).
+//
+// selectCopy() is consumer-agnostic: it takes the candidate list, a context
+// object, the zone order, and options (required zones, earned-zone cap).
+function selectCopy(candidates, ctx, zoneOrder, opts = {}) {
+  const { requiredZones = [], maxEarned = Infinity } = opts;
+  // Bucket qualifying candidates by zone, remembering registry index for
+  // the deterministic tiebreak.
+  const byZone = {};
+  candidates.forEach((c, idx) => {
+    let ok = false;
+    try { ok = !!c.condition(ctx); } catch (e) { ok = false; }
+    if (!ok) return;
+    (byZone[c.zone] || (byZone[c.zone] = [])).push({ c, idx });
+  });
+  // One winner per zone: highest priority, registry order breaks ties.
+  const winners = {};
+  Object.keys(byZone).forEach(zone => {
+    byZone[zone].sort((a, b) => (b.c.priority - a.c.priority) || (a.idx - b.idx));
+    winners[zone] = byZone[zone][0].c;
+  });
+  // Assemble in fixed zone order. Required zones always render; earned zones
+  // fill up to the cap, so the hero can't sprawl past its visual footprint.
+  const out = [];
+  let earned = 0;
+  for (const zone of zoneOrder) {
+    const w = winners[zone];
+    if (!w) continue;
+    const required = requiredZones.includes(zone);
+    if (!required) {
+      if (earned >= maxEarned) continue;
+      earned++;
+    }
+    let html = '';
+    try { html = w.render(ctx); } catch (e) { html = ''; }
+    if (html) out.push({ zone, id: w.id, html });
+  }
+  return out;
+}
+
+// ── Profile consumer ───────────────────────────────────────────
+// Zone order is fixed. `anchor` is the required identity line (its own hero
+// element); the rest are earned and feed the description paragraph, capped at
+// PROFILE_MAX_EARNED so 1–4 sentences total is the ceiling.
+const PROFILE_ZONE_ORDER = ['anchor', 'abv', 'loyalty', 'ritual', 'depth'];
+const PROFILE_EARNED_ZONES = ['abv', 'loyalty', 'ritual', 'depth'];
+const PROFILE_MAX_EARNED = 3;
+
+// Build the context the copy candidates read. This is the single source of
+// truth for the hero's derived metrics — renderProfile() consumes the same
+// object for its trend rows so the two can never drift.
+//
+// Basis: identity/volume claims use the 2024+ era when it's substantial
+// (matching the pre-Phase-D behavior), else full history. TREND-flavored
+// claims (anything asserting a *current* trajectory) instead read `trendEntries`
+// — live/native check-ins only, imports excluded — because an Untappd bulk
+// import is real history but not evidence of what you're reaching for lately.
+function computeProfileContext(allEntries) {
+  const es24 = allEntries.filter(e => new Date(e.created_at).getFullYear() >= 2024);
+  const useEntries = es24.length >= 10 ? es24 : allEntries;
+
+  // Trend basis: exclude imported check-ins (rating_mode/source === 'import').
+  const isImport = e => e.source === 'import' || e.rating_mode === 'import';
+  const trendEntries = useEntries.filter(e => !isImport(e));
+
+  const total = useEntries.length;
+
+  // Style identity
+  const styleCounts = countBy(useEntries, 'beer_type');
+  const topStyle = Object.entries(styleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  const styleParent = topStyle.split(' - ')[0];
+
+  // Region identity
+  const stateCounts = countBy(useEntries.filter(e => e.brewery_state), 'brewery_state');
+  const topStateEntry = Object.entries(stateCounts).sort((a, b) => b[1] - a[1])[0] || null;
+  const topState = topStateEntry ? topStateEntry[0] : '';
+  const statedTotal = Object.values(stateCounts).reduce((a, b) => a + b, 0);
+  const topStatePct = statedTotal ? Math.round((topStateEntry ? topStateEntry[1] : 0) / statedTotal * 100) : 0;
+  // LOCALIZATION DEBT (Stage 3): New-England-only region map, same as the
+  // display path. Falls through to the raw code elsewhere. Resolve properly
+  // (full state/region lookup, hemisphere-aware) before multi-user launch.
+  const regionMap = { MA: 'Massachusetts', RI: 'Rhode Island', ME: 'Maine', NH: 'New Hampshire', VT: 'Vermont', CT: 'Connecticut' };
+  const regionName = regionMap[topState] || topState;
+
+  // Loyalty / range
+  const brewCounts = countBy(useEntries, 'brewery_name');
+  const topBrewEntry = Object.entries(brewCounts).sort((a, b) => b[1] - a[1])[0] || null;
+  const topBrew = topBrewEntry ? topBrewEntry[0] : '';
+  const topBrewPct = topBrewEntry ? Math.round(topBrewEntry[1] / total * 100) : 0;
+  const uniqueBreweries = new Set(useEntries.map(e => e.brewery_name).filter(Boolean)).size;
+
+  // Serving skew (earned: needs a real lean, not a 1-check-in edge)
+  const canCount = useEntries.filter(e => e.serving_type === 'Can').length;
+  const draftCount = useEntries.filter(e => e.serving_type === 'Draft').length;
+  const servingTotal = canCount + draftCount;
+  const servingLean = servingTotal >= 15
+    ? (Math.max(canCount, draftCount) / servingTotal >= 0.6
+        ? (canCount >= draftCount ? 'can' : 'draft') : null)
+    : null;
+
+  // ABV character
+  const abvNums = useEntries.filter(e => e.beer_abv).map(e => parseFloat(e.beer_abv)).filter(n => !isNaN(n));
+  const avgAbv = abvNums.length ? abvNums.reduce((a, b) => a + b, 0) / abvNums.length : 0;
+  const abvCount = abvNums.length;
+
+  // ABV trajectory — TREND claim, so it reads trendEntries only.
+  const tSorted = [...trendEntries].filter(e => e.beer_abv)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  let abvDirection = null; // 'stronger' | 'lighter' | null
+  if (tSorted.length >= 12) {
+    const half = Math.floor(tSorted.length / 2);
+    const fh = tSorted.slice(0, half).map(e => parseFloat(e.beer_abv));
+    const sh = tSorted.slice(half).map(e => parseFloat(e.beer_abv));
+    const af = fh.reduce((a, b) => a + b, 0) / fh.length;
+    const as = sh.reduce((a, b) => a + b, 0) / sh.length;
+    if (as > af + 0.3) abvDirection = 'stronger';
+    else if (as < af - 0.3) abvDirection = 'lighter';
+  }
+
+  // Ritual: home skew, peak day/season
+  const homePct = total ? Math.round(useEntries.filter(isHomeEntry).length / total * 100) : 0;
+  const dowCounts = Array(7).fill(0);
+  useEntries.forEach(e => { const d = new Date(e.created_at).getDay(); dowCounts[(d + 6) % 7]++; });
+  const dowNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const peakDow = dowNames[dowCounts.indexOf(Math.max(...dowCounts))];
+  // LOCALIZATION DEBT (Stage 3): northern-hemisphere season buckets.
+  const seasonCounts = { Spring: 0, Summer: 0, Fall: 0, Winter: 0 };
+  useEntries.forEach(e => {
+    const m = new Date(e.created_at).getMonth();
+    if ([2, 3, 4].includes(m)) seasonCounts.Spring++;
+    else if ([5, 6, 7].includes(m)) seasonCounts.Summer++;
+    else if ([8, 9, 10].includes(m)) seasonCounts.Fall++;
+    else seasonCounts.Winter++;
+  });
+  const peakSeason = Object.entries(seasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Summer';
+
+  // 90-day explore rate (live signal; null when no recent check-ins)
+  const EXPLORE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+  const exploreNow = Date.now();
+  const seenBrew = new Set(), seenStyle = new Set();
+  let recentTotal = 0, recentFirstTime = 0;
+  [...allEntries].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach(e => {
+    const t = new Date(e.created_at).getTime();
+    const isRecent = !isNaN(t) && (exploreNow - t) <= EXPLORE_WINDOW_MS && t <= exploreNow + 86400000;
+    const firstBrew = e.brewery_name && !seenBrew.has(e.brewery_name);
+    const firstStyle = e.beer_type && !seenStyle.has(e.beer_type);
+    if (isRecent) { recentTotal++; if (firstBrew || firstStyle) recentFirstTime++; }
+    if (e.brewery_name) seenBrew.add(e.brewery_name);
+    if (e.beer_type) seenStyle.add(e.beer_type);
+  });
+  const explorationScore = recentTotal ? Math.round(recentFirstTime / recentTotal * 100) : null;
+
+  // Hidden depth: band signals. Reuses the Analytics band model as-is; band
+  // language only, never the underlying scores. `ratedTotal` gates the zone.
+  const bands = computeBandAnalytics(useEntries);
+  const ratedTotal = useEntries.filter(e => bandOf(e.rating)).length;
+  const mostLogged = bands.mostLogged ? bands.mostLogged[0] : '';
+  const wheelhouse = bands.wheelhouse ? bands.wheelhouse[0] : '';
+  const lovedBeer = bands.loved.length ? bands.loved[0][0] : '';
+  const unfinishedStyle = bands.unfinished.length ? bands.unfinished[0][0] : '';
+
+  return {
+    total, styleParent, topState, regionName, topStatePct,
+    topBrew, topBrewPct, uniqueBreweries,
+    servingLean, avgAbv, abvCount, abvDirection,
+    homePct, peakDow, peakSeason, explorationScore,
+    ratedTotal, mostLogged, wheelhouse, lovedBeer, unfinishedStyle,
+  };
+}
+
+// Profile copy candidates. Ordered within each zone highest-priority first so
+// registry order and priority agree (keeps the deterministic tiebreak obvious).
+// Thresholds are principled breakpoints, not tuned to any one user's import.
+const PROFILE_COPY = [
+  // ── anchor (required identity line) ──────────────────────────
+  { id: 'anchor_region_loyal', zone: 'anchor', priority: 40,
+    condition: c => c.regionName && c.styleParent && c.topStatePct >= 45,
+    render: c => `${esc(c.regionName)} loyalist with a ${esc(c.styleParent.toLowerCase())} lean` },
+  { id: 'anchor_region_lean', zone: 'anchor', priority: 30,
+    condition: c => c.regionName && c.styleParent,
+    render: c => `${esc(c.styleParent)} drinker with a ${esc(c.regionName)} streak` },
+  { id: 'anchor_style_only', zone: 'anchor', priority: 20,
+    condition: c => !!c.styleParent,
+    render: c => `${esc(c.styleParent)} enthusiast` },
+  { id: 'anchor_fallback', zone: 'anchor', priority: 0,
+    condition: () => true,
+    render: () => `An eclectic drinker — no single style owns you yet` },
+
+  // ── abv character ────────────────────────────────────────────
+  { id: 'abv_high', zone: 'abv', priority: 20,
+    condition: c => c.abvCount >= 10 && c.avgAbv >= 8,
+    render: () => `you lean into big, high-gravity pours` },
+  { id: 'abv_hopforward', zone: 'abv', priority: 15,
+    condition: c => c.abvCount >= 10 && c.avgAbv >= 6.5 && c.avgAbv < 8,
+    render: () => `your pours run to the stronger, hop-forward end` },
+  { id: 'abv_session', zone: 'abv', priority: 15,
+    condition: c => c.abvCount >= 10 && c.avgAbv > 0 && c.avgAbv < 5,
+    render: () => `you're a session drinker at heart — lower-ABV and easy-going` },
+  { id: 'abv_moderate', zone: 'abv', priority: 10,
+    condition: c => c.abvCount >= 10 && c.avgAbv >= 5 && c.avgAbv < 6.5,
+    render: () => `you keep to a moderate, middle-of-the-road strength` },
+
+  // ── loyalty vs. range ────────────────────────────────────────
+  { id: 'loyalty_homebase', zone: 'loyalty', priority: 25,
+    condition: c => c.topBrew && c.topBrewPct >= 25,
+    render: c => `${esc(c.topBrew)} is clearly home base at ${c.topBrewPct}% of your check-ins` },
+  { id: 'loyalty_explorer', zone: 'loyalty', priority: 20,
+    condition: c => c.explorationScore !== null && c.explorationScore >= 45 && c.uniqueBreweries >= 20,
+    render: () => `lately you're an explorer — most recent nights bring a new brewery or style` },
+  { id: 'loyalty_broad', zone: 'loyalty', priority: 15,
+    condition: c => c.uniqueBreweries >= 30 && c.topBrewPct < 20,
+    render: c => `you spread wide, ${c.uniqueBreweries} breweries deep and counting` },
+
+  // ── time ritual ──────────────────────────────────────────────
+  { id: 'ritual_home', zone: 'ritual', priority: 20,
+    condition: c => c.total >= 20 && c.homePct >= 60,
+    render: () => `most of your beers happen at home` },
+  { id: 'ritual_out', zone: 'ritual', priority: 18,
+    condition: c => c.total >= 20 && c.homePct <= 25,
+    render: () => `you do your drinking out, taprooms over the couch` },
+  { id: 'ritual_when', zone: 'ritual', priority: 12,
+    condition: c => c.total >= 20,
+    render: c => `${esc(c.peakSeason)} is your peak season, and ${esc(c.peakDow)} your most likely night` },
+
+  // ── hidden depth (band signals) ──────────────────────────────
+  { id: 'depth_divergence', zone: 'depth', priority: 25,
+    condition: c => c.ratedTotal >= 8 && c.mostLogged && c.wheelhouse && c.mostLogged !== c.wheelhouse,
+    render: c => `you reach for ${esc(c.mostLogged)} most, but it's ${esc(c.wheelhouse)} you say Definitely to` },
+  { id: 'depth_loved', zone: 'depth', priority: 20,
+    condition: c => c.ratedTotal >= 8 && !!c.lovedBeer,
+    render: c => `there's one you've never once turned down: ${esc(c.lovedBeer)}` },
+  { id: 'depth_unfinished', zone: 'depth', priority: 12,
+    condition: c => c.ratedTotal >= 8 && !!c.unfinishedStyle,
+    render: c => `you're still making up your mind on ${esc(c.unfinishedStyle)}` },
+];
+
+// Render the hero identity line + description paragraph from the engine.
+// Returns { identity, desc } — identity is the anchor sentence, desc is the
+// earned zones joined into sentences (empty string if nothing earned).
+function buildProfileHeroCopy(ctx) {
+  const picked = selectCopy(PROFILE_COPY, ctx, PROFILE_ZONE_ORDER, {
+    requiredZones: ['anchor'],
+    maxEarned: PROFILE_MAX_EARNED,
+  });
+  const anchor = picked.find(p => p.zone === 'anchor');
+  const earned = picked.filter(p => p.zone !== 'anchor');
+  const identity = anchor ? anchor.html : `An eclectic drinker — no single style owns you yet`;
+  const desc = earned.length
+    ? earned.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.'
+    : '';
+  return { identity, desc };
+}
+
 function renderProfile() {
   const inner = document.getElementById('profileInner');
   if (entries.length < 10) {
@@ -2556,7 +2825,9 @@ function renderProfile() {
   const es24 = entries.filter(e => new Date(e.created_at).getFullYear() >= 2024);
   const useEntries = es24.length >= 10 ? es24 : entries;
 
-  // Compute identity
+  // Trend-row display values. The hero's identity/description are handled by
+  // the copy engine below; these locals feed only the "Taste Trends" rows and
+  // the dominant-style/top-region readouts, so we keep just those.
   const styleCounts = countBy(useEntries, 'beer_type');
   const topStyle = Object.entries(styleCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
   const styleParent = topStyle.split(' - ')[0];
@@ -2564,26 +2835,17 @@ function renderProfile() {
   const stateCounts = countBy(useEntries.filter(e=>e.brewery_state), 'brewery_state');
   const topState = Object.entries(stateCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
 
-  const can = useEntries.filter(e=>e.serving_type==='Can').length;
-  const draft = useEntries.filter(e=>e.serving_type==='Draft').length;
-  const serving = can > draft ? 'can person' : 'draft person';
-
   const brewCounts = countBy(useEntries, 'brewery_name');
   const topBrew = Object.entries(brewCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
-  const topBrewPct = topBrew ? Math.round(brewCounts[topBrew]/useEntries.length*100) : 0;
 
-  const abvNums = useEntries.filter(e=>e.beer_abv).map(e=>parseFloat(e.beer_abv));
-  const avgAbv = abvNums.length ? abvNums.reduce((a,b)=>a+b,0)/abvNums.length : 0;
-  const abvLabel = avgAbv < 5 ? 'session-minded' : avgAbv < 6.5 ? 'moderate-strength' : avgAbv < 8 ? 'hop-forward strength' : 'high-gravity';
-
-  // Generate identity string
-  // LOCALIZATION DEBT (Stage 3): regionMap only covers New England states.
-  // Any other state (or non-US region) falls through to the raw code, which is
-  // fine today but must be replaced with a full state/region lookup before
-  // multi-user launch. Do not expand ad hoc — resolve properly in Stage 3.
-  const regionMap = {'MA':'Massachusetts','RI':'Rhode Island','ME':'Maine','NH':'New Hampshire','VT':'Vermont','CT':'Connecticut'};
-  const regionName = regionMap[topState] || topState;
-  const identity = regionName ? `${regionName} loyalist with a ${styleParent.toLowerCase()} lean` : `${styleParent} enthusiast`;
+  // Identity + description now come from the Phase D conditional-copy engine.
+  // computeProfileContext() is the single source of truth for the hero's
+  // derived metrics; buildProfileHeroCopy() picks earned sentences per zone.
+  // regionName is still needed below for the "Top region" trend row, so it's
+  // read off the shared context rather than recomputed (no drift).
+  const heroCtx = computeProfileContext(entries);
+  const { identity, desc: heroDesc } = buildProfileHeroCopy(heroCtx);
+  const regionName = heroCtx.regionName;
 
   const uniqueBreweries = new Set(useEntries.map(e=>e.brewery_name).filter(Boolean)).size;
 
@@ -2629,20 +2891,6 @@ function renderProfile() {
   const curYrEs = entries.filter(e => new Date(e.created_at).getFullYear() === curYear);
   const prevYrEs = entries.filter(e => new Date(e.created_at).getFullYear() === curYear - 1);
 
-  // Season analysis
-  // LOCALIZATION DEBT (Stage 3): month buckets assume northern-hemisphere
-  // seasons. Southern-hemisphere users would see inverted labels. Fine for a
-  // single-user app; needs a hemisphere-aware mapping before public launch.
-  const seasonCounts = {Spring:0, Summer:0, Fall:0, Winter:0};
-  useEntries.forEach(e => {
-    const m = new Date(e.created_at).getMonth();
-    if ([2,3,4].includes(m)) seasonCounts.Spring++;
-    else if ([5,6,7].includes(m)) seasonCounts.Summer++;
-    else if ([8,9,10].includes(m)) seasonCounts.Fall++;
-    else seasonCounts.Winter++;
-  });
-  const peakSeason = Object.entries(seasonCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'Summer';
-
   // Hopprint radar — computed from FULL history (true all-time), not the 2024+
   // identity heuristic, with a trailing-12-month overlay to make taste
   // evolution visible. Guard future-dated entries out of the trailing window.
@@ -2676,7 +2924,7 @@ function renderProfile() {
     <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin-bottom:6px;">YOUR HOPPRINT</div>
     ${hopprintSVG ? `<div class="hopprint-radar">${hopprintSVG}</div><div class="hopprint-legend">${hopprintNote}</div>` : (hopprintNote ? `<div class="hopprint-legend" style="margin-bottom:10px">${hopprintNote}</div>` : '')}
     <div class="profile-identity">"${identity}"</div>
-    <div class="profile-desc">You're a ${abvLabel} ${serving} with a loyalty streak — ${topBrewPct}% of your check-ins come from a single brewery. ${peakSeason} is your peak season, and ${peakDow} is your most likely drinking night.</div>
+    ${heroDesc ? `<div class="profile-desc">${heroDesc}</div>` : ''}
   </div>
 
   <div class="profile-stats">
