@@ -392,6 +392,56 @@ body {
 .welcome-tab-copy strong { display: block; font-size: 14px; color: var(--text); }
 .welcome-tab-copy span { font-size: 12px; color: var(--text-dim); font-weight: 300; }
 
+/* ── HEADER DATE-LOOKUP LAUNCHER ────────────────────────────── */
+.header-tool {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-body); font-size: 13px; font-weight: 600;
+  letter-spacing: 0.4px; color: var(--text-muted);
+  background: var(--charcoal3); border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: 20px; cursor: pointer;
+  transition: all 0.15s;
+}
+.header-tool:hover { border-color: var(--border-orange); color: var(--orange); }
+.header-tool .header-tool-icon { font-size: 14px; line-height: 1; }
+
+/* ── DATE LOOKUP MODAL ──────────────────────────────────────── */
+.dl-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.dl-mode-btn {
+  padding: 11px 6px; text-align: center; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--charcoal3); color: var(--text-muted);
+  font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
+  cursor: pointer; transition: all 0.15s;
+}
+.dl-mode-btn:hover { border-color: var(--border-orange); color: var(--text); }
+.dl-mode-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
+.dl-hint { font-size: 12px; color: var(--text-dim); font-weight: 300; margin: 2px 0 12px; line-height: 1.4; }
+.dl-result { margin-top: 18px; }
+.dl-decoded {
+  background: var(--charcoal3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 14px;
+}
+.dl-decoded-date { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--text); }
+.dl-decoded-age { font-size: 13px; color: var(--text-muted); margin-top: 3px; font-weight: 300; }
+.dl-decoded-fmt { font-size: 11px; color: var(--text-dim); margin-top: 6px; letter-spacing: 0.3px; }
+.dl-verdict-wrap { text-align: center; padding: 4px 0 2px; }
+.dl-verdict-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 9px; }
+.dl-verdict-badge {
+  display: inline-block; font-family: var(--font-body);
+  font-size: 15px; font-weight: 700; letter-spacing: 0.8px;
+  padding: 9px 22px; border-radius: 24px;
+}
+.dl-badge-fresh { background: var(--lime); color: var(--charcoal); }
+.dl-badge-soon { background: var(--orange); color: var(--charcoal); }
+.dl-badge-past { background: var(--charcoal3); color: var(--text-muted); border: 1px solid var(--border); }
+.dl-badge-young { background: var(--avocado); color: var(--charcoal); }
+.dl-badge-aging { background: var(--grass); color: var(--text); }
+.dl-verdict-await { font-size: 12.5px; color: var(--text-dim); font-style: italic; font-weight: 300; text-align: center; padding: 6px 0; }
+.dl-error {
+  font-size: 13px; color: var(--text-muted); font-weight: 300; line-height: 1.45;
+  background: var(--charcoal3); border: 1px solid rgba(255,80,80,0.2);
+  border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 4px;
+}
+
 /* ── ANALYTICS ──────────────────────────────────────────────── */
 .year-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
 .yr-btn {
@@ -745,7 +795,7 @@ body {
     <div class="logo-mark">🍺</div>
     <div class="logo-name">Hop<em>print</em></div>
   </div>
-  <div class="header-meta" id="headerMeta"><strong>0</strong> beers</div>
+  <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon">📅</span>Check can date</div>
 </div>
 
 <!-- TABS -->
@@ -963,6 +1013,27 @@ body {
   </div>
 </div>
 
+<!-- DATE LOOKUP MODAL -->
+<div class="modal-backdrop" id="dateLookupModal" onclick="if(event.target===this)closeDateLookup()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Check Can Date</div>
+      <div class="modal-close" onclick="closeDateLookup()">✕</div>
+    </div>
+    <div class="dl-mode-toggle" id="dlModeToggle">
+      <div class="dl-mode-btn sel" id="dlModeProduction" onclick="dlSetMode('production')">Production Date</div>
+      <div class="dl-mode-btn" id="dlModeBestby" onclick="dlSetMode('bestby')">Best-By Date</div>
+    </div>
+    <div class="field"><input id="dlCode" type="text" inputmode="numeric" placeholder="Enter the date code" autocomplete="off" oninput="dlRecompute()"></div>
+    <div class="dl-hint" id="dlHint">Julian (YYDDD, YYYYDDD, DDD/YY) or calendar (MMDDYY, MM/DD/YY).</div>
+    <div class="field ac-wrap" id="dlStyleField">
+      <input id="dlStyle" type="text" placeholder="Beer style (for freshness verdict)" autocomplete="off">
+      <div class="ac-drop" id="drop-dlStyle"></div>
+    </div>
+    <div class="dl-result" id="dlResult"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1058,6 +1129,243 @@ function resolveMatrixStyle(rawStyle) {
     Object.keys(STYLE_MATRIX).forEach(k => { STYLE_KEY_INDEX[normalizeStyleKey(k)] = k; });
   }
   return STYLE_KEY_INDEX[normalizeStyleKey(rawStyle)] || null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DATE LOOKUP — production/best-by date decoder + freshness verdict
+// Bands in UI, no internal scores. Decoded date + day-count age are
+// first-stage facts (DL17), not scores. Verdict is a band label only
+// in v1 — no copy pool, no selectCopy consumer (W3). Style tiers are
+// keyed through resolveMatrixStyle so import-era style strings resolve.
+// ═══════════════════════════════════════════════════════════════
+
+// Freshness tiers at the specific-style level (handoff §6). Names are the
+// canonical STYLE_MATRIX keys; membership is tested against resolveMatrixStyle
+// output so drifted/import strings still land in the right bucket. Anything
+// not listed here is Relaxed (the default bucket) — this is the documented
+// 3-tier interim, with full per-style windows (Option C) the eventual target.
+const DL_TIGHT_STYLES = [
+  'IPA - New England / Hazy',
+  'Pale Ale - New England / Hazy',
+  'IPA - Session',
+  'IPA - American',
+  'IPA - Imperial / Double',
+  'IPA - Black / Cascadian Dark Ale',
+  'Lager - IPL (India Pale Lager)',
+  'Pale Ale - American',
+];
+const DL_AGESWELL_STYLES = [
+  'Barleywine - American',
+  'Barleywine - English',
+  'Belgian Tripel',
+  'Scotch Ale / Wee Heavy',
+  'Stout - Russian Imperial',
+  'Stout - Imperial / Double',
+  'Wild Ale - American',
+  'Sour - Flanders Red Ale',
+];
+let DL_TIGHT_SET = null, DL_AGESWELL_SET = null;
+function dlTierOf(rawStyle) {
+  if (!DL_TIGHT_SET) {
+    DL_TIGHT_SET = new Set(DL_TIGHT_STYLES.map(normalizeStyleKey));
+    DL_AGESWELL_SET = new Set(DL_AGESWELL_STYLES.map(normalizeStyleKey));
+  }
+  if (!rawStyle) return 'relaxed';
+  const canonical = resolveMatrixStyle(rawStyle) || rawStyle;
+  const key = normalizeStyleKey(canonical);
+  if (DL_TIGHT_SET.has(key)) return 'tight';
+  if (DL_AGESWELL_SET.has(key)) return 'ages';
+  return 'relaxed';
+}
+
+function dlIsLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function dlDaysInMonth(y, m) { return new Date(y, m, 0).getDate(); } // m is 1-12
+
+// Whole calendar days between two dates, time-of-day ignored (local).
+function dlWholeDays(from, to) {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((b - a) / 86400000);
+}
+
+// Parse a date code across the five supported formats. Disambiguation is
+// purely digit-count + separator-count (no collisions). Returns
+// { ok:true, date, format } or { ok:false, error }. Never best-guesses.
+// opts: { mode:'production'|'bestby', now:Date }. In production mode a date
+// beyond tomorrow (local) is rejected as a future production date; best-by
+// futures are normal and valid (the future check is mode-aware).
+function parseDateCode(raw, opts) {
+  opts = opts || {};
+  const mode = opts.mode || 'production';
+  const now = opts.now || new Date();
+  const s = (raw == null ? '' : String(raw)).trim();
+  if (!s) return { ok: false, error: 'empty' };
+
+  let date = null, format = null;
+
+  if (/^\d+$/.test(s)) {
+    // No separator: 5=YYDDD, 6=MMDDYY, 7=YYYYDDD
+    if (s.length === 5) {
+      const yy = parseInt(s.slice(0, 2), 10), doy = parseInt(s.slice(2), 10);
+      date = dlFromDayOfYear(2000 + yy, doy); format = 'YYDDD';
+    } else if (s.length === 6) {
+      const mm = parseInt(s.slice(0, 2), 10), dd = parseInt(s.slice(2, 4), 10), yy = parseInt(s.slice(4), 10);
+      date = dlFromCalendar(2000 + yy, mm, dd); format = 'MMDDYY';
+    } else if (s.length === 7) {
+      const yyyy = parseInt(s.slice(0, 4), 10), doy = parseInt(s.slice(4), 10);
+      date = dlFromDayOfYear(yyyy, doy); format = 'YYYYDDD';
+    } else {
+      return { ok: false, error: 'format' };
+    }
+  } else {
+    const parts = s.split(/[\/.\-]/);
+    if (parts.length === 2) {
+      // DDD/YY — 3-then-2, strict
+      if (!/^\d{3}$/.test(parts[0]) || !/^\d{2}$/.test(parts[1])) return { ok: false, error: 'format' };
+      date = dlFromDayOfYear(2000 + parseInt(parts[1], 10), parseInt(parts[0], 10)); format = 'DDD/YY';
+    } else if (parts.length === 3) {
+      // MM/DD/YY — 2-2-2, strict
+      if (!/^\d{2}$/.test(parts[0]) || !/^\d{2}$/.test(parts[1]) || !/^\d{2}$/.test(parts[2])) return { ok: false, error: 'format' };
+      date = dlFromCalendar(2000 + parseInt(parts[2], 10), parseInt(parts[0], 10), parseInt(parts[1], 10)); format = 'MM/DD/YY';
+    } else {
+      return { ok: false, error: 'format' };
+    }
+  }
+
+  if (!date) return { ok: false, error: 'invalid' };
+
+  // Mode-aware future rejection: production dates can't be beyond tomorrow.
+  if (mode === 'production' && dlWholeDays(now, date) > 1) return { ok: false, error: 'future' };
+
+  return { ok: true, date, format };
+}
+
+// Day-of-year (1..365/366, leap-aware) -> Date, or null if out of range.
+function dlFromDayOfYear(year, doy) {
+  const max = dlIsLeap(year) ? 366 : 365;
+  if (!(doy >= 1 && doy <= max)) return null;
+  const d = new Date(year, 0, 1);
+  d.setDate(doy);
+  return d;
+}
+
+// Calendar Y/M/D -> Date, or null if month/day invalid (leap-aware).
+function dlFromCalendar(year, month, day) {
+  if (!(month >= 1 && month <= 12)) return null;
+  if (!(day >= 1 && day <= dlDaysInMonth(year, month))) return null;
+  return new Date(year, month - 1, day);
+}
+
+// Production verdict: tier + elapsed days -> band label. Elapsed is clamped
+// to >= 0 (a within-tolerance future prod date reads as 0 days / freshest).
+function dlProductionVerdict(tier, elapsedDays) {
+  const d = Math.max(0, elapsedDays);
+  if (tier === 'ages') return d <= 30 ? 'Too Young' : 'Aging Well';
+  if (tier === 'tight') return d <= 60 ? 'Fresh' : (d <= 120 ? 'Drink Soon' : 'Past Peak');
+  // relaxed
+  return d <= 120 ? 'Fresh' : (d <= 270 ? 'Drink Soon' : 'Past Peak');
+}
+
+// Best-by verdict: universal proximity read (W1). daysUntil = printed date
+// minus today. >30 days out Fresh; 0..30 Drink Soon; past it Past Peak.
+function dlBestByVerdict(daysUntil) {
+  if (daysUntil < 0) return 'Past Peak';
+  if (daysUntil <= 30) return 'Drink Soon';
+  return 'Fresh';
+}
+
+const DL_BAND_CLASS = {
+  'Fresh': 'dl-badge-fresh', 'Drink Soon': 'dl-badge-soon', 'Past Peak': 'dl-badge-past',
+  'Too Young': 'dl-badge-young', 'Aging Well': 'dl-badge-aging',
+};
+
+// ── Modal control ──────────────────────────────────────────────
+let dlMode = 'production';
+let dlSavedStyle = ''; // preserve style across best-by round trip (DL9)
+
+function openDateLookup() {
+  dlMode = 'production';
+  dlSavedStyle = '';
+  document.getElementById('dlCode').value = '';
+  document.getElementById('dlStyle').value = '';
+  document.getElementById('dlModeProduction').classList.add('sel');
+  document.getElementById('dlModeBestby').classList.remove('sel');
+  document.getElementById('dlStyleField').style.display = '';
+  document.getElementById('dlResult').innerHTML = '';
+  document.getElementById('dateLookupModal').classList.add('open');
+}
+function closeDateLookup() {
+  document.getElementById('dateLookupModal').classList.remove('open');
+}
+function dlSetMode(mode) {
+  if (mode === dlMode) return;
+  const styleInput = document.getElementById('dlStyle');
+  if (mode === 'bestby') {
+    dlSavedStyle = styleInput.value;           // stash for round-trip
+    document.getElementById('dlStyleField').style.display = 'none';
+    document.getElementById('dlModeBestby').classList.add('sel');
+    document.getElementById('dlModeProduction').classList.remove('sel');
+  } else {
+    styleInput.value = dlSavedStyle;           // restore prior value
+    document.getElementById('dlStyleField').style.display = '';
+    document.getElementById('dlModeProduction').classList.add('sel');
+    document.getElementById('dlModeBestby').classList.remove('sel');
+  }
+  dlMode = mode;
+  dlRecompute();
+}
+
+function dlRecompute() {
+  const out = document.getElementById('dlResult');
+  const raw = document.getElementById('dlCode').value;
+  if (!raw.trim()) { out.innerHTML = ''; return; }
+
+  const parsed = parseDateCode(raw, { mode: dlMode });
+  if (!parsed.ok) {
+    if (parsed.error === 'future') {
+      out.innerHTML = `<div class="dl-error">That decodes to a date in the future — double-check it, or switch to Best-By mode if that's a best-by date.</div>`;
+    } else {
+      out.innerHTML = `<div class="dl-error">Couldn't read that as a date code. Try one of: YYDDD, YYYYDDD, MMDDYY, DDD/YY, or MM/DD/YY.</div>`;
+    }
+    return;
+  }
+
+  const today = new Date();
+  const dateStr = parsed.date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Stage 1 — decoded date + elapsed age (always, both modes).
+  let ageStr, html = '';
+  if (dlMode === 'bestby') {
+    const daysUntil = dlWholeDays(today, parsed.date);
+    ageStr = daysUntil > 0 ? `${daysUntil} day${daysUntil !== 1 ? 's' : ''} from now`
+      : daysUntil === 0 ? `today` : `${-daysUntil} day${-daysUntil !== 1 ? 's' : ''} ago`;
+  } else {
+    const elapsed = Math.max(0, dlWholeDays(parsed.date, today));
+    ageStr = elapsed === 0 ? `packaged today` : `${elapsed} day${elapsed !== 1 ? 's' : ''} old`;
+  }
+  html += `<div class="dl-decoded">
+    <div class="dl-decoded-date">${esc(dateStr)}</div>
+    <div class="dl-decoded-age">${esc(ageStr)}</div>
+    <div class="dl-decoded-fmt">Read as ${esc(parsed.format)} · ${dlMode === 'bestby' ? 'best-by' : 'production'} date</div>
+  </div>`;
+
+  // Stage 2 — banded verdict.
+  html += `<div class="dl-verdict-wrap">`;
+  if (dlMode === 'bestby') {
+    const band = dlBestByVerdict(dlWholeDays(today, parsed.date));
+    html += `<div class="dl-verdict-badge ${DL_BAND_CLASS[band]}">${band}</div>`;
+  } else {
+    const styleVal = document.getElementById('dlStyle').value.trim();
+    if (!styleVal) {
+      html += `<div class="dl-verdict-await">Pick the beer's style above for a freshness read.</div>`;
+    } else {
+      const elapsed = Math.max(0, dlWholeDays(parsed.date, today));
+      const band = dlProductionVerdict(dlTierOf(styleVal), elapsed);
+      html += `<div class="dl-verdict-label">Freshness</div><div class="dl-verdict-badge ${DL_BAND_CLASS[band]}">${band}</div>`;
+    }
+  }
+  html += `</div>`;
+  out.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1281,6 +1589,8 @@ function init() {
   setupAC('wishBeerName', SEED.beers);
   setupAC('wishBreweryName', SEED.breweries);
   setupAC('wishStyle', SEED.styles);
+  setupAC('dlStyle', SEED.styles, dlRecompute);
+  document.getElementById('dlStyle').addEventListener('input', dlRecompute);
 
   updateHeaderMeta();
   renderWishlist();
@@ -3473,7 +3783,11 @@ function countBy(arr, key) {
 }
 
 function updateHeaderMeta() {
-  document.getElementById('headerMeta').innerHTML = `<strong>${entries.length}</strong> beer${entries.length!==1?'s':''}`;
+  // Header beer counter was replaced by the Date Lookup launcher (P3); the
+  // element no longer exists, so this is a guarded no-op. Existing callers
+  // (check-in save, edit/delete, import) are left untouched.
+  const el = document.getElementById('headerMeta');
+  if (el) el.innerHTML = `<strong>${entries.length}</strong> beer${entries.length!==1?'s':''}`;
 }
 
 function showToast(msg) {
@@ -3498,11 +3812,11 @@ function switchTab(tab) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// HIDDEN IMPORT INPUT + EXPORT BUTTONS (in discover tab footer)
+// HIDDEN IMPORT INPUT + EXPORT BUTTONS (bottom of Profile tab — P1)
 // ═══════════════════════════════════════════════════════════════
 
-// Inject export controls into discover tab
-document.getElementById('screen-discover').insertAdjacentHTML('beforeend', `
+// Inject export controls at the bottom of the profile tab
+document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
   <div class="screen-inner" style="padding-top:0">
     <div class="sec-label" style="margin-top:8px">⬇ Data</div>
     <button class="btn-action" onclick="exportCSV()">📄 Export CSV</button>
