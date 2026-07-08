@@ -432,6 +432,8 @@ body {
 .insight-headline { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); margin-bottom: 2px; }
 .insight-detail { font-size: 12px; color: var(--text-muted); font-weight: 300; line-height: 1.4; }
 .insight-val { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--orange); margin-top: 3px; }
+.insight-text { font-size: 13.5px; line-height: 1.5; color: var(--text-muted); font-weight: 300; }
+.insight-text b { color: var(--orange); font-weight: 700; }
 
 .rank-list { display: flex; flex-direction: column; gap: 5px; }
 .rank-row { display: flex; align-items: center; gap: 9px; }
@@ -2235,6 +2237,8 @@ function renderAnalytics() {
     <div class="stat-card" style="--accent:var(--grass)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
   </div>
 
+  ${buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, analyticsCompare)}
+
   ${showNvr ? `
   <div class="chart-card fade-up">
     <div class="chart-title">New vs. Repeat</div>
@@ -2813,6 +2817,222 @@ function buildProfileHeroCopy(ctx) {
     ? earned.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.'
     : '';
   return { identity, desc };
+}
+
+// ── Analytics consumer (Phase D+) ──────────────────────────────
+// The SECOND selectCopy consumer. ZERO engine changes — that reuse is the
+// whole point of D. One insight card on the Analytics tab, positioned after
+// the core stats and before the charts (DD1). Year-selection only: the card
+// never renders on All Time (DD2) — all-time identity belongs to the Profile
+// hero, no cross-tab redundancy.
+//
+// Zone order IS the priority ranking (DD-Q1): comparison → exploration → band
+// → pace → milestone. The 2-earned cap (DD4) means the first two zones in
+// order that earn a candidate win. No required zone — zero earned means no
+// card at all (the purest "every sentence earns its place").
+//
+// Import handling follows the Q7/DD5 split: descriptive claims ("X% of this
+// year's check-ins were new breweries", "March was your busiest month") count
+// imports; trajectory-flavored claims (the pace-direction signal) read live
+// entries only, because a bulk Untappd import is real history but not evidence
+// of the year's *momentum*.
+//
+// Tense (DD-Q3): the in-progress current year is a valid selection, so context
+// carries isCurrentYear and the candidates that assert present state branch on
+// it. Dated retrospective claims (a milestone crossed in March, a completed
+// year's comparison) read the same in either tense and don't branch.
+const ANALYTICS_ZONE_ORDER = ['comparison', 'exploration', 'band', 'pace', 'milestone'];
+const ANALYTICS_MAX_EARNED = 2;
+
+// Build the context the analytics candidates read for the selected year.
+// Recomputes its inputs from `es`/`prevYrEntries` with the same trivial
+// count/delta math the stat grid uses; the shared helpers (computeBandAnalytics,
+// computeMilestones, firstOccurrenceIds) are the real Phase C source, reused
+// as-is so a period insight can never disagree with the module it summarizes.
+function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
+  const isImport = e => e.source === 'import' || e.rating_mode === 'import';
+  const liveEs = es.filter(e => !isImport(e));
+  const isCurrentYear = analyticsYear === new Date().getFullYear();
+  const prevYear = (typeof analyticsYear === 'number') ? analyticsYear - 1 : null;
+  const total = es.length;
+
+  // ── comparison (descriptive counts; the zone is gated on compareOn at the
+  //    candidate level per DD3). Same pct formula the stat-grid deltas use.
+  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
+  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
+  const prevBreweries = new Set(prevYrEntries.map(e => e.brewery_name).filter(Boolean)).size;
+  const prevStyles = new Set(prevYrEntries.map(e => e.beer_type).filter(Boolean)).size;
+  const prevTotal = prevYrEntries.length;
+  const pctDelta = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
+  const deltaBreweriesPct = pctDelta(breweries, prevBreweries);
+  const deltaStylesPct = pctDelta(styles, prevStyles);
+  const deltaVolumePct = pctDelta(total, prevTotal);
+
+  // ── exploration (descriptive → imports included). First-occurrence is judged
+  //    against FULL history, holding the Phase C new-vs-repeat definition.
+  const firstBrewIds = firstOccurrenceIds('brewery_name');
+  const firstStyleIds = firstOccurrenceIds('beer_type');
+  const newBreweryCount = es.filter(e => firstBrewIds.has(e.id)).length;
+  const newStyleCount = es.filter(e => firstStyleIds.has(e.id)).length;
+  const newBreweryPct = total ? Math.round(newBreweryCount / total * 100) : 0;
+  const newStylePct = total ? Math.round(newStyleCount / total * 100) : 0;
+
+  // ── band (descriptive static aggregate → imports included, matching
+  //    computeBandAnalytics). Band language only, never the 0–100 scores (D1).
+  const bands = computeBandAnalytics(es);
+  const ratedTotal = es.filter(e => bandOf(e.rating)).length;
+  const mostLogged = bands.mostLogged ? bands.mostLogged[0] : '';
+  const wheelhouse = bands.wheelhouse ? bands.wheelhouse[0] : '';
+  const lovedBeer = bands.loved.length ? bands.loved[0][0] : '';
+  const unfinishedStyle = bands.unfinished.length ? bands.unfinished[0][0] : '';
+
+  // ── pace: busiest month (descriptive) ──
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthCounts = Array(12).fill(0);
+  es.forEach(e => { const d = new Date(e.created_at); if (!isNaN(d)) monthCounts[d.getMonth()]++; });
+  const busiestMonthCount = Math.max(...monthCounts, 0);
+  const busiestMonthIdx = busiestMonthCount > 0 ? monthCounts.indexOf(busiestMonthCount) : -1;
+  const busiestMonthName = busiestMonthIdx >= 0 ? MONTHS[busiestMonthIdx] : '';
+  const activeMonths = monthCounts.filter(c => c > 0).length;
+  const avgMonth = activeMonths ? total / activeMonths : 0;
+
+  // ── pace: half-split trajectory — TREND claim, so LIVE entries only (DD5) ──
+  const liveMonthCounts = Array(12).fill(0);
+  liveEs.forEach(e => { const d = new Date(e.created_at); if (!isNaN(d)) liveMonthCounts[d.getMonth()]++; });
+  const firstHalfLive = liveMonthCounts.slice(0, 6).reduce((a, b) => a + b, 0);
+  const secondHalfLive = liveMonthCounts.slice(6).reduce((a, b) => a + b, 0);
+  const liveTotal = liveEs.length;
+  let paceDirection = null; // 'accelerating' | 'cooling' | null
+  if (liveTotal >= 12) {
+    if (secondHalfLive >= firstHalfLive * 1.5 && secondHalfLive - firstHalfLive >= 4) paceDirection = 'accelerating';
+    else if (firstHalfLive >= secondHalfLive * 1.5 && firstHalfLive - secondHalfLive >= 4) paceDirection = 'cooling';
+  }
+
+  // ── milestone: retrospective crossings inside this year (DD-Q2). Reuses the
+  //    Phase C thresholds via computeMilestones(). Rank check-ins > breweries >
+  //    styles, biggest first; derive the round number + noun from the label.
+  const yearMilestones = computeMilestones().filter(m => new Date(m.date).getFullYear() === analyticsYear);
+  const msWeight = m => (m.icon === '🍺' ? 3 : m.icon === '🏭' ? 2 : 1);
+  const topMs = yearMilestones.slice().sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date))[0] || null;
+  let milestone = null;
+  if (topMs) {
+    const n = parseInt(String(topMs.label).replace(/[^0-9]/g, ''), 10);
+    const kind = topMs.icon === '🍺' ? 'checkins' : topMs.icon === '🏭' ? 'breweries' : 'styles';
+    const md = new Date(topMs.date);
+    const monthName = isNaN(md) ? '' : MONTHS[md.getMonth()];
+    if (!isNaN(n)) milestone = { n, kind, monthName };
+  }
+
+  return {
+    analyticsYear, prevYear, isCurrentYear, compareOn, total,
+    breweries, styles, deltaBreweriesPct, deltaStylesPct, deltaVolumePct,
+    newBreweryCount, newStyleCount, newBreweryPct, newStylePct,
+    ratedTotal, mostLogged, wheelhouse, lovedBeer, unfinishedStyle,
+    busiestMonthName, busiestMonthCount, avgMonth,
+    paceDirection, firstHalfLive, secondHalfLive,
+    milestone,
+  };
+}
+
+// Analytics copy candidates. Same contract as the Profile pool: friend-voice,
+// NO trailing period (the assembler punctuates), every entity through esc(),
+// and no fragment starts with markup (the assembler capitalizes char 0). Any
+// <b> emphasis sits mid-sentence. Thresholds are principled breakpoints,
+// sanity-checked against seed data, never derived from it (Q6). Ordered within
+// each zone highest-priority first so registry order and priority agree.
+const ANALYTICS_COPY = [
+  // ── comparison (only alive when the compare toggle is on — DD3). For the
+  //    in-progress current year a raw count comparison to a *completed* prior
+  //    year is only honest as an "already surpassed" up-claim; the quieter/down
+  //    variant gates to completed years so an unfinished year is never called
+  //    smaller than the last one. ───────────────────────────────────────────
+  { id: 'cmp_range_up', zone: 'comparison', priority: 25,
+    condition: c => c.compareOn && c.deltaBreweriesPct !== null && c.deltaBreweriesPct >= 20,
+    render: c => c.isCurrentYear
+      ? `you've already logged <b>${c.deltaBreweriesPct}%</b> more breweries than in all of ${c.prevYear}`
+      : `you cast a wider net — <b>${c.deltaBreweriesPct}%</b> more breweries than ${c.prevYear}` },
+  { id: 'cmp_volume_up', zone: 'comparison', priority: 20,
+    condition: c => c.compareOn && c.deltaVolumePct !== null && c.deltaVolumePct >= 25,
+    render: c => c.isCurrentYear
+      ? `already a bigger year than ${c.prevYear} — <b>${c.deltaVolumePct}%</b> more check-ins`
+      : `a bigger year all around — <b>${c.deltaVolumePct}%</b> more check-ins than ${c.prevYear}` },
+  { id: 'cmp_volume_down', zone: 'comparison', priority: 15,
+    condition: c => c.compareOn && !c.isCurrentYear && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,
+    render: c => `a quieter year — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than ${c.prevYear}` },
+
+  // ── exploration (descriptive → imports counted) ──────────────────────────
+  { id: 'explore_heavy', zone: 'exploration', priority: 20,
+    condition: c => c.total >= 15 && c.newBreweryPct >= 40,
+    render: c => c.isCurrentYear
+      ? `so far this year, <b>${c.newBreweryPct}%</b> of your check-ins have been a brewery new to you`
+      : `a lot of new ground — <b>${c.newBreweryPct}%</b> of your check-ins were a brewery you'd never logged` },
+  { id: 'explore_light', zone: 'exploration', priority: 15,
+    condition: c => c.total >= 15 && c.newBreweryPct <= 12,
+    render: c => c.isCurrentYear
+      ? `you've been leaning on the familiar — mostly breweries you already knew`
+      : `you leaned on the familiar this year — mostly breweries you already knew` },
+  { id: 'explore_style', zone: 'exploration', priority: 12,
+    condition: c => c.total >= 15 && c.newStylePct >= 30,
+    render: c => c.isCurrentYear
+      ? `you keep branching out on styles — <b>${c.newStylePct}%</b> of pours have been a style new to you`
+      : `you kept branching out on styles — <b>${c.newStylePct}%</b> of pours were a style new to you` },
+
+  // ── band (period-scoped rating signals; band language only, no scores) ────
+  { id: 'band_divergence', zone: 'band', priority: 25,
+    condition: c => c.ratedTotal >= 6 && c.mostLogged && c.wheelhouse && c.mostLogged !== c.wheelhouse,
+    render: c => `you poured <b>${esc(c.mostLogged)}</b> most, but <b>${esc(c.wheelhouse)}</b> is what earned the Definitelys` },
+  { id: 'band_loved', zone: 'band', priority: 20,
+    condition: c => c.ratedTotal >= 6 && !!c.lovedBeer,
+    render: c => c.isCurrentYear
+      ? `one you haven't turned down yet this year: <b>${esc(c.lovedBeer)}</b>`
+      : `one beer you never turned down all year: <b>${esc(c.lovedBeer)}</b>` },
+  { id: 'band_unfinished', zone: 'band', priority: 12,
+    condition: c => c.ratedTotal >= 6 && !!c.unfinishedStyle,
+    render: c => `the jury's still out on <b>${esc(c.unfinishedStyle)}</b> for you` },
+
+  // ── pace (busiest month is descriptive; the direction signal is trend →
+  //    live-only, computed that way in the context) ─────────────────────────
+  { id: 'pace_bigmonth', zone: 'pace', priority: 20,
+    condition: c => c.busiestMonthName && c.busiestMonthCount >= 8 && c.busiestMonthCount >= c.avgMonth * 2,
+    render: c => `${esc(c.busiestMonthName)} was your big month — <b>${c.busiestMonthCount}</b> check-ins, well clear of the rest` },
+  { id: 'pace_accelerating', zone: 'pace', priority: 15,
+    condition: c => c.paceDirection === 'accelerating',
+    render: c => c.isCurrentYear
+      ? `you've been picking up the pace lately`
+      : `you found your rhythm in the back half of the year` },
+  { id: 'pace_cooling', zone: 'pace', priority: 12,
+    condition: c => c.paceDirection === 'cooling',
+    render: c => c.isCurrentYear
+      ? `you started strong this year, then eased off`
+      : `you front-loaded the year and eased off later` },
+
+  // ── milestone (retrospective; dated crossing reads the same in either tense) ─
+  { id: 'milestone_checkins', zone: 'milestone', priority: 20,
+    condition: c => c.milestone && c.milestone.kind === 'checkins',
+    render: c => `you passed <b>${c.milestone.n.toLocaleString()}</b> check-ins${c.milestone.monthName ? ' in ' + esc(c.milestone.monthName) : ''}` },
+  { id: 'milestone_breweries', zone: 'milestone', priority: 15,
+    condition: c => c.milestone && c.milestone.kind === 'breweries',
+    render: c => `you hit your <b>${c.milestone.n}th</b> brewery${c.milestone.monthName ? ' in ' + esc(c.milestone.monthName) : ''}` },
+  { id: 'milestone_styles', zone: 'milestone', priority: 12,
+    condition: c => c.milestone && c.milestone.kind === 'styles',
+    render: c => `you hit your <b>${c.milestone.n}th</b> style${c.milestone.monthName ? ' in ' + esc(c.milestone.monthName) : ''}` },
+];
+
+// Build the single insight card's markup for the selected year, or '' when
+// nothing is earned (DD4 — no empty shell) or on All Time (DD2). Reuses the
+// existing .insight-card shell already in the design system; no new language.
+function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) {
+  if (analyticsYear === 'all') return '';
+  const ctx = computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn);
+  const picked = selectCopy(ANALYTICS_COPY, ctx, ANALYTICS_ZONE_ORDER, { maxEarned: ANALYTICS_MAX_EARNED });
+  if (!picked.length) return '';
+  const sentences = picked
+    .map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1))
+    .join('. ') + '.';
+  return `<div class="insight-card fade-up">
+    <div class="insight-icon">🍺</div>
+    <div class="insight-body"><div class="insight-text">${sentences}</div></div>
+  </div>`;
 }
 
 function renderProfile() {
