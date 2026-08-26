@@ -1628,6 +1628,56 @@ function rationaleFor(card, mode) {
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// LIVE AUTOCOMPLETE LISTS + AUTOFILL UPSERTS
+// SEED.* arrays are baked at build time; entries added later (live
+// check-ins or CSV imports) would otherwise never appear in the
+// autocomplete boxes, which capture their list array by reference at
+// init(). buildLiveLists() merges values derived from `entries` into
+// the SAME SEED.* array objects IN PLACE, so every box already wired
+// to them updates the same session — no reload. The nine boxes share
+// these arrays (beerName+wishBeerName -> SEED.beers; the three style
+// boxes -> SEED.styles; etc.), so one in-place update reaches them all.
+// ═══════════════════════════════════════════════════════════════
+function acNormKey(v) { return String(v).trim().replace(/\s+/g, ' ').toLowerCase(); }
+function acClean(v)  { return String(v).trim().replace(/\s+/g, ' '); }
+
+function mergeInPlace(seedArr, liveVals) {
+  // Dedup on a normalized key (case + surrounding/interior whitespace).
+  // Seed casing wins on collision; retained values are presented cleaned.
+  const byKey = new Map();
+  const add = v => { const k = acNormKey(v); if (k && !byKey.has(k)) byKey.set(k, acClean(v)); };
+  seedArr.forEach(add);   // seed first -> seed casing wins
+  liveVals.forEach(add);  // live-only appended
+  const merged = [...byKey.values()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  seedArr.length = 0;               // truncate the SAME array object
+  for (const v of merged) seedArr.push(v);
+}
+
+function buildLiveLists() {
+  const pick = f => entries.map(e => e && e[f]).filter(Boolean);
+  mergeInPlace(SEED.beers,     pick('beer_name'));
+  mergeInPlace(SEED.breweries, pick('brewery_name'));
+  mergeInPlace(SEED.styles,    pick('beer_type'));
+  mergeInPlace(SEED.venues,    pick('venue_name'));
+  mergeInPlace(SEED.purchase,  pick('purchase_venue'));
+}
+
+// Fill-blank-only writes to the autofill lookups: populate missing fields,
+// never overwrite a value that already exists; never create an empty record.
+function upsertDetail(db, name, details) {
+  if (!name) return;
+  let cur = db[name];
+  for (const k in details) {
+    const v = details[k];
+    if (v === undefined || v === '' || v === null) continue;
+    if (!cur) cur = db[name] = {};
+    if (cur[k] === undefined || cur[k] === '' || cur[k] === null) cur[k] = v;
+  }
+}
+function upsertBeerDB(name, details)    { upsertDetail(BEER_DB, name, details); }
+function upsertBreweryDB(name, details) { upsertDetail(BREWERY_DB, name, details); }
+
 function init() {
   setDefaultDate();
   buildOccasionGrid('occasionGrid', OCCASIONS, v => { selectedOccasion = v; }, () => selectedOccasion);
@@ -1636,7 +1686,10 @@ function init() {
   buildModeGrid();
   setPrompt();
 
-  // Autocomplete
+  // Autocomplete: merge live entries into the SEED.* arrays in place first,
+  // then wire the boxes — each box binds a shared SEED.* array kept current
+  // thereafter by buildLiveLists() (also re-run after import and check-in).
+  buildLiveLists();
   setupAC('beerName', SEED.beers, onBeerSelect);
   setupAC('breweryName', SEED.breweries, onBrewerySelect);
   setupAC('beerStyle', SEED.styles);
@@ -1823,11 +1876,15 @@ function submitCheckin() {
   };
   entries.unshift(entry);
   save();
-  // Add to BEER_DB if new
-  if (beerName && !BEER_DB[beerName] && entry.brewery_name) {
-    BEER_DB[beerName] = { b: entry.brewery_name, s: entry.beer_type, a: parseFloat(entry.beer_abv)||'', bc: entry.brewery_city, bs: entry.brewery_state };
-    if (!SEED.beers.includes(beerName)) SEED.beers.push(beerName);
+  // Record beer + brewery detail for autofill (fill-blank-only). Autocomplete
+  // lists are owned by buildLiveLists() now — no direct SEED.* push here (see 3a).
+  if (beerName && entry.brewery_name) {
+    upsertBeerDB(beerName, { b: entry.brewery_name, s: entry.beer_type, a: parseFloat(entry.beer_abv)||'', bc: entry.brewery_city, bs: entry.brewery_state });
   }
+  if (entry.brewery_name) {
+    upsertBreweryDB(entry.brewery_name, { c: entry.brewery_city, s: entry.brewery_state });
+  }
+  buildLiveLists();
   showToast('🍻 Checked in!');
   resetForm();
   updateHeaderMeta();
@@ -3780,6 +3837,13 @@ function handleImport(event) {
       const newOnes = imported.filter(e => !existing.has(`${e.beer_name}|${e.created_at}`));
       entries = [...entries, ...newOnes].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
       save();
+      // Record beer/brewery detail from imports for autofill (fill-blank-only),
+      // then refresh autocomplete lists in place so imports are searchable now.
+      imported.forEach(e => {
+        upsertBeerDB(e.beer_name, { b: e.brewery_name, s: e.beer_type, a: parseFloat(e.beer_abv)||'', bc: e.brewery_city, bs: e.brewery_state });
+        upsertBreweryDB(e.brewery_name, { c: e.brewery_city, s: e.brewery_state });
+      });
+      buildLiveLists();
       updateHeaderMeta();
       showToast(`✅ Imported ${newOnes.length} entries`);
 
