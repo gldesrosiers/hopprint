@@ -1,10 +1,17 @@
-const CACHE_NAME = 'hopprint-v1';
+const CACHE_NAME = 'hopprint-v2';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-192-maskable.png',
+  './icons/icon-512-maskable.png',
+  './assets/hopprint-hop.svg',
+  './fonts/arial-narrow-regular.woff2',
+  './fonts/arial-narrow-bold.woff2',
+  './fonts/unica-one-regular.woff2',
+  './fonts/big-shoulders-variable.woff2',
 ];
 
 self.addEventListener('install', (event) => {

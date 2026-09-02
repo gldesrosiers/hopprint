@@ -12,12 +12,40 @@
 <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="style_matrix.js"></script>
 <script src="proximity_engine.js"></script>
 <style>
+/* ── FONTS ─────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Arial Narrow';
+  src: url('fonts/arial-narrow-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Arial Narrow';
+  src: url('fonts/arial-narrow-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Unica One';
+  src: url('fonts/unica-one-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Big Shoulders';
+  src: url('fonts/big-shoulders-variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── DESIGN TOKENS ─────────────────────────────────────────── */
 :root {
   --charcoal: #242223;
@@ -27,9 +55,12 @@
   --orange-dim: #c45e18;
   --orange-glow: rgba(233,115,36,0.15);
   --orange-glow2: rgba(233,115,36,0.07);
-  --avocado: #bddb8f;
+  --orange-hover: #f08030;
   --lime: #8fc640;
-  --grass: #056a38;
+  --creamsicle: #eda547;
+  --yellow: #f6c23a;
+  --neutral: #5a5450;
+  --danger: #ff6060;
   --white: #ffffff;
   --text: #f5f0e8;
   --text-muted: #b8b2ac;
@@ -38,8 +69,9 @@
   --border-orange: rgba(233,115,36,0.3);
   --radius: 14px;
   --radius-sm: 9px;
-  --font-display: 'Playfair Display', Georgia, serif;
-  --font-body: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --font-headline: 'Big Shoulders', 'Please Poster', Impact, sans-serif;
+  --font-display: 'Unica One', 'Barlow Condensed', sans-serif;
+  --font-body: 'Arial Narrow', 'Barlow Condensed', sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -63,21 +95,9 @@ body {
   position: sticky; top: 0; z-index: 100;
 }
 .logo { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.logo-mark {
-  width: 36px; height: 36px;
-  background: var(--orange);
-  border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; line-height: 1;
-}
-.logo-name {
-  font-family: var(--font-display);
-  font-size: 22px; font-weight: 800;
-  color: var(--white); letter-spacing: -0.5px;
-}
-.logo-name em { color: var(--orange); font-style: normal; }
+.logo-mark { height: 36px; width: auto; display: block; }
 .header-meta { font-size: 13px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.5px; }
-.header-meta strong { color: var(--avocado); }
+.header-meta strong { color: var(--lime); }
 
 /* ── TABS ───────────────────────────────────────────────────── */
 .tabs {
@@ -193,7 +213,7 @@ body {
   background: var(--charcoal2);
   transition: all 0.15s;
 }
-.ctx-pill.sel { background: rgba(189,219,143,0.1); border-color: rgba(189,219,143,0.4); color: var(--avocado); }
+.ctx-pill.sel { background: rgba(143,198,64,0.1); border-color: rgba(143,198,64,0.4); color: var(--lime); }
 
 /* ── SERVE PILLS ────────────────────────────────────────────── */
 .serve-pills { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -237,7 +257,7 @@ body {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   transition: all 0.18s;
 }
-.btn-checkin:hover { background: #f08030; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(233,115,36,0.35); }
+.btn-checkin:hover { background: var(--orange-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(233,115,36,0.35); }
 .btn-checkin:active { transform: none; }
 
 /* ── TOAST ──────────────────────────────────────────────────── */
@@ -275,7 +295,7 @@ body {
   background: var(--charcoal3); color: var(--text-muted);
   border: 1px solid var(--border); letter-spacing: 0.3px;
 }
-.etag.style { color: var(--avocado); border-color: rgba(189,219,143,0.2); background: rgba(189,219,143,0.06); }
+.etag.style { color: var(--lime); border-color: rgba(143,198,64,0.2); background: rgba(143,198,64,0.06); }
 .etag.serve { color: var(--orange); border-color: var(--orange-glow); background: var(--orange-glow2); }
 .entry-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
 .entry-date { font-size: 11px; color: var(--text-dim); font-weight: 300; }
@@ -309,8 +329,8 @@ body {
   transition: all 0.15s;
 }
 .btn-save { background: var(--orange); color: var(--charcoal); }
-.btn-save:hover { background: #f08030; }
-.btn-delete { background: rgba(255,80,80,0.12); color: #ff6060; border: 1px solid rgba(255,80,80,0.2); margin-top: 8px; }
+.btn-save:hover { background: var(--orange-hover); }
+.btn-delete { background: rgba(255,80,80,0.12); color: var(--danger); border: 1px solid rgba(255,80,80,0.2); margin-top: 8px; }
 .btn-delete:hover { background: rgba(255,80,80,0.2); }
 
 /* ── RATING MODAL ───────────────────────────────────────────── */
@@ -360,7 +380,7 @@ body {
   border: none; border-radius: 30px; cursor: pointer; display: inline-block;
   transition: all 0.18s;
 }
-.empty-cta:hover { background: #f08030; transform: translateY(-1px); }
+.empty-cta:hover { background: var(--orange-hover); transform: translateY(-1px); }
 
 /* ── FEEDBACK FAB + MODAL ───────────────────────────────────── */
 .fab-feedback {
@@ -436,10 +456,10 @@ body {
   padding: 9px 22px; border-radius: 24px;
 }
 .dl-badge-fresh { background: var(--lime); color: var(--charcoal); }
-.dl-badge-soon { background: var(--orange); color: var(--charcoal); }
+.dl-badge-soon { background: var(--yellow); color: var(--charcoal); }
 .dl-badge-past { background: var(--charcoal3); color: var(--text-muted); border: 1px solid var(--border); }
-.dl-badge-young { background: var(--avocado); color: var(--charcoal); }
-.dl-badge-aging { background: var(--grass); color: var(--text); }
+.dl-badge-young { background: var(--creamsicle); color: var(--charcoal); }
+.dl-badge-aging { background: var(--lime); color: var(--charcoal); }
 .dl-verdict-await { font-size: 12.5px; color: var(--text-dim); font-style: italic; font-weight: 300; text-align: center; padding: 6px 0; }
 .dl-error {
   font-size: 13px; color: var(--text-muted); font-weight: 300; line-height: 1.45;
@@ -465,7 +485,7 @@ body {
   position: relative; overflow: hidden;
 }
 .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent, var(--orange)); }
-.stat-num { font-family: var(--font-display); font-size: 32px; font-weight: 800; color: var(--accent, var(--orange)); line-height: 1; }
+.stat-num { font-family: var(--font-headline); font-size: 32px; font-weight: 800; color: var(--accent, var(--orange)); line-height: 1; }
 .stat-label { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
 .stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-weight: 300; }
 
@@ -536,9 +556,14 @@ body {
   pointer-events: none;
 }
 .profile-identity {
-  font-family: var(--font-display); font-style: italic;
+  font-family: var(--font-headline);
   font-size: 22px; font-weight: 700; color: var(--orange);
   line-height: 1.2; margin-bottom: 8px;
+}
+.profile-identity::before {
+  content: ''; display: block;
+  width: 28px; height: 3px; border-radius: 2px;
+  background: var(--orange); margin-bottom: 8px;
 }
 .profile-desc { font-size: 14px; color: var(--text-muted); font-weight: 300; line-height: 1.5; }
 
@@ -558,7 +583,7 @@ body {
   background: var(--charcoal2); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 13px 10px; text-align: center;
 }
-.pstat-num { font-family: var(--font-display); font-size: 24px; font-weight: 800; color: var(--avocado); }
+.pstat-num { font-family: var(--font-headline); font-size: 24px; font-weight: 800; color: var(--lime); }
 .pstat-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 3px; }
 
 .wrapped-card {
@@ -570,7 +595,7 @@ body {
 .wrapped-headline { font-family: var(--font-display); font-size: 18px; font-weight: 700; line-height: 1.3; margin-bottom: 10px; }
 .wrapped-stats { display: flex; gap: 16px; flex-wrap: wrap; }
 .ws { }
-.ws-num { font-size: 22px; font-weight: 700; color: var(--orange); font-family: var(--font-display); }
+.ws-num { font-size: 22px; font-weight: 700; color: var(--orange); font-family: var(--font-headline); }
 .ws-label { font-size: 11px; color: var(--text-muted); font-weight: 300; }
 
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -605,7 +630,7 @@ body {
   border: none; border-radius: var(--radius); cursor: pointer;
   transition: all 0.18s; margin-top: 4px;
 }
-.btn-discover:hover { background: #f08030; }
+.btn-discover:hover { background: var(--orange-hover); }
 
 .rec-card {
   background: var(--charcoal2); border: 1px solid var(--border);
@@ -619,12 +644,12 @@ body {
 .rec-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
 .rec-save {
   font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
-  color: var(--avocado); border: 1px solid rgba(189,219,143,0.3);
-  background: rgba(189,219,143,0.07); padding: 4px 10px; border-radius: 4px;
+  color: var(--lime); border: 1px solid rgba(143,198,64,0.3);
+  background: rgba(143,198,64,0.07); padding: 4px 10px; border-radius: 4px;
   cursor: pointer; white-space: nowrap; flex-shrink: 0; margin-top: 2px;
   transition: all 0.15s;
 }
-.rec-save:hover { background: rgba(189,219,143,0.15); }
+.rec-save:hover { background: rgba(143,198,64,0.15); }
 .rec-save.saved { color: var(--text-dim); border-color: var(--border); background: none; }
 .rec-footer { display: flex; border-top: 1px solid var(--border); margin-top: 12px; }
 .rec-footer-btn {
@@ -641,8 +666,8 @@ body {
 }
 .badge-wheelhouse { background: var(--orange); color: var(--charcoal); }
 .badge-adjacent { background: var(--lime); color: var(--charcoal); }
-.badge-wildcard-confident { background: var(--grass); color: var(--text); }
-.badge-wildcard-hedged { background: transparent; border: 1px dashed var(--grass); color: var(--avocado); }
+.badge-wildcard-confident { background: var(--yellow); color: var(--charcoal); }
+.badge-wildcard-hedged { background: transparent; border: 1px dashed var(--yellow); color: var(--yellow); }
 .badge-random { background: var(--charcoal3); color: var(--text-muted); border: 1px solid var(--border); }
 .rec-starve-note {
   font-size: 12px; color: var(--text-dim); font-style: italic; font-weight: 300;
@@ -712,7 +737,7 @@ body {
 .nvr-legend-item { display: flex; align-items: center; gap: 6px; }
 .nvr-swatch { width: 11px; height: 11px; border-radius: 2px; }
 .nvr-swatch.new { background: var(--orange); }
-.nvr-swatch.repeat { background: #5a5450; }
+.nvr-swatch.repeat { background: rgba(90,84,80,0.6); }
 
 /* Milestones */
 .ms-list { display: flex; flex-direction: column; gap: 2px; }
@@ -742,7 +767,7 @@ body {
 .abv-chart { display: flex; align-items: flex-end; gap: 5px; height: 120px; margin-bottom: 8px; }
 .abv-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
 .abv-bar-wrap { flex: 1; width: 100%; display: flex; align-items: flex-end; }
-.abv-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 3px; background: #5a5450; transition: height 0.4s; }
+.abv-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 3px; background: rgba(90,84,80,0.6); transition: height 0.4s; }
 .abv-bar.peak { background: var(--orange); }
 .abv-lbl { font-size: 9px; color: var(--text-dim); text-align: center; line-height: 1.1; }
 .abv-val { font-size: 10px; color: var(--text-dim); }
@@ -752,7 +777,7 @@ body {
 /* ═══ DRILL-DOWN PANEL ═══════════════════════════════════════════ */
 .drill-head { margin-bottom: 4px; }
 .drill-kicker { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--orange); margin-bottom: 5px; }
-.drill-name { font-family: var(--font-display); font-size: 22px; font-weight: 700; line-height: 1.15; }
+.drill-name { font-family: var(--font-headline); font-size: 22px; font-weight: 700; line-height: 1.15; }
 .drill-summary { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-weight: 300; }
 .drill-section { margin-top: 22px; }
 .drill-section-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 11px; }
@@ -763,13 +788,13 @@ body {
 .band-seg { display: flex; align-items: center; justify-content: center; font-size: 13px; min-width: 2px; }
 .band-seg.band-definitely { background: var(--lime); }
 .band-seg.band-maybe { background: var(--orange-dim); }
-.band-seg.band-never { background: #5a5450; }
+.band-seg.band-never { background: var(--neutral); }
 .band-key { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
 .band-key-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
 .band-swatch { width: 10px; height: 10px; border-radius: 2px; }
 .band-swatch.band-definitely { background: var(--lime); }
 .band-swatch.band-maybe { background: var(--orange-dim); }
-.band-swatch.band-never { background: #5a5450; }
+.band-swatch.band-never { background: var(--neutral); }
 
 /* Mini rank rows inside a panel (non-interactive) */
 .mini-row { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
@@ -796,9 +821,8 @@ body {
 
 <!-- HEADER -->
 <div class="header">
-  <div class="logo" onclick="switchTab('checkin')">
-    <div class="logo-mark">🍺</div>
-    <div class="logo-name">Hop<em>print</em></div>
+  <div class="logo" onclick="switchTab('checkin')" role="button" aria-label="Hopprint — go to Check In">
+    <img src="assets/hopprint-hop.svg" alt="Hopprint" class="logo-mark">
   </div>
   <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon">📅</span>Check can date</div>
 </div>
@@ -2181,14 +2205,16 @@ function esc(s) { return (s || '').replace(/"/g,'&quot;').replace(/</g,'&lt;'); 
 // ═══════════════════════════════════════════════════════════════
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════
-Chart.defaults.color = '#9a9490';
-Chart.defaults.font.family = "'Barlow Condensed', 'Arial Narrow', sans-serif";
+const rootStyle = getComputedStyle(document.documentElement);
+const cssVar = n => rootStyle.getPropertyValue(n).trim();
+Chart.defaults.color = cssVar('--text-muted');
+Chart.defaults.font.family = "'Arial Narrow', 'Barlow Condensed', sans-serif";
 Chart.defaults.plugins.legend.display = false;
-Chart.defaults.plugins.tooltip.backgroundColor = '#3a3637';
+Chart.defaults.plugins.tooltip.backgroundColor = cssVar('--charcoal3');
 Chart.defaults.plugins.tooltip.borderColor = 'rgba(233,115,36,0.3)';
 Chart.defaults.plugins.tooltip.borderWidth = 1;
-Chart.defaults.plugins.tooltip.titleColor = '#f5f0e8';
-Chart.defaults.plugins.tooltip.bodyColor = '#9a9490';
+Chart.defaults.plugins.tooltip.titleColor = cssVar('--text');
+Chart.defaults.plugins.tooltip.bodyColor = cssVar('--text-muted');
 Chart.defaults.plugins.tooltip.padding = 9;
 Chart.defaults.plugins.tooltip.cornerRadius = 7;
 
@@ -2655,9 +2681,9 @@ function renderAnalytics() {
 
   <div class="stat-grid">
     <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${analyticsCompare ? deltaLine(es.length, prevYrEntries.length) : `<div class="stat-sub">${breweries} breweries · ${styles} styles</div>`}</div>
-    <div class="stat-card" style="--accent:var(--avocado)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
-    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${analyticsCompare ? deltaLine(breweries, prevBreweries) : `<div class="stat-sub">${homePct}% at home</div>`}</div>
-    <div class="stat-card" style="--accent:var(--grass)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
+    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
+    <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${analyticsCompare ? deltaLine(breweries, prevBreweries) : `<div class="stat-sub">${homePct}% at home</div>`}</div>
+    <div class="stat-card" style="--accent:var(--creamsicle)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
   </div>
 
   ${buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, analyticsCompare)}
@@ -2698,7 +2724,7 @@ function renderAnalytics() {
     <div class="chart-sub">When you're most likely to open one</div>
     <div class="dow-chart">${dowCounts.map((c, i) => `
       <div class="dow-col">
-        <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c / maxDow * 100)}%;background:${topDowSet.has(i) ? '#e97324' : '#5a5450'};opacity:${topDowSet.has(i) ? 1 : 0.55}"></div></div>
+        <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c / maxDow * 100)}%;background:${topDowSet.has(i) ? 'var(--orange)' : 'var(--neutral)'};opacity:${topDowSet.has(i) ? 1 : 0.6}"></div></div>
         <div class="dow-lbl">${dowLabels[i]}</div>
         <div class="dow-val">${c}</div>
       </div>`).join('')}
@@ -2827,17 +2853,27 @@ function renderAnalytics() {
         type: 'bar',
         data: { labels: nvrKeys, datasets: [
           { label: 'First time', data: nvrNewArr, backgroundColor: '#e97324', borderRadius: 2 },
-          { label: 'Repeat', data: nvrRepeatArr, backgroundColor: '#5a5450', borderRadius: 2 },
+          { label: 'Repeat', data: nvrRepeatArr, backgroundColor: 'rgba(90,84,80,0.6)', borderRadius: 2 },
         ] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 9 } } }, y: { stacked: true, grid: { color: g }, ticks: { font: { size: 10 } } } } }
       });
     }
     if (document.getElementById('chartServe')) {
-      const sl = Object.keys(serveCounts);
-      const clrs = ['#e97324', '#bddb8f', '#8fc640', '#056a38', '#c45e18', '#f5b84d', '#a0c050', '#7aa830'];
+      const serveEntries = Object.entries(serveCounts).sort((a, b) => b[1] - a[1]);
+      const topServe = serveEntries.slice(0, 4);
+      const otherCount = serveEntries.slice(4).reduce((sum, [, c]) => sum + c, 0);
+      const topColors = [cssVar('--orange'), cssVar('--lime'), cssVar('--yellow'), cssVar('--creamsicle')];
+      const sl = topServe.map(([label]) => label);
+      const svData = topServe.map(([, c]) => c);
+      const clrs = topServe.map((_, i) => topColors[i]);
+      if (otherCount > 0) {
+        sl.push('Other');
+        svData.push(otherCount);
+        clrs.push(cssVar('--neutral'));
+      }
       analyticsCharts.serve = new Chart(document.getElementById('chartServe'), {
         type: 'doughnut',
-        data: { labels: sl, datasets: [{ data: sl.map(l => serveCounts[l]), backgroundColor: clrs, borderWidth: 0, hoverOffset: 5 }] },
+        data: { labels: sl, datasets: [{ data: svData, backgroundColor: clrs, borderWidth: 0, hoverOffset: 5 }] },
         options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: true, position: 'right', labels: { font: { size: 11 }, padding: 10, boxWidth: 10 } } } }
       });
     }
