@@ -1,6 +1,6 @@
 # SYNC_REVERSAL_WORKPLAN.md — Supabase as source of truth, client sync layer, wishlist table
 
-**Status:** Decisions locked (SY1–SY13) in session dated below. Build not started. Any future session can begin cold from this document.
+**Status:** Decisions locked (SY1–SY13) in session dated below. Phase 0 (schema) complete September 23, 2026; Phase 1 in progress. Any future session can begin cold from this document.
 **Date:** September 20, 2026
 **Scope:** Reverse the one-way sync decision (TS7) so Supabase holds the authoritative copy of every check-in and wishlist item, and localStorage becomes a fast local cache. Covers schema changes, the client sync layer, the login method change, the service worker change, and the one-time migration of Greg's existing data.
 **Supersedes:** TS7 (one-way device → Supabase sync); TS6 (magic link → emailed 6-digit code); parts of PC7/PC8/O6 in `PROFILE_CREATION_UX_WORKPLAN.md` (see Part 6); the "migrate manually" half of PC10 (still manual, but now a script, see SY10).
@@ -131,6 +131,12 @@ Each phase is additive. Existing functions verified byte-identical post-build ex
 ### Phase 0 — Schema
 - Run the Part 3 DDL (SY5, SY1, SY11); confirm the live update grant/policy on `check_ins`.
 - **Deliverable:** verification queries show `created_at` is `timestamp`, `updated_at` bumps on update, `wishlist` exists with RLS on and four policies.
+- **✅ Done — September 23, 2026.** Migrations applied (Supabase migration names): `sy1_check_ins_updated_at_trigger`, `sy11_wishlist_table`, `sy5_check_ins_created_at_wall_clock`, `revoke_truncate_on_user_tables`, `revoke_truncate_profiles_feedback_and_defaults`. SY5 ran after SY1/SY11 (independent; table was empty). Verified:
+  - Pre-flight: `check_ins` held 0 rows (no test rows to delete); `authenticated` has the update grant and `check_ins: update own` has both `using` and `with check` — Part 3 live-state note confirmed.
+  - `check_ins.created_at` is `timestamp without time zone`; `updated_at`/`synced_at` are `timestamptz`.
+  - Trigger test in a rolled-back transaction (throwaway `auth.users` row): inserting with `updated_at = 2020-01-01` then updating bumped it to `now()` on both `check_ins` and `wishlist`; `created_at` `'2026-09-23 21:00'` read back unshifted. Post-test counts: 0 users, 0 check-ins, 0 wishlist rows.
+  - `wishlist`: 7 columns, RLS on, four own-row policies, trigger + `(user_id, updated_at)` index. Security advisors: no lints.
+- **Security fix found during Phase 0 (outside SY1–SY13):** Supabase's default privileges had granted `TRUNCATE`, `REFERENCES`, and `TRIGGER` to `anon` and `authenticated` on every public table. `TRUNCATE` bypasses RLS — anyone holding the public anon key could have wiped all users' rows. Revoked on `check_ins`, `wishlist`, `profiles`, and `feedback`, and removed from the schema's default privileges so future tables don't inherit it. `anon` now holds no table privileges on `check_ins`/`wishlist`; `authenticated` holds exactly `select, insert, update, delete`. Any future table still needs its own explicit grants (as SY11 does).
 
 ### Phase 1 — SDK + auth (code login)
 - Resolve nothing new: SY12 is locked. Add the pinned SDK script and client.
