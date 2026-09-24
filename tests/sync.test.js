@@ -20,7 +20,9 @@ function extractFunction(name) {
   const start = script.search(new RegExp(`^(?:async\\s+)?function\\s+${name}\\s*\\(`, 'm'));
   if (start === -1) throw new Error(`function ${name} not found in index.html`);
   let depth = 0;
-  for (let i = script.indexOf('{', start); i < script.length; i++) {
+  // The body starts at the first ") {" — not a default-parameter brace like (opts = {}).
+  const bodyStart = start + script.slice(start).search(/\)\s*\{/);
+  for (let i = script.indexOf('{', bodyStart); i < script.length; i++) {
     if (script[i] === '{') depth++;
     else if (script[i] === '}' && --depth === 0) return script.slice(start, i + 1);
   }
@@ -88,7 +90,7 @@ function makeSync({ uid = 'user-a', owner, entries = [], wishlist = [], sb = fak
   vm.runInContext([
     ...SYNC_CONSTS.map(extractConst),
     ...SYNC_FUNCTIONS.map(extractFunction),
-    'var sb, authUser, entries, wishlist, pendingOps, pendingSeq = 0, syncing = false, flushTimer = null;',
+    'var sb, authUser, entries, wishlist, pendingOps, pendingSeq = 0, syncing = false, pulling = false, flushTimer = null;',
   ].join('\n'), ctx);
   ctx.sb = sb;
   ctx.authUser = uid ? { id: uid, email: `${uid}@example.com` } : null;

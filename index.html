@@ -4174,7 +4174,7 @@ if (sb) {
   sb.auth.onAuthStateChange((event, session) => {
     if (session) { authUser = session.user; updateAccountEmail(); }
     // A restored or refreshed session can upload what queued while it was away.
-    if (session && appStarted) setTimeout(flushPending, 0);
+    if (session && appStarted) setTimeout(syncNow, 0);
   });
 }
 
@@ -4307,7 +4307,7 @@ function enterApp() {
   claimCacheOwner();
   init();                                       // O5 — lands on Check In (the default active tab)
   updateSyncPill();
-  flushPending();                               // SY6 — retry on app open
+  syncNow();                                    // Part 2 "App open": flush, then pull
 }
 
 // ── Email + code ──────────────────────────────────────────────
@@ -4477,13 +4477,12 @@ async function signOutUser() {
 // SYNC — upload side (SY3 / SY4 / SY6 / SY7 / SY11)
 // Every write updates the local cache first, then marks the row in the
 // pending pile. flushPending() sends the row's *current* cached version
-// (upsert) or deletes it, and clears the mark only on success. Phase 3 adds
-// the pull-down.
+// (upsert) or deletes it, and clears the mark only on success.
 //
 // Shared devices: the first account to sign in on a device owns its cache
 // (hopprint_cache_owner). Another account's writes are still recorded, tagged
 // with their own id, but nothing uploads while the owner differs — the pill
-// reads "Sync paused" until Phase 3's pull-down replaces the cache.
+// reads "Sync paused" until the pull-down takes the cache over (takeOverCache).
 // ═══════════════════════════════════════════════════════════════
 const PENDING_KEY = 'hopprint_pending';
 const CACHE_OWNER_KEY = 'hopprint_cache_owner';
@@ -4496,7 +4495,7 @@ let pendingSeq = Object.values(pendingOps).reduce((m, o) => Math.max(m, o.seq ||
 let syncing = false;
 let flushTimer = null;
 
-window.addEventListener('online', () => { if (appStarted) flushPending(); });   // SY6
+window.addEventListener('online', () => { if (appStarted) syncNow(); });   // SY6
 
 function loadPendingOps() {
   try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}') || {}; } catch (e) { return {}; }
@@ -4647,6 +4646,7 @@ function myPendingCount() {
 async function flushPending() {
   clearTimeout(flushTimer);
   const uid = authUser && authUser.id;
+  if (pulling) { flushTimer = setTimeout(flushPending, FLUSH_DEBOUNCE_MS); return; }
   if (syncing || !sb || !uid || syncPaused()) { updateSyncPill(); return; }
   const mine = Object.values(pendingOps).filter(o => o.owner === uid);
   if (!mine.length) { updateSyncPill(); return; }
@@ -4669,7 +4669,7 @@ async function flushPending() {
   }
   // SY6: go again if anything was written while this flush ran — its own
   // debounce timer may have fired (and been skipped) mid-flush.
-  if (!stopped && pendingSeq > startSeq) flushPending();
+  if (!stopped && pendingSeq > startSeq) await flushPending();
 }
 
 async function flushTable(table, ops, uid) {
@@ -4719,17 +4719,229 @@ function updateSyncPill() {
   const n = myPendingCount();
   pill.classList.toggle('paused', paused);
   if (paused) { pill.hidden = false; pill.textContent = 'Sync paused'; return; }
-  if (syncing) { pill.hidden = false; pill.textContent = '⟳ Syncing…'; return; }
+  if (syncing || pulling) { pill.hidden = false; pill.textContent = '⟳ Syncing…'; return; }
   pill.hidden = n === 0;
   pill.textContent = `⟳ ${n} not synced`;
 }
 
 async function onSyncPillTap() {
+  if (syncing || pulling) return;
+  await syncNow();
   if (syncPaused()) { showToast('⚠️ Data here is from another account'); return; }
-  if (syncing) return;
-  await flushPending();
   const n = myPendingCount();
   showToast(n ? `⚠️ ${n} still not synced` : '✅ All synced');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SYNC — pull-down (SY1 / SY2 / SY3 / SY6 / SY7 / OS5)
+// Pull every row changed since the bookmark (the newest updated_at the server
+// has returned — never the device clock), paged with a (updated_at, id)
+// keyset so tied timestamps can't be skipped. Once a day (or on "Sync Now"),
+// fetch the full id list and drop local rows the server no longer has. Rows
+// in the pending pile always win over the server copy.
+//
+// All network reads finish before anything is merged, so a write made while
+// a pull is in flight is never overwritten by the merge.
+// ═══════════════════════════════════════════════════════════════
+const SYNC_STATE_KEY = 'hopprint_sync_state';
+const PULL_PAGE = 1000;            // SY7(a): PostgREST's default row cap
+let pulling = false;
+
+function loadSyncState(uid) {
+  try {
+    const st = JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || 'null');
+    if (st && st.uid === uid) return st;
+  } catch (e) {}
+  return { uid, bookmarks: {}, lastIdCheck: '' };
+}
+
+function saveSyncState(st) {
+  localStorage.setItem(SYNC_STATE_KEY, JSON.stringify(st));
+}
+
+// ── Pure helpers (covered by tests/pull.test.js) ──────────────
+function localDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Server row → the cache's check-in shape (same keys and order as
+// submitCheckin builds). Blank text comes back as '' like a fresh entry.
+function checkInFromRow(r) {
+  const txt = v => v ?? '';
+  return {
+    id: r.id,
+    beer_name: r.beer_name,
+    brewery_name: txt(r.brewery_name),
+    brewery_city: txt(r.brewery_city),
+    brewery_state: txt(r.brewery_state),
+    beer_type: txt(r.beer_type),
+    beer_abv: r.beer_abv == null ? '' : String(r.beer_abv),
+    venue_name: txt(r.venue_name),
+    purchase_venue: txt(r.purchase_venue),
+    created_at: r.created_at,
+    serving_type: txt(r.serving_type),
+    occasion: txt(r.occasion),
+    occasion_ctx: Array.isArray(r.occasion_ctx) ? r.occasion_ctx : [],
+    comment: txt(r.comment),
+    rating: r.rating ?? null,
+    rating_mode: r.rating_mode ?? null,
+    source: r.source || 'live',
+  };
+}
+
+function wishFromRow(r) {
+  return { id: r.id, name: r.beer_name, brewery: r.brewery_name ?? '', style: r.beer_type ?? '', added: r.added_at };
+}
+
+// SY6 "pending wins": a row with a queued local write keeps the local copy.
+function mergePulled(local, rows, table, pending, fromRow) {
+  const out = local.slice();
+  const index = new Map(out.map((r, i) => [r.id, i]));
+  let changed = 0;
+  rows.forEach(r => {
+    if (pending[pendingKey(table, r.id)]) return;
+    const row = fromRow(r);
+    if (index.has(r.id)) {
+      const i = index.get(r.id);
+      if (JSON.stringify(out[i]) !== JSON.stringify(row)) { out[i] = row; changed++; }
+    } else {
+      index.set(r.id, out.length);
+      out.push(row);
+      changed++;
+    }
+  });
+  return { list: out, changed };
+}
+
+// SY2: drop local rows the server no longer has, except pending ones. This
+// is also what makes the first pull replace a device's local list (SY4).
+function pruneMissing(local, serverIds, table, pending) {
+  const list = local.filter(r => serverIds.has(r.id) || !!pending[pendingKey(table, r.id)]);
+  return { list, removed: local.length - list.length };
+}
+
+// ── Network ───────────────────────────────────────────────────
+async function pullTable(table, uid, since) {
+  const rows = [];
+  let last = null;
+  for (;;) {
+    let q = sb.from(table).select('*').eq('user_id', uid)
+      .order('updated_at', { ascending: true }).order('id', { ascending: true }).limit(PULL_PAGE);
+    if (last) q = q.or(`updated_at.gt."${last.updated_at}",and(updated_at.eq."${last.updated_at}",id.gt.${last.id})`);
+    else if (since) q = q.gte('updated_at', since);   // SY7(b): >=, then de-duplicated by id in the merge
+    const { data, error } = await q;
+    if (error) return { error };
+    rows.push(...data);
+    if (data.length < PULL_PAGE) return { rows };
+    last = data[data.length - 1];
+  }
+}
+
+async function fetchServerIds(table, uid) {
+  const ids = new Set();
+  let last = null;
+  for (;;) {
+    let q = sb.from(table).select('id').eq('user_id', uid).order('id', { ascending: true }).limit(PULL_PAGE);
+    if (last) q = q.gt('id', last);
+    const { data, error } = await q;
+    if (error) return { error };
+    data.forEach(r => ids.add(r.id));
+    if (data.length < PULL_PAGE) return { ids };
+    last = data[data.length - 1].id;
+  }
+}
+
+// A different account signed in on this device (sync paused). Take the cache
+// over only if the previous owner has nothing left to upload; the forced id
+// check on the next pull then replaces their rows with this account's own.
+function takeOverCache(uid) {
+  if (Object.values(pendingOps).some(o => o.owner !== uid)) return false;
+  localStorage.setItem(CACHE_OWNER_KEY, uid);
+  localStorage.removeItem(SYNC_STATE_KEY);
+  return true;
+}
+
+async function pullChanges(opts = {}) {
+  const uid = authUser && authUser.id;
+  if (pulling || syncing || !sb || !uid) return;
+  if (syncPaused() && !takeOverCache(uid)) { updateSyncPill(); return; }
+
+  const st = loadSyncState(uid);
+  const today = localDateKey(new Date());
+  const idCheckDue = !!opts.forceIdCheck || st.lastIdCheck !== today;   // OS5: daily, plus Sync Now
+  const tables = [
+    { table: 'check_ins', fromRow: checkInFromRow },
+    { table: 'wishlist', fromRow: wishFromRow },
+  ];
+
+  pulling = true;
+  updateSyncPill();
+  let changed = false;
+  try {
+    for (const t of tables) {
+      const res = await pullTable(t.table, uid, st.bookmarks[t.table]);
+      if (res.error) return;
+      t.rows = res.rows;
+      if (idCheckDue) {
+        const idRes = await fetchServerIds(t.table, uid);
+        if (idRes.error) return;
+        t.ids = idRes.ids;
+      }
+    }
+
+    // Everything fetched — merge synchronously against the current cache.
+    tables.forEach(t => {
+      const current = t.table === 'check_ins' ? entries : wishlist;
+      const merged = mergePulled(current, t.rows, t.table, pendingOps, t.fromRow);
+      let list = merged.list, n = merged.changed;
+      if (t.ids) { const pruned = pruneMissing(list, t.ids, t.table, pendingOps); list = pruned.list; n += pruned.removed; }
+      if (t.rows.length) st.bookmarks[t.table] = t.rows[t.rows.length - 1].updated_at;
+      if (!n) return;
+      changed = true;
+      if (t.table === 'check_ins') {
+        entries = list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        save();
+      } else {
+        wishlist = list.sort((a, b) => String(a.added).localeCompare(String(b.added)));
+        localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+      }
+    });
+    if (idCheckDue) st.lastIdCheck = today;
+    saveSyncState(st);
+  } catch (e) {
+    // Network or unexpected failure: keep the cache and bookmark as they were.
+  } finally {
+    pulling = false;
+    updateSyncPill();
+  }
+  if (changed) refreshAfterPull();
+}
+
+// Part 2 step 6: autocomplete and header are built once at init() from the
+// cache, so rebuild them and re-render whatever tab is showing.
+function refreshAfterPull() {
+  buildLiveLists();
+  updateHeaderMeta();
+  renderWishlist();
+  if (currentTab === 'history') renderHistory();
+  else if (currentTab === 'analytics') renderAnalytics();
+  else if (currentTab === 'profile') renderProfile();
+}
+
+// Part 2 "App open": upload what's pending, then pull. Also run on the
+// online event, a restored session, the pill, and "Sync Now".
+async function syncNow(opts) {
+  await flushPending();
+  await pullChanges(opts);
+  if (myPendingCount() && !syncPaused()) flushPending();   // writes made during the pull
+}
+
+async function syncNowFromAccount() {
+  if (syncing || pulling) return;
+  await syncNow({ forceIdCheck: true });
+  if (syncPaused()) { showToast('⚠️ Data here is from another account'); return; }
+  const n = myPendingCount();
+  showToast(n ? `⚠️ ${n} still not synced` : '✅ Up to date');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4747,6 +4959,7 @@ document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
     <div id="importDiagnostic"></div>
     <div class="sec-label">👤 Account</div>
     <div class="account-email" id="accountEmail"></div>
+    <button class="btn-action" onclick="syncNowFromAccount()">⟳ Sync Now</button>
     <button class="btn-action" onclick="signOutUser()">Sign Out</button>
   </div>
 `);
