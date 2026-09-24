@@ -12,27 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const script = html.match(/<script>\n([\s\S]*?)<\/script>\s*<\/body>/)[1];
-
-function extractFunction(name) {
-  const start = script.search(new RegExp(`^(?:async\\s+)?function\\s+${name}\\s*\\(`, 'm'));
-  if (start === -1) throw new Error(`function ${name} not found in index.html`);
-  let depth = 0;
-  // The body starts at the first ") {" — not a default-parameter brace like (opts = {}).
-  const bodyStart = start + script.slice(start).search(/\)\s*\{/);
-  for (let i = script.indexOf('{', bodyStart); i < script.length; i++) {
-    if (script[i] === '{') depth++;
-    else if (script[i] === '}' && --depth === 0) return script.slice(start, i + 1);
-  }
-  throw new Error(`unbalanced braces in ${name}`);
-}
-
-function extractConst(name) {
-  const m = script.match(new RegExp(`^const ${name} = [^\\n]*;`, 'm'));
-  if (!m) throw new Error(`const ${name} not found in index.html`);
-  return m[0];
-}
+const { html, script, extractFunction, extractConst } = require('./helpers');
 
 const sandbox = {};
 vm.createContext(sandbox);

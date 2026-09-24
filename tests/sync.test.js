@@ -8,32 +8,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
 const vm = require('vm');
 const nodeCrypto = require('crypto');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const script = html.match(/<script>\n([\s\S]*?)<\/script>\s*<\/body>/)[1];
-
-function extractFunction(name) {
-  const start = script.search(new RegExp(`^(?:async\\s+)?function\\s+${name}\\s*\\(`, 'm'));
-  if (start === -1) throw new Error(`function ${name} not found in index.html`);
-  let depth = 0;
-  // The body starts at the first ") {" — not a default-parameter brace like (opts = {}).
-  const bodyStart = start + script.slice(start).search(/\)\s*\{/);
-  for (let i = script.indexOf('{', bodyStart); i < script.length; i++) {
-    if (script[i] === '{') depth++;
-    else if (script[i] === '}' && --depth === 0) return script.slice(start, i + 1);
-  }
-  throw new Error(`unbalanced braces in ${name}`);
-}
-
-function extractConst(name) {
-  const m = script.match(new RegExp(`^const ${name} = [^\\n]*;`, 'm'));
-  if (!m) throw new Error(`const ${name} not found in index.html`);
-  return m[0];
-}
+const { html, script, extractFunction, extractConst } = require('./helpers');
 
 const SYNC_FUNCTIONS = [
   'isNetworkError', 'newId', 'isUuid', 'idArg', 'pendingKey', 'chunk', 'nextPendingOp',
@@ -363,4 +341,30 @@ test('handleImport: undated rows are skipped and reported; new rows get uuids an
   assert.deepEqual([...queued[0].ids].sort(), [...ctx.entries.map(e => e.id)].sort());
   assert.match(diag.innerHTML, /1 row in the CSV had no check-in date and was skipped/);
   assert.match(ctx.toast, /Imported 2 entries/);
+});
+
+// ── Rendered handlers (Phase 6) ─────────────────────────────────
+
+test('quoted-id rendering: the onclick string hands the exact id back to openEdit', () => {
+  const s = makeSync();
+  const card = extractFunction('renderHistory').match(/onclick="(openEdit\(\$\{idArg\(e\.id\)\}\))"/)[1];
+  for (const id of [uuid(), 1719000000000, 1719000000000.1234]) {
+    const handler = card.replace('${idArg(e.id)}', s.idArg(id));     // what the browser sees in the attribute
+    let received;
+    vm.runInNewContext(handler, { openEdit: x => { received = x; } });
+    assert.equal(received, id, String(id));                          // strict: uuid stays a string, legacy stays a number
+  }
+});
+
+test('removeWish: removes exactly that item by id and queues its delete', () => {
+  const a = { id: uuid(), name: 'A' }, b = { id: uuid(), name: 'B' }, c = { id: uuid(), name: 'C' };
+  const ctx = { wishlist: [a, b, c], queued: [], rendered: 0, localStorage: { setItem() {} } };
+  vm.createContext(ctx);
+  vm.runInContext(`${extractFunction('removeWish')}
+    function queueSync(t, id, op) { queued.push([t, id, op]); }
+    function renderWishlist() { rendered++; }`, ctx);
+  ctx.removeWish(b.id);
+  assert.deepEqual([...ctx.wishlist.map(w => w.name)], ['A', 'C']);
+  assert.deepEqual(ctx.queued.map(q => [...q]), [['wishlist', b.id, 'delete']]);
+  assert.equal(ctx.rendered, 1);
 });
