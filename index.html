@@ -853,6 +853,17 @@ body.auth-locked .auth-gate { display: flex; }
 .auth-check a { color: var(--orange); }
 .account-email { font-size: 14px; color: var(--text-muted); margin-bottom: 10px; word-break: break-all; }
 
+/* ── SYNC STATUS PILL (OS6) ─────────────────────────────────── */
+.header-right { display: flex; align-items: center; gap: 8px; }
+.sync-pill {
+  font-family: var(--font-body); font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+  color: var(--creamsicle); background: var(--charcoal3);
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 5px 10px; cursor: pointer; white-space: nowrap;
+}
+.sync-pill[hidden] { display: none; }
+.sync-pill.paused { color: var(--text-dim); }
+
 </style>
 </head>
 <body class="auth-locked">
@@ -953,7 +964,10 @@ body.auth-locked .auth-gate { display: flex; }
   <div class="logo" onclick="switchTab('checkin')" role="button" aria-label="Hopprint — go to Check In">
     <img src="assets/hopprint-hop.svg" alt="Hopprint" class="logo-mark">
   </div>
-  <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon">📅</span>Check can date</div>
+  <div class="header-right">
+    <div class="sync-pill" id="syncPill" onclick="onSyncPillTap()" role="button" hidden></div>
+    <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon">📅</span>Check can date</div>
+  </div>
 </div>
 
 <!-- TABS -->
@@ -1214,6 +1228,12 @@ if (entries.some(e => 'beer_ibu' in e)) {
   localStorage.setItem('hopprint_entries', JSON.stringify(entries));
 }
 let wishlist = JSON.parse(localStorage.getItem('hopprint_wishlist') || '[]');
+// SY11: wish list items are removed by id now. Give pre-sync items one; they
+// are not queued for upload (the SY10 migration script carries them over).
+if (wishlist.some(w => !w.id)) {
+  wishlist.forEach(w => { if (!w.id) w.id = newId(); });
+  localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+}
 let selectedServe = '';
 let selectedOccasion = '';
 let selectedCtx = [];
@@ -2009,7 +2029,7 @@ function submitCheckin() {
   const beerName = document.getElementById('beerName').value.trim();
   if (!beerName) { document.getElementById('beerName').focus(); showToast('⚠️ Beer name required'); return; }
   const entry = {
-    id: Date.now(),
+    id: newId(),
     beer_name: beerName,
     brewery_name: document.getElementById('breweryName').value.trim(),
     brewery_city: document.getElementById('breweryCity').value.trim(),
@@ -2029,6 +2049,7 @@ function submitCheckin() {
   };
   entries.unshift(entry);
   save();
+  queueSync('check_ins', entry.id, 'upsert', true);
   // Record beer + brewery detail for autofill (fill-blank-only). Autocomplete
   // lists are owned by buildLiveLists() now — no direct SEED.* push here (see 3a).
   if (beerName && entry.brewery_name) {
@@ -2121,6 +2142,7 @@ function saveRating(value, mode) {
   e.rating = value;
   e.rating_mode = mode;
   save();
+  queueSync('check_ins', e.id, 'upsert');
   renderHistory();
 }
 
@@ -2224,7 +2246,7 @@ function renderHistory() {
     const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
     const occ = OCCASIONS.find(o => o.id === e.occasion);
     const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
-    return `<div class="entry-card fade-up" onclick="openEdit(${e.id})">
+    return `<div class="entry-card fade-up" onclick="openEdit(${idArg(e.id)})">
       <div class="entry-top">
         <div>
           <div class="entry-beer">${e.beer_name}</div>
@@ -2243,7 +2265,7 @@ function renderHistory() {
         <div class="entry-date">${date}${e.purchase_venue ? ` · ${e.purchase_venue}` : ''}</div>
         <div class="entry-occ">${occ ? occ.icon + ' ' + occ.label : ''}</div>
       </div>
-      ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${e.id})">Rate it →</div>`}
+      ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
     </div>`;
   }).join('');
 }
@@ -2277,7 +2299,7 @@ function openEdit(id) {
     <div class="sec-label">Would you drink this beer again?</div>
     <div style="font-size:13px;color:var(--text-muted);font-weight:300;">
       ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `${band.icon} ${band.label} (${e.rating})` : 'Not rated yet'; })()}
-      <span class="rate-badge" style="margin-left:8px;" onclick="closeModal(); openRatingModal(${e.id})">${typeof e.rating === 'number' ? 'Change' : 'Rate it →'}</span>
+      <span class="rate-badge" style="margin-left:8px;" onclick="closeModal(); openRatingModal(${idArg(e.id)})">${typeof e.rating === 'number' ? 'Change' : 'Rate it →'}</span>
     </div>
     <div class="sec-label">Notes</div>
     <div class="field"><textarea id="e_notes">${esc(e.comment)}</textarea></div>
@@ -2309,6 +2331,7 @@ function saveEdit() {
   e.serving_type = editServe || e.serving_type;
   e.comment = document.getElementById('e_notes').value.trim();
   save();
+  queueSync('check_ins', e.id, 'upsert');
   closeModal();
   renderHistory();
   showToast('✅ Updated');
@@ -2318,6 +2341,7 @@ function deleteEntry() {
   if (!confirm('Delete this check-in?')) return;
   entries = entries.filter(x => x.id !== editingId);
   save();
+  queueSync('check_ins', editingId, 'delete');
   closeModal();
   renderHistory();
   updateHeaderMeta();
@@ -3907,8 +3931,10 @@ function addWishlistItem() {
   const brewery = breweryEl.value.trim();
   const style = styleEl.value.trim();
   if (!name) { showToast('Enter a beer name'); return; }
-  wishlist.push({ name, brewery, style, added: new Date().toISOString() });
+  const item = { id: newId(), name, brewery, style, added: new Date().toISOString() };
+  wishlist.push(item);
   localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+  queueSync('wishlist', item.id, 'upsert', true);
   nameEl.value = ''; breweryEl.value = ''; styleEl.value = '';
   renderWishlist();
   showToast('📌 Added to wish list');
@@ -3921,19 +3947,20 @@ function renderWishlist() {
     el.innerHTML = `<div style="font-size:13px;color:var(--text-dim);font-weight:300;padding:8px 0;">Beers you're hoping to find will appear here.</div>`;
     return;
   }
-  el.innerHTML = wishlist.map((w, i) => `
+  el.innerHTML = wishlist.map(w => `
     <div class="wish-card">
       <div>
         <div class="wish-name">${w.name}</div>
         <div class="wish-detail">${w.brewery}${w.style ? ` · ${w.style}` : ''}</div>
       </div>
-      <div class="wish-remove" onclick="removeWish(${i})">✕</div>
+      <div class="wish-remove" onclick="removeWish('${w.id}')">✕</div>
     </div>`).join('');
 }
 
-function removeWish(i) {
-  wishlist.splice(i,1);
+function removeWish(id) {
+  wishlist = wishlist.filter(w => w.id !== id);
   localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+  queueSync('wishlist', id, 'delete');
   renderWishlist();
 }
 
@@ -3965,7 +3992,7 @@ function handleImport(event) {
       const text = e.target.result;
       const lines = text.split('\n').filter(l=>l.trim());
       const headers = lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
-      const imported = lines.slice(1).map(line => {
+      const parsed = lines.slice(1).map(line => {
         const vals = [];
         let inQ = false, cur = '';
         for (const ch of line) {
@@ -3979,7 +4006,7 @@ function handleImport(event) {
         const starRating = parseFloat(obj.rating_score);
         const hasRating = !isNaN(starRating) && starRating > 0;
         return {
-          id: Date.now() + Math.random(),
+          id: newId(),
           beer_name: obj.beer_name||'',
           brewery_name: obj.brewery_name||'',
           brewery_city: obj.brewery_city||'',
@@ -3998,10 +4025,15 @@ function handleImport(event) {
           source: 'import',
         };
       }).filter(e => e.beer_name);
+      // SY7(d): check_ins.created_at is not null, and analytics can't place an
+      // undated check-in, so undated rows are skipped and reported below.
+      const undatedCount = parsed.filter(e => !e.created_at).length;
+      const imported = parsed.filter(e => e.created_at);
       const existing = new Set(entries.map(e=>`${e.beer_name}|${e.created_at}`));
       const newOnes = imported.filter(e => !existing.has(`${e.beer_name}|${e.created_at}`));
       entries = [...entries, ...newOnes].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
       save();
+      queueSyncMany('check_ins', newOnes.map(e => e.id), 'upsert', true);
       // Record beer/brewery detail from imports for autofill (fill-blank-only),
       // then refresh autocomplete lists in place so imports are searchable now.
       imported.forEach(e => {
@@ -4029,6 +4061,9 @@ function handleImport(event) {
         } else {
           diagEl.innerHTML = '';
         }
+      }
+      if (diagEl && undatedCount) {
+        diagEl.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">${undatedCount} row${undatedCount !== 1 ? 's' : ''} in the CSV had no check-in date and ${undatedCount !== 1 ? 'were' : 'was'} skipped.</div>`);
       }
     } catch(err) { showToast('❌ Import failed'); }
   };
@@ -4138,6 +4173,8 @@ if (sb) {
   // supabase-js warns that awaiting its own calls inside this callback can deadlock.
   sb.auth.onAuthStateChange((event, session) => {
     if (session) { authUser = session.user; updateAccountEmail(); }
+    // A restored or refreshed session can upload what queued while it was away.
+    if (session && appStarted) setTimeout(flushPending, 0);
   });
 }
 
@@ -4267,7 +4304,10 @@ function enterApp() {
   clearInterval(authResendTimer);
   document.body.classList.remove('auth-locked');
   updateAccountEmail();
+  claimCacheOwner();
   init();                                       // O5 — lands on Check In (the default active tab)
+  updateSyncPill();
+  flushPending();                               // SY6 — retry on app open
 }
 
 // ── Email + code ──────────────────────────────────────────────
@@ -4431,6 +4471,265 @@ async function signOutUser() {
   if (error) { showToast('⚠️ Could not sign out — check your connection'); return; }
   localStorage.removeItem(PROFILE_OK_KEY);
   location.reload();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SYNC — upload side (SY3 / SY4 / SY6 / SY7 / SY11)
+// Every write updates the local cache first, then marks the row in the
+// pending pile. flushPending() sends the row's *current* cached version
+// (upsert) or deletes it, and clears the mark only on success. Phase 3 adds
+// the pull-down.
+//
+// Shared devices: the first account to sign in on a device owns its cache
+// (hopprint_cache_owner). Another account's writes are still recorded, tagged
+// with their own id, but nothing uploads while the owner differs — the pill
+// reads "Sync paused" until Phase 3's pull-down replaces the cache.
+// ═══════════════════════════════════════════════════════════════
+const PENDING_KEY = 'hopprint_pending';
+const CACHE_OWNER_KEY = 'hopprint_cache_owner';
+const UPSERT_CHUNK = 500;          // SY7(c)
+const DELETE_CHUNK = 100;          // delete ids travel in the URL; keep it short
+const FLUSH_DEBOUNCE_MS = 1500;    // the rating slider saves on every tick
+
+let pendingOps = loadPendingOps();
+let pendingSeq = Object.values(pendingOps).reduce((m, o) => Math.max(m, o.seq || 0), 0);
+let syncing = false;
+let flushTimer = null;
+
+window.addEventListener('online', () => { if (appStarted) flushPending(); });   // SY6
+
+function loadPendingOps() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+
+function savePendingOps() {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(pendingOps));
+}
+
+// ── Pure helpers (covered by tests/sync.test.js) ──────────────
+// SY4: client-generated uuids. randomUUID needs a secure context (https or
+// localhost); the fallback covers testing over a LAN address.
+function newId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+function isUuid(id) {
+  return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+// Argument for an inline onclick. uuids are quoted; legacy numeric ids stay
+// bare so the existing `x.id === id` lookups still match them.
+function idArg(id) {
+  return typeof id === 'number' ? String(id) : `'${String(id).replace(/[^0-9A-Za-z-]/g, '')}'`;
+}
+
+function pendingKey(table, id) {
+  return `${table}:${id}`;
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// SY6 queueing rule. Returns the new op, or null to leave the pile alone.
+//  - Legacy (non-uuid) rows stay local until the SY10 migration script.
+//  - A row already queued by another account is never re-tagged.
+//  - While sync is paused, only rows this account creates are queued
+//    (edits to the owner's rows are local-only).
+// A later write to the same row replaces the earlier op (last write wins; a
+// delete after an insert or edit wins). seq orders writes so an upload that
+// lands after a newer write doesn't clear the newer one.
+function nextPendingOp(existing, table, id, op, isNew, uid, paused, seq) {
+  if (!isUuid(id) || !uid) return null;
+  if (existing && existing.owner !== uid) return null;
+  if (paused && !isNew && !existing) return null;
+  return { table, id, op, owner: uid, seq };
+}
+
+function shapeCheckInRow(e, userId) {
+  if (!e || !e.beer_name || !e.created_at) return null;   // not-null columns; stays pending until fixed
+  const abv = parseFloat(e.beer_abv);
+  return {
+    id: e.id,
+    user_id: userId,
+    beer_name: e.beer_name,
+    brewery_name: e.brewery_name ?? null,
+    brewery_city: e.brewery_city ?? null,
+    brewery_state: e.brewery_state ?? null,
+    beer_type: e.beer_type ?? null,
+    beer_abv: Number.isFinite(abv) ? abv : null,             // SY7(d): '' → null
+    venue_name: e.venue_name ?? null,
+    purchase_venue: e.purchase_venue ?? null,
+    serving_type: e.serving_type ?? null,
+    occasion: e.occasion ?? null,
+    occasion_ctx: Array.isArray(e.occasion_ctx) ? e.occasion_ctx : [],
+    comment: e.comment ?? null,
+    rating: typeof e.rating === 'number' ? Math.round(e.rating) : null,
+    rating_mode: e.rating_mode ?? null,
+    source: e.source || 'live',
+    created_at: e.created_at,                                // SY5: wall-clock string as entered
+  };
+}
+
+// Local ↔ table mapping (Part 3): name → beer_name, brewery → brewery_name,
+// style → beer_type, added → added_at.
+function shapeWishlistRow(w, userId) {
+  if (!w || !w.name) return null;
+  return {
+    id: w.id,
+    user_id: userId,
+    beer_name: w.name,
+    brewery_name: w.brewery ?? null,
+    beer_type: w.style ?? null,
+    added_at: w.added || new Date().toISOString(),
+  };
+}
+
+// Stop the whole flush (vs. skipping one bad row): no network, or the
+// session is no longer accepted.
+function isStopError(err) {
+  return isNetworkError(err) || /^PGRST3/.test(err.code || '') || err.status === 401;
+}
+
+// ── Owner ─────────────────────────────────────────────────────
+function currentUserId() {
+  return (authUser && authUser.id) || localStorage.getItem(PROFILE_OK_KEY) || null;
+}
+
+function claimCacheOwner() {
+  const uid = currentUserId();
+  if (uid && !localStorage.getItem(CACHE_OWNER_KEY)) localStorage.setItem(CACHE_OWNER_KEY, uid);
+}
+
+function syncPaused() {
+  const owner = localStorage.getItem(CACHE_OWNER_KEY);
+  const uid = currentUserId();
+  return !!owner && !!uid && owner !== uid;
+}
+
+// ── Queue ─────────────────────────────────────────────────────
+function queueSync(table, id, op, isNew) {
+  queueSyncMany(table, [id], op, isNew);
+}
+
+function queueSyncMany(table, ids, op, isNew) {
+  const uid = currentUserId();
+  const paused = syncPaused();
+  let changed = false;
+  ids.forEach(id => {
+    const key = pendingKey(table, id);
+    const next = nextPendingOp(pendingOps[key], table, id, op, !!isNew, uid, paused, pendingSeq + 1);
+    if (!next) return;
+    pendingSeq = next.seq;
+    pendingOps[key] = next;
+    changed = true;
+  });
+  if (!changed) return;
+  savePendingOps();
+  updateSyncPill();
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flushPending, FLUSH_DEBOUNCE_MS);
+}
+
+function myPendingCount() {
+  const uid = currentUserId();
+  return Object.values(pendingOps).filter(o => o.owner === uid).length;
+}
+
+// ── Upload ────────────────────────────────────────────────────
+async function flushPending() {
+  clearTimeout(flushTimer);
+  const uid = authUser && authUser.id;
+  if (syncing || !sb || !uid || syncPaused()) { updateSyncPill(); return; }
+  const mine = Object.values(pendingOps).filter(o => o.owner === uid);
+  if (!mine.length) { updateSyncPill(); return; }
+
+  const startSeq = pendingSeq;
+  let stopped = false;
+  syncing = true;
+  updateSyncPill();
+  try {
+    for (const table of ['check_ins', 'wishlist']) {
+      const res = await flushTable(table, mine.filter(o => o.table === table), uid);
+      if (res.stopped) { stopped = true; break; }
+    }
+  } catch (e) {
+    stopped = true;
+  } finally {
+    syncing = false;
+    savePendingOps();
+    updateSyncPill();
+  }
+  // SY6: go again if anything was written while this flush ran — its own
+  // debounce timer may have fired (and been skipped) mid-flush.
+  if (!stopped && pendingSeq > startSeq) flushPending();
+}
+
+async function flushTable(table, ops, uid) {
+  const src = table === 'check_ins' ? entries : wishlist;
+  const shape = table === 'check_ins' ? shapeCheckInRow : shapeWishlistRow;
+  const byId = new Map(src.map(r => [r.id, r]));
+  const done = op => {
+    const key = pendingKey(op.table, op.id);
+    if (pendingOps[key] && pendingOps[key].seq === op.seq) delete pendingOps[key];
+  };
+
+  const upserts = [];
+  ops.filter(o => o.op === 'upsert').forEach(op => {
+    if (!byId.has(op.id)) { done(op); return; }       // gone locally with no delete queued — nothing to send
+    const row = shape(byId.get(op.id), uid);
+    if (row) upserts.push({ op, row });                // unshapeable rows stay pending
+  });
+
+  // SY7(c): upserts in chunks, keyed on id, so a retry can't duplicate a row.
+  for (const batch of chunk(upserts, UPSERT_CHUNK)) {
+    const { error } = await sb.from(table).upsert(batch.map(b => b.row), { onConflict: 'id' });
+    if (!error) { batch.forEach(b => done(b.op)); continue; }
+    if (isStopError(error)) return { stopped: true };
+    // A data error fails the whole statement. Retry row by row so one bad
+    // row can't hold back the rest; the bad one stays pending.
+    for (const b of batch) {
+      const { error: rowError } = await sb.from(table).upsert(b.row, { onConflict: 'id' });
+      if (!rowError) done(b.op);
+      else if (isStopError(rowError)) return { stopped: true };
+    }
+  }
+
+  // SY2: hard deletes. Deleting an id the server never had is a no-op.
+  for (const batch of chunk(ops.filter(o => o.op === 'delete'), DELETE_CHUNK)) {
+    const { error } = await sb.from(table).delete().in('id', batch.map(o => o.id));
+    if (error) return { stopped: isStopError(error) };
+    batch.forEach(done);
+  }
+  return { stopped: false };
+}
+
+// ── Status pill (OS6) ─────────────────────────────────────────
+function updateSyncPill() {
+  const pill = document.getElementById('syncPill');
+  if (!pill) return;
+  const paused = syncPaused();
+  const n = myPendingCount();
+  pill.classList.toggle('paused', paused);
+  if (paused) { pill.hidden = false; pill.textContent = 'Sync paused'; return; }
+  if (syncing) { pill.hidden = false; pill.textContent = '⟳ Syncing…'; return; }
+  pill.hidden = n === 0;
+  pill.textContent = `⟳ ${n} not synced`;
+}
+
+async function onSyncPillTap() {
+  if (syncPaused()) { showToast('⚠️ Data here is from another account'); return; }
+  if (syncing) return;
+  await flushPending();
+  const n = myPendingCount();
+  showToast(n ? `⚠️ ${n} still not synced` : '✅ All synced');
 }
 
 // ═══════════════════════════════════════════════════════════════

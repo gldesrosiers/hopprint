@@ -1,6 +1,6 @@
 # SYNC_REVERSAL_WORKPLAN.md — Supabase as source of truth, client sync layer, wishlist table
 
-**Status:** Decisions locked (SY1–SY13) in session dated below. Phase 0 (schema) and Phase 1 (SDK + code login) complete September 23, 2026; Phase 2 next. Any future session can begin cold from this document.
+**Status:** Decisions locked (SY1–SY13) in session dated below. Phase 0 (schema) and Phase 1 (SDK + code login) complete September 23, 2026; Phase 2 (upload side) built, live test pending. Any future session can begin cold from this document.
 **Date:** September 20, 2026
 **Scope:** Reverse the one-way sync decision (TS7) so Supabase holds the authoritative copy of every check-in and wishlist item, and localStorage becomes a fast local cache. Covers schema changes, the client sync layer, the login method change, the service worker change, and the one-time migration of Greg's existing data.
 **Supersedes:** TS7 (one-way device → Supabase sync); TS6 (magic link → emailed 6-digit code); parts of PC7/PC8/O6 in `PROFILE_CREATION_UX_WORKPLAN.md` (see Part 6); the "migrate manually" half of PC10 (still manual, but now a script, see SY10).
@@ -159,6 +159,15 @@ Each phase is additive. Existing functions verified byte-identical post-build ex
 - Pending pile, upload shaping, and upsert/delete calls at the five check-in write sites and the two wishlist write sites (SY6/SY7).
 - "N not synced" indicator.
 - **Deliverable:** with a signed-in account, every add/edit/rating/delete reaches Supabase; airplane-mode writes appear after reconnecting; retries create no duplicates.
+- **🟡 Code built — September 23, 2026; live test against Supabase pending (Greg).** Not pushed.
+  - **Decisions made at build start:** **OS6** a header pill next to "Check can date". Hidden when nothing is pending; otherwise shows "⟳ N not synced", or "⟳ Syncing…" during an upload. Tapping it retries now and toasts the result. **Owner guard** (the Phase 1 carry-over): the first account to sign in on a device owns its cache (`hopprint_cache_owner`). If a different account signs in, the pill reads "Sync paused" and nothing uploads. That account's own new rows are still queued, tagged with its id, so Phase 3's pull-down (pending wins) can keep and upload them. Its edits to the owner's rows stay local. Phase 3 lifts the pause when the pull-down replaces the cache.
+  - **Pending pile:** `hopprint_pending`, one entry per row (`table:id` → `{op, owner, seq}`). A later write replaces an earlier one, and a delete wins. The upload always sends the row's *current* cached version. `seq` ensures an upload that lands after a newer write doesn't clear the newer one. Flush triggers: app open, the browser `online` event, a restored or refreshed session, 1.5s after any write (debounced; the rating slider saves on every tick), a tap on the pill, and again if anything was written during a flush.
+  - **Upload rules:** upserts go up in chunks of 500 with `onConflict: 'id'`; deletes in chunks of 100 via `in('id', …)` (ids travel in the URL). A network error or rejected session (`PGRST3xx`/401) stops the flush and leaves the pile intact. A data error on a chunk falls back to row-by-row, so one bad row can't hold back the rest; the bad row stays pending and shows in the count.
+  - **Interpretations (flag if wrong):** (1) SY7(d) undated CSV rows are skipped at import entirely, not just at upload. They would never upload, and Phase 3's id check would drop them anyway. The import diagnostic reports the count. (2) Non-numeric ABV (e.g. "N/A") is sent as `null`, like blank. (3) `saveEdit` still allows clearing a beer name or date. Such a row can't be sent (not-null columns) and stays in the "not synced" count until fixed. (4) Legacy numeric-id check-ins are never queued (SY4), so edits and deletes to them stay local until SY10. (5) Pre-sync wish list items get a uuid on load (needed for remove-by-id) but are not queued.
+  - **For Phase 5 (SY10):** the migration script must **keep existing uuids** (post-Phase-2 check-ins and all wish list items already have them) and upsert on `id`, so rows already uploaded aren't duplicated.
+  - **For Phase 3:** a tester who used the app before sign-in existed has legacy rows that never upload (TS8 clean start). The first pull-down replaces the local list, so those rows would disappear from that device. Decide in Phase 3/4 whether to warn or offer an export first.
+  - **Functions changed** (all others byte-identical): `submitCheckin`, `saveRating`, `saveEdit`, `deleteEntry`, `handleImport`, `addWishlistItem`, `removeWish` (write sites), `renderHistory`, `openEdit` (quoted ids via `idArg`), `renderWishlist` (remove by id), `enterApp` (claim owner, flush on open). Header markup gained a `.header-right` wrapper for the pill.
+  - **Checks:** `node --check`, token guard, `tests/auth.test.js` (13) and `tests/sync.test.js` (20) all pass: 33 tests. The sync tests run the real flush code against a fake Supabase client: 500-row chunking, offline retry resending the same ids, an expired session stopping the flush, bad-row isolation, a mid-upload edit sent next, chunked deletes, wish list field mapping, owner guard both ways, and undated-import skip. The mid-upload test caught a real bug (a superseded upload wasn't followed by a re-flush), which is now fixed. A browser check with a fake local user covered owner claim, the pill states and remove-by-id; no console errors.
 
 ### Phase 3 — Pull-down + service worker
 - `sw.js` exclusion and cache bump (SY9) — ship with or before the pull-down code.
@@ -193,7 +202,7 @@ Real-source-pulled tests (no reimplementation) per project discipline: upload sh
 | **OS3** | **Export before first sync.** Exports read the cache; on a new device mid-pull they would be partial. Decide: block, warn, or wait for the pull. | 4 |
 | **OS4** | ~~**Sign-out and shared devices.**~~ **Resolved Sept 23, 2026:** Sign Out button on the Profile tab; signing out **keeps** the local cache. Phase 2 must guard against uploading one user's cached rows under another (see Phase 1 notes). | 1–2 |
 | **OS5** | **Id-check frequency.** Working default: once per calendar day on open, plus a manual refresh. Tunable; not locked. | 3 |
-| **OS6** | **Sync-status indicator** placement and copy. | 2 |
+| **OS6** | ~~**Sync-status indicator** placement and copy.~~ **Resolved Sept 23, 2026:** header pill, tap to retry (see Phase 2 notes). | 2 |
 | **OS7** | **Wishlist duplicates.** No uniqueness rule today; decide whether to add one later. Low stakes. | later |
 
 ---
