@@ -125,6 +125,10 @@ function makeApp({ uid = 'user-a', owner, entries = [], wishlist = [], server, s
     'var sb, authUser, entries, wishlist, pendingOps, pendingSeq = 0, syncing = false, pulling = false, flushTimer = null;',
     'function save() { localStorage.setItem("hopprint_entries", JSON.stringify(entries)); }',
     'function refreshAfterPull() { refreshCount++; }',
+    // Phase 4 hooks (tested for real in tests/first-load.test.js): record the pre-sync prompt, continue at once.
+    'var promptCalls = [];',
+    'function confirmDropUnsyncedLocal(tables) { promptCalls.push(tables.map(t => [t.table, t.ids ? t.ids.size : null])); return Promise.resolve(); }',
+    'function afterSyncAttempt() {}',
   ].join('\n'), ctx);
   ctx.sb = server;
   ctx.authUser = uid ? { id: uid, email: `${uid}@example.com` } : null;
@@ -377,3 +381,18 @@ function s_today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+test('pre-sync prompt: asked once, on the first pull only — never on later id checks or a take-over', async () => {
+  const server = fakeServer({ check_ins: [serverRow('u')], wishlist: [] });
+  const s = makeApp({ uid: 'u', owner: 'u', server, entries: [{ id: 1719000000000, beer_name: 'Legacy', created_at: '2020-01-01T00:00' }] });
+  await s.pullChanges();
+  assert.equal(s.promptCalls.length, 1);
+  await s.pullChanges({ forceIdCheck: true });
+  assert.equal(s.promptCalls.length, 1);
+
+  const t = makeApp({ uid: 'user-b', owner: 'user-a', server: fakeServer({ check_ins: [serverRow('user-b')], wishlist: [] }),
+    entries: [{ id: uuid(), beer_name: 'A1', created_at: '2026-09-01T00:00' }] });
+  await t.pullChanges();
+  assert.equal(t.storage.hopprint_cache_owner, 'user-b');
+  assert.equal(t.promptCalls.length, 0);
+});

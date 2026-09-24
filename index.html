@@ -853,6 +853,19 @@ body.auth-locked .auth-gate { display: flex; }
 .auth-check a { color: var(--orange); }
 .account-email { font-size: 14px; color: var(--text-muted); margin-bottom: 10px; word-break: break-all; }
 
+/* ── FIRST SYNC ON A DEVICE (OS2 / OS3) ─────────────────────── */
+/* body.first-sync is set until this device's first full pull finishes, so a
+   returning user never sees an "empty" log while their data is loading. */
+.first-sync-note { display: none; max-width: 520px; margin: 0 auto; padding: 56px 16px; text-align: center; font-size: 15px; color: var(--text-muted); line-height: 1.5; }
+body.first-sync .first-sync-note { display: block; }
+body.first-sync #historyList,
+body.first-sync #screen-history .search-wrap,
+body.first-sync #analyticsInner,
+body.first-sync #profileInner { display: none; }
+body.first-sync .needs-first-sync { opacity: 0.45; pointer-events: none; }
+.first-sync-hint { display: none; font-size: 12px; color: var(--text-dim); margin: -2px 0 8px; }
+body.first-sync .first-sync-hint { display: block; }
+
 /* ── SYNC STATUS PILL (OS6) ─────────────────────────────────── */
 .header-right { display: flex; align-items: center; gap: 8px; }
 .sync-pill {
@@ -1051,6 +1064,7 @@ body.auth-locked .auth-gate { display: flex; }
 <!-- ══════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-history">
 <div class="screen-inner">
+  <div class="first-sync-note"></div>
   <div class="search-wrap field">
     <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="renderHistory()">
   </div>
@@ -1062,6 +1076,7 @@ body.auth-locked .auth-gate { display: flex; }
 <!-- ANALYTICS SCREEN -->
 <!-- ══════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-analytics">
+<div class="first-sync-note"></div>
 <div class="screen-inner" id="analyticsInner"></div>
 </div>
 
@@ -1069,6 +1084,7 @@ body.auth-locked .auth-gate { display: flex; }
 <!-- PROFILE SCREEN -->
 <!-- ══════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-profile">
+<div class="first-sync-note"></div>
 <div class="screen-inner" id="profileInner"></div>
 </div>
 
@@ -1182,6 +1198,18 @@ body.auth-locked .auth-gate { display: flex; }
       <div class="welcome-tab-row"><span class="welcome-tab-icon">🎲</span><div class="welcome-tab-copy"><strong>Discover</strong><span>Personalized recommendations as you go</span></div></div>
     </div>
     <button class="btn-checkin" onclick="closeWelcomeModal()">Let's Go</button>
+  </div>
+</div>
+
+<!-- PRE-SYNC MODAL (Phase 4) — first pull would drop rows the account doesn't have -->
+<div class="modal-backdrop" id="preSyncModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Before your first sync</div>
+    </div>
+    <div class="welcome-lede" id="preSyncText"></div>
+    <button class="btn-save" onclick="exportPreSync()">📦 Export Them</button>
+    <button class="btn-action" style="margin-top:8px" onclick="continuePreSync()">Continue</button>
   </div>
 </div>
 
@@ -2212,6 +2240,7 @@ async function submitFeedback() {
 // WELCOME (first-run)
 // ═══════════════════════════════════════════════════════════════
 function maybeShowWelcome() {
+  if (firstSyncPending()) return;   // OS1 — decided once this device's first sync finishes (afterSyncAttempt)
   if (entries.length === 0 && !localStorage.getItem('hopprint_welcomed')) {
     document.getElementById('welcomeModal').classList.add('open');
   }
@@ -4305,6 +4334,7 @@ function enterApp() {
   document.body.classList.remove('auth-locked');
   updateAccountEmail();
   claimCacheOwner();
+  enterFirstSyncMode();
   init();                                       // O5 — lands on Check In (the default active tab)
   updateSyncPill();
   syncNow();                                    // Part 2 "App open": flush, then pull
@@ -4864,7 +4894,11 @@ function takeOverCache(uid) {
 async function pullChanges(opts = {}) {
   const uid = authUser && authUser.id;
   if (pulling || syncing || !sb || !uid) return;
-  if (syncPaused() && !takeOverCache(uid)) { updateSyncPill(); return; }
+  let tookOver = false;
+  if (syncPaused()) {
+    if (!takeOverCache(uid)) { updateSyncPill(); return; }
+    tookOver = true;
+  }
 
   const st = loadSyncState(uid);
   const today = localDateKey(new Date());
@@ -4888,6 +4922,12 @@ async function pullChanges(opts = {}) {
         t.ids = idRes.ids;
       }
     }
+
+    // The first pull on a device replaces its local list (SY4). If that would
+    // drop rows this account doesn't have (e.g. logged before sign-in
+    // existed), offer an export first. Not after a take-over: the previous
+    // owner's rows are already safe in their own account.
+    if (!st.lastIdCheck && !tookOver) await confirmDropUnsyncedLocal(tables);
 
     // Everything fetched — merge synchronously against the current cache.
     tables.forEach(t => {
@@ -4933,6 +4973,7 @@ function refreshAfterPull() {
 async function syncNow(opts) {
   await flushPending();
   await pullChanges(opts);
+  afterSyncAttempt();
   if (myPendingCount() && !syncPaused()) flushPending();   // writes made during the pull
 }
 
@@ -4945,6 +4986,102 @@ async function syncNowFromAccount() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// FIRST LOAD ON A DEVICE (Phase 4: OS1 / OS2 / OS3)
+// Until this device's first full pull (with its id check) has finished,
+// body.first-sync hides My Beers / Analytics / Profile content behind a
+// loading note, disables export and import, and holds back the welcome
+// modal. Check In works as normal; its writes are pending, so they survive
+// the pull. An existing device that already synced never enters this mode,
+// and neither does a paused (shared) device, which shows its cache as is.
+// ═══════════════════════════════════════════════════════════════
+const FIRST_SYNC_RETRY_MAX_MS = 60000;
+let firstSyncRetryMs = 5000;
+let firstSyncTimer = null;
+let preSyncRows = null;
+let preSyncResolve = null;
+
+function firstPullDone() {
+  const uid = currentUserId();
+  return !!uid && loadSyncState(uid).lastIdCheck !== '';
+}
+
+function firstSyncPending() {
+  return !syncPaused() && !firstPullDone();
+}
+
+function enterFirstSyncMode() {
+  if (!firstSyncPending()) return;
+  document.body.classList.add('first-sync');
+  setFirstSyncNote(false);
+}
+
+function setFirstSyncNote(offline) {
+  const text = offline
+    ? "Can't reach Hopprint right now. Your check-ins will load when you're back online."
+    : 'Loading your check-ins…';
+  document.querySelectorAll('.first-sync-note').forEach(el => { el.textContent = text; });
+}
+
+// After each sync attempt: leave first-sync mode once the first pull is in,
+// otherwise say why and retry (the online event also retries).
+function afterSyncAttempt() {
+  if (!document.body.classList.contains('first-sync')) return;
+  clearTimeout(firstSyncTimer);
+  if (!firstSyncPending()) {
+    document.body.classList.remove('first-sync');
+    refreshAfterPull();
+    maybeShowWelcome();                 // OS1 — only if the account really has no check-ins
+    return;
+  }
+  const offline = !navigator.onLine;
+  setFirstSyncNote(offline);
+  if (offline) return;
+  firstSyncTimer = setTimeout(syncNow, firstSyncRetryMs);
+  firstSyncRetryMs = Math.min(firstSyncRetryMs * 2, FIRST_SYNC_RETRY_MAX_MS);
+}
+
+// Pure: local rows the first pull would drop (not on the server, not pending).
+function rowsMissingFromServer(local, serverIds, table, pending) {
+  return local.filter(r => !serverIds.has(r.id) && !pending[pendingKey(table, r.id)]);
+}
+
+function preSyncMessage(nCheckIns, nWishes) {
+  const parts = [];
+  if (nCheckIns) parts.push(`${nCheckIns} check-in${nCheckIns !== 1 ? 's' : ''}`);
+  if (nWishes) parts.push(`${nWishes} wish list item${nWishes !== 1 ? 's' : ''}`);
+  return `This device has ${parts.join(' and ')} saved before you signed in. They aren't part of your Hopprint account, so syncing will remove them from this device. Export them first if you want to keep a copy.`;
+}
+
+// Resolves when the person taps Continue (right away if nothing would drop).
+function confirmDropUnsyncedLocal(tables) {
+  const byTable = {};
+  tables.forEach(t => {
+    const current = t.table === 'check_ins' ? entries : wishlist;
+    byTable[t.table] = rowsMissingFromServer(current, t.ids, t.table, pendingOps);
+  });
+  const nCheckIns = byTable.check_ins.length, nWishes = byTable.wishlist.length;
+  if (!nCheckIns && !nWishes) return Promise.resolve();
+  preSyncRows = { check_ins: byTable.check_ins, wishlist: byTable.wishlist };
+  document.getElementById('preSyncText').textContent = preSyncMessage(nCheckIns, nWishes);
+  document.getElementById('preSyncModal').classList.add('open');
+  return new Promise(resolve => { preSyncResolve = resolve; });
+}
+
+function exportPreSync() {
+  if (!preSyncRows) return;
+  download('hopprint_before_signin.json', JSON.stringify(preSyncRows, null, 2), 'application/json');
+  showToast('📦 Exported!');
+}
+
+function continuePreSync() {
+  document.getElementById('preSyncModal').classList.remove('open');
+  const resolve = preSyncResolve;
+  preSyncResolve = null;
+  preSyncRows = null;
+  if (resolve) resolve();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // HIDDEN IMPORT INPUT + EXPORT BUTTONS (bottom of Profile tab — P1)
 // ═══════════════════════════════════════════════════════════════
 
@@ -4952,9 +5089,10 @@ async function syncNowFromAccount() {
 document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
   <div class="screen-inner" style="padding-top:0">
     <div class="sec-label" style="margin-top:8px">⬇ Data</div>
-    <button class="btn-action" onclick="exportCSV()">📄 Export CSV</button>
-    <button class="btn-action" onclick="exportJSON()">📦 Export JSON</button>
-    <button class="btn-action" onclick="importUntappd()">📥 Import from Untappd CSV</button>
+    <button class="btn-action needs-first-sync" onclick="exportCSV()">📄 Export CSV</button>
+    <button class="btn-action needs-first-sync" onclick="exportJSON()">📦 Export JSON</button>
+    <button class="btn-action needs-first-sync" onclick="importUntappd()">📥 Import from Untappd CSV</button>
+    <div class="first-sync-hint">Export and import unlock once your check-ins finish loading.</div>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImport(event)">
     <div id="importDiagnostic"></div>
     <div class="sec-label">👤 Account</div>
