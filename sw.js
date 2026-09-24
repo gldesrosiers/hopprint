@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hopprint-v2';
+const CACHE_NAME = 'hopprint-v3';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -38,6 +38,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
+  // SY9: leave Supabase alone. Auth and table reads must always hit the
+  // network, and authenticated responses must never land in Cache Storage.
+  if (url.hostname.endsWith('.supabase.co')) return;
 
   if (url.origin === self.location.origin) {
     // App shell: network-first so testers get updates, falling back to

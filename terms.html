@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#242223">
+<title>Hopprint — Terms &amp; Conditions</title>
+<link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+<style>
+@font-face {
+  font-family: 'Arial Narrow';
+  src: url('fonts/arial-narrow-regular.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Arial Narrow';
+  src: url('fonts/arial-narrow-bold.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Unica One';
+  src: url('fonts/unica-one-regular.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+:root {
+  --charcoal: #242223;
+  --charcoal2: #2e2b2c;
+  --orange: #e97324;
+  --yellow: #f6c23a;
+  --text: #f5f0e8;
+  --text-muted: #b8b2ac;
+  --text-dim: #7a7370;
+  --border: rgba(255,255,255,0.06);
+  --radius: 14px;
+  --font-display: 'Unica One', 'Barlow Condensed', sans-serif;
+  --font-body: 'Arial Narrow', 'Barlow Condensed', sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--charcoal); color: var(--text);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+}
+main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+.logo { display: block; height: 44px; width: auto; margin-bottom: 20px; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; margin: 0 0 4px; }
+h2 { font-family: var(--font-display); font-weight: 400; font-size: 20px; color: var(--orange); margin: 28px 0 6px; }
+p, li { color: var(--text-muted); }
+ul { padding-left: 20px; }
+strong { color: var(--text); }
+a { color: var(--orange); }
+.updated { color: var(--text-dim); font-size: 14px; margin: 0 0 20px; }
+.draft {
+  background: var(--charcoal2); border: 1px solid var(--yellow); border-radius: var(--radius);
+  color: var(--yellow); padding: 12px 14px; font-size: 14px; margin-bottom: 8px;
+}
+</style>
+</head>
+<body>
+<main>
+  <img src="assets/hopprint-hop.svg" alt="Hopprint" class="logo">
+  <h1>Terms &amp; Conditions</h1>
+  <p class="updated">Last updated: September 23, 2026 (version 2026-09-23)</p>
+
+  <div class="draft"><strong>Draft.</strong> This page is a plain-language draft for Hopprint's private tester phase. It has not been reviewed by a lawyer.</div>
+
+  <h2>What Hopprint is</h2>
+  <p>Hopprint is a personal beer log. You record what you drink, and Hopprint shows you trends and recommendations based on your own history. It is currently in a private testing phase with a small group of invited testers.</p>
+
+  <h2>You must be 21 or older</h2>
+  <p>Hopprint is only for people who are at least 21 years old. By creating an account, you confirm that you are.</p>
+
+  <h2>Your account</h2>
+  <p>You sign in with a one-time code sent to your email. Keep access to your email account secure, since anyone who can read your email can sign in as you.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><strong>Account details:</strong> your email address, username, birthdate, and country (plus state, if you're in the US). First name, last name, and gender are optional.</li>
+    <li><strong>Your beer log:</strong> the check-ins, ratings, notes, and wish list items you enter.</li>
+    <li><strong>Feedback</strong> you choose to send through the app.</li>
+  </ul>
+  <p>This information is stored with our database provider, Supabase, and is used to run Hopprint for you: syncing your log across devices and powering your analytics and recommendations.</p>
+
+  <h2>What we don't do</h2>
+  <p>Your individual data is <strong>never sold or shared</strong>. Hopprint has no ads and no social feed; other users can't see your log.</p>
+
+  <h2>Optional anonymous data sharing</h2>
+  <p>At signup you can choose to help improve Hopprint by sharing anonymous usage data. It is off unless you turn it on. If you opt in, your data may be combined with other testers' data in aggregate, anonymous form (for example, "which styles are most popular") to improve the app. It is never used to identify you. To change your choice, contact us (see below).</p>
+
+  <h2>Your data is yours</h2>
+  <p>You can export your full check-in history as CSV or JSON at any time from the Profile tab. You can delete individual check-ins in the app. Full account deletion isn't self-serve yet during testing; contact us and we'll delete your account and everything linked to it.</p>
+
+  <h2>Testing phase</h2>
+  <p>Hopprint is pre-release software. Features may change, break, or be removed, and data could be lost. Export your data regularly if it matters to you. Hopprint is provided "as is", without warranties of any kind.</p>
+
+  <h2>Drink responsibly</h2>
+  <p>Hopprint is a logging tool and does not encourage excessive drinking. Never drink and drive.</p>
+
+  <h2>Changes to these terms</h2>
+  <p>If these terms change, the "Last updated" date above will change, and you may be asked to agree to the new version.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or requests: [CONTACT EMAIL — add before sharing with testers]</p>
+</main>
+</body>
+</html>

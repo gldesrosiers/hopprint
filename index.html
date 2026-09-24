@@ -13,6 +13,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
 <script src="style_matrix.js"></script>
 <script src="proximity_engine.js"></script>
 <style>
@@ -815,9 +816,137 @@ body {
 .drill-first-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; font-weight: 300; }
 .drill-first-note { font-size: 12px; color: var(--text-dim); font-style: italic; margin-top: 8px; line-height: 1.4; }
 
+/* ── AUTH GATE (PC7 / SY8) ──────────────────────────────────── */
+/* Full-app gate: while body.auth-locked is set, only the gate renders. */
+body.auth-locked > *:not(.auth-gate) { display: none !important; }
+.auth-gate { display: none; justify-content: center; padding: 48px 16px 40px; }
+body.auth-locked .auth-gate { display: flex; }
+.auth-card { width: 100%; max-width: 420px; }
+.auth-logo { display: block; height: 56px; width: auto; margin: 0 auto 24px; }
+.auth-view { display: none; }
+.auth-view.active { display: block; }
+.auth-title { font-family: var(--font-display); font-size: 24px; text-align: center; margin-bottom: 6px; }
+.auth-sub { font-size: 15px; color: var(--text-muted); text-align: center; line-height: 1.45; margin-bottom: 20px; }
+.auth-sub strong { color: var(--text); font-weight: 700; }
+.auth-gate .field input, .auth-gate .field select { color-scheme: dark; }
+.auth-gate .field select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%;
+  background-size: 5px 5px; background-repeat: no-repeat;
+  padding-right: 36px;
+}
+.auth-label { font-size: 13px; color: var(--text-muted); margin: 14px 0 6px; }
+.auth-optional { color: var(--text-dim); }
+.auth-hint { font-size: 12px; color: var(--text-dim); margin-top: -2px; line-height: 1.4; }
+.auth-error { font-size: 13px; color: var(--danger); margin: 2px 0 6px; line-height: 1.4; }
+.auth-error:empty { display: none; }
+.auth-code-input { text-align: center; font-size: 26px !important; letter-spacing: 10px; }
+.auth-links { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.auth-link {
+  background: none; border: none; padding: 6px 0; cursor: pointer;
+  color: var(--orange); font-family: var(--font-body); font-size: 14px;
+}
+.auth-link:disabled { color: var(--text-dim); cursor: default; }
+.auth-gate .btn-checkin:disabled { opacity: 0.6; cursor: default; transform: none; box-shadow: none; }
+.auth-check { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; font-size: 14px; line-height: 1.4; cursor: pointer; }
+.auth-check input { width: 20px; height: 20px; margin: 0; flex-shrink: 0; accent-color: var(--orange); }
+.auth-check a { color: var(--orange); }
+.account-email { font-size: 14px; color: var(--text-muted); margin-bottom: 10px; word-break: break-all; }
+
 </style>
 </head>
-<body>
+<body class="auth-locked">
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- AUTH GATE (PC7 / SY8) — replaces the app shell until signed in -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="auth-gate" id="authGate">
+<div class="auth-card">
+  <img src="assets/hopprint-hop.svg" alt="Hopprint" class="auth-logo">
+
+  <div class="auth-view active" id="authView-loading">
+    <div class="auth-sub">Loading…</div>
+  </div>
+
+  <div class="auth-view" id="authView-offline">
+    <div class="auth-title">Can't reach Hopprint</div>
+    <div class="auth-sub">Check your connection and try again.</div>
+    <button class="btn-checkin" onclick="authBoot()">Try Again</button>
+  </div>
+
+  <div class="auth-view" id="authView-email">
+    <div class="auth-title">Welcome to Hopprint</div>
+    <div class="auth-sub">Enter your email and we'll send you a 6-digit code.</div>
+    <div class="field"><input id="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')sendAuthCode()"></div>
+    <div class="auth-error" id="authEmailError"></div>
+    <button class="btn-checkin" id="authSendBtn" onclick="sendAuthCode()">Send Code</button>
+  </div>
+
+  <div class="auth-view" id="authView-code">
+    <div class="auth-title">Check your email</div>
+    <div class="auth-sub">We sent a 6-digit code to <strong id="authCodeEmail"></strong>.</div>
+    <div class="field"><input id="authCode" class="auth-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" oninput="onAuthCodeInput()"></div>
+    <div class="auth-error" id="authCodeError"></div>
+    <button class="btn-checkin" id="authVerifyBtn" onclick="verifyAuthCode()">Verify</button>
+    <div class="auth-links">
+      <button class="auth-link" id="authResendBtn" onclick="resendAuthCode()" disabled>Resend code</button>
+      <button class="auth-link" onclick="showAuthView('email')">Use a different email</button>
+    </div>
+  </div>
+
+  <div class="auth-view" id="authView-signup">
+    <div class="auth-title">Set up your profile</div>
+    <div class="auth-sub">Just a few details and you're in.</div>
+
+    <div class="auth-label">Username</div>
+    <div class="field"><input id="suUsername" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="e.g. hophead_22" oninput="onSignupUsernameInput()" onblur="checkSignupUsername()"></div>
+    <div class="auth-hint">3–20 characters: letters, numbers, or underscores.</div>
+    <div class="auth-error" id="suUsernameError"></div>
+
+    <div class="auth-label">Birthdate</div>
+    <div class="field"><input id="suBirthdate" type="date" min="1900-01-01" onblur="checkSignupBirthdate()" onchange="checkSignupBirthdate()"></div>
+    <div class="auth-error" id="suBirthdateError"></div>
+
+    <div class="auth-label">Country</div>
+    <div class="field">
+      <select id="suCountry" onchange="onSignupCountryChange()">
+        <option value="">Choose a country</option>
+        <option value="US">United States</option>
+        <option value="CA">Canada</option>
+        <option value="MX">Mexico</option>
+      </select>
+    </div>
+    <div id="suStateWrap" style="display:none">
+      <div class="auth-label">State</div>
+      <div class="field"><select id="suState"><option value="">Choose a state</option></select></div>
+    </div>
+    <div class="auth-error" id="suLocationError"></div>
+
+    <div class="auth-label">First name <span class="auth-optional">(optional)</span></div>
+    <div class="field"><input id="suFirstName" type="text" autocomplete="given-name"></div>
+    <div class="auth-label">Last name <span class="auth-optional">(optional)</span></div>
+    <div class="field"><input id="suLastName" type="text" autocomplete="family-name"></div>
+    <div class="auth-label">Gender <span class="auth-optional">(optional)</span></div>
+    <div class="field">
+      <select id="suGender">
+        <option value="">—</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+        <option value="non-binary">Non-binary</option>
+        <option value="other">Other</option>
+        <option value="prefer_not_to_say">Prefer not to say</option>
+      </select>
+    </div>
+
+    <label class="auth-check"><input type="checkbox" id="suTerms"><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.</span></label>
+    <div class="auth-error" id="suTermsError"></div>
+    <label class="auth-check"><input type="checkbox" id="suShare"><span>Help improve Hopprint by sharing anonymous usage data. (Your individual data is never sold or shared.)</span></label>
+
+    <div class="auth-error" id="suSubmitError" style="margin-top:14px"></div>
+    <button class="btn-checkin" id="suSubmitBtn" onclick="submitSignup()">Create Profile</button>
+  </div>
+</div>
+</div>
 
 <!-- HEADER -->
 <div class="header">
@@ -3968,6 +4097,343 @@ function switchTab(tab) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// AUTH GATE (SY8 / SY12 / PC1–PC9)
+// Boot order: authBoot() → session? → profiles row? → enterApp() → init().
+// No session → email screen → 6-digit code → profiles check → signup form.
+// ═══════════════════════════════════════════════════════════════
+const TERMS_VERSION = '2026-09-23';      // O4 — matches "Last updated" on terms.html
+const OTP_LENGTH = 6;                    // SY8 — must match the dashboard's email OTP length
+const RESEND_COOLDOWN_S = 60;
+const PROFILE_OK_KEY = 'hopprint_profile_ok';   // user id whose profiles row is confirmed
+const AGE_GATE_MSG = 'Sorry, this application is for users 21+ years old.';
+const US_STATES = [
+  ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],
+  ['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['FL','Florida'],['GA','Georgia'],
+  ['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],
+  ['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],
+  ['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],
+  ['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],
+  ['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],
+  ['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],
+  ['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],
+  ['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
+];
+
+// The SDK loads from a CDN; if it failed (first-ever open while offline), sb is
+// null and authBoot() falls back to the offline paths instead of crashing.
+const sb = window.supabase
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+    })
+  : null;
+
+let authUser = null;
+let authEmail = '';
+let authResendTimer = null;
+let authBusy = false;
+let appStarted = false;
+
+if (sb) {
+  // Keep authUser current across token refreshes. No awaits in here —
+  // supabase-js warns that awaiting its own calls inside this callback can deadlock.
+  sb.auth.onAuthStateChange((event, session) => {
+    if (session) { authUser = session.user; updateAccountEmail(); }
+  });
+}
+
+// ── Pure helpers (covered by tests/auth.test.js) ──────────────
+function isNetworkError(err) {
+  if (!err) return false;
+  if (err.name === 'AuthRetryableFetchError') return true;
+  return !err.code && /fetch|network|load failed/i.test(err.message || '');
+}
+
+function authErrorMessage(err) {
+  if (isNetworkError(err)) return "Can't reach Hopprint — check your connection and try again.";
+  const code = err.code || '';
+  if (err.status === 429 || /rate_limit/.test(code)) return 'Too many attempts. Wait a minute, then try again.';
+  if (code === 'otp_expired' || /expired|invalid/i.test(err.message || '')) {
+    return 'That code is wrong or has expired. Check it, or send a new one.';
+  }
+  return 'Something went wrong. Please try again.';
+}
+
+function normalizeUsername(raw) {
+  return (raw || '').trim().toLowerCase();
+}
+
+function usernameProblem(username) {
+  if (!username) return 'Choose a username.';
+  if (!/^[a-z0-9_]{3,20}$/.test(username)) return 'Use 3–20 characters: letters, numbers, or underscores.';
+  return '';
+}
+
+// Mirrors profiles_age_gate_21plus (birthdate <= current_date - 21 years).
+// Postgres clamps Feb 29 to Feb 28 in non-leap years; so does this.
+function ageCutoffISO(today) {
+  const y = today.getFullYear() - 21;
+  const m = today.getMonth();
+  const d = Math.min(today.getDate(), new Date(y, m + 1, 0).getDate());
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function isOldEnough(birthdateISO, today) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(birthdateISO || '') && birthdateISO <= ageCutoffISO(today);
+}
+
+function buildProfileRow(user, form, now) {
+  return {
+    user_id: user.id,
+    email: user.email,                          // O2 — from the session, not re-collected
+    username: form.username,
+    birthdate: form.birthdate,
+    location_country: form.country,
+    location_state: form.country === 'US' ? form.state : null,
+    first_name: form.firstName || null,
+    last_name: form.lastName || null,
+    gender: form.gender || null,
+    data_sharing_consent: form.shareData === true,   // TS1 — opt-in only
+    consent_timestamp: now.toISOString(),            // PC2 — written at submit
+    terms_version: TERMS_VERSION,
+  };
+}
+
+// Maps a failed profiles insert to { field, message }. field is null when the
+// row already exists (a double submit) — the caller treats that as success.
+function profileInsertError(err) {
+  const msg = err.message || '';
+  if (err.code === '23505' && /profiles_pkey/.test(msg)) return { field: null, message: '' };
+  if (err.code === '23505' && /username/.test(msg)) return { field: 'suUsernameError', message: "That username's taken — try another." };
+  if (err.code === '23514' && /age_gate/.test(msg)) return { field: 'suBirthdateError', message: AGE_GATE_MSG };
+  return { field: 'suSubmitError', message: "Couldn't save your profile. Check your connection and try again." };
+}
+
+// ── Views ─────────────────────────────────────────────────────
+function showAuthView(name) {
+  document.querySelectorAll('.auth-view').forEach(v => v.classList.remove('active'));
+  document.getElementById('authView-' + name).classList.add('active');
+  document.querySelectorAll('.auth-gate .auth-error').forEach(e => { e.textContent = ''; });
+  if (name === 'email') {
+    const input = document.getElementById('authEmail');
+    if (authEmail) input.value = authEmail;
+    input.focus();
+  }
+}
+
+function setAuthBusy(btnId, busy, label) {
+  authBusy = busy;
+  const btn = document.getElementById(btnId);
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  btn.disabled = busy;
+  btn.textContent = busy ? label : btn.dataset.label;
+}
+
+// ── Boot + routing ────────────────────────────────────────────
+async function authBoot() {
+  showAuthView('loading');
+  const knownUser = localStorage.getItem(PROFILE_OK_KEY);
+  if (!sb) { knownUser ? enterApp() : showAuthView('offline'); return; }
+
+  let session = null, error = null;
+  try {
+    ({ data: { session }, error } = await sb.auth.getSession());
+  } catch (e) { error = e; }
+
+  if (session) return routeAfterAuth(session.user);
+  // Offline with an expired access token: getSession() can't refresh it, but
+  // supabase-js keeps the stored session. Let a known user in so the app works
+  // offline; autoRefreshToken restores the session once the network is back.
+  if (isNetworkError(error)) { knownUser ? enterApp() : showAuthView('offline'); return; }
+  showAuthView('email');
+}
+
+async function routeAfterAuth(user) {
+  authUser = user;
+  if (localStorage.getItem(PROFILE_OK_KEY) === user.id) return enterApp();
+
+  showAuthView('loading');
+  const { data, error } = await sb.from('profiles').select('user_id').eq('user_id', user.id).maybeSingle();
+  if (error) return showAuthView('offline');
+  if (data) {                                   // PC9 — returning user
+    localStorage.setItem(PROFILE_OK_KEY, user.id);
+    return enterApp();
+  }
+  openSignup();                                 // PC9 — no profile yet (new or abandoned signup)
+}
+
+function enterApp() {
+  if (appStarted) return;
+  appStarted = true;
+  clearInterval(authResendTimer);
+  document.body.classList.remove('auth-locked');
+  updateAccountEmail();
+  init();                                       // O5 — lands on Check In (the default active tab)
+}
+
+// ── Email + code ──────────────────────────────────────────────
+async function sendAuthCode() {
+  if (authBusy) return;
+  const email = document.getElementById('authEmail').value.trim().toLowerCase();
+  const errEl = document.getElementById('authEmailError');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Enter a valid email address.'; return; }
+
+  setAuthBusy('authSendBtn', true, 'Sending…');
+  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  setAuthBusy('authSendBtn', false);
+  if (error) { errEl.textContent = authErrorMessage(error); return; }
+
+  authEmail = email;
+  document.getElementById('authCodeEmail').textContent = email;
+  document.getElementById('authCode').value = '';
+  showAuthView('code');
+  startResendCooldown();
+  document.getElementById('authCode').focus();
+}
+
+function startResendCooldown() {
+  const btn = document.getElementById('authResendBtn');
+  let left = RESEND_COOLDOWN_S;
+  btn.disabled = true;
+  btn.textContent = `Resend code (${left}s)`;
+  clearInterval(authResendTimer);
+  authResendTimer = setInterval(() => {
+    left -= 1;
+    if (left > 0) { btn.textContent = `Resend code (${left}s)`; return; }
+    clearInterval(authResendTimer);
+    btn.disabled = false;
+    btn.textContent = 'Resend code';
+  }, 1000);
+}
+
+async function resendAuthCode() {
+  const errEl = document.getElementById('authCodeError');
+  errEl.textContent = '';
+  startResendCooldown();
+  const { error } = await sb.auth.signInWithOtp({ email: authEmail, options: { shouldCreateUser: true } });
+  if (error) { errEl.textContent = authErrorMessage(error); return; }
+  showToast('📧 New code sent');
+}
+
+function onAuthCodeInput() {
+  const input = document.getElementById('authCode');
+  input.value = input.value.replace(/\D/g, '').slice(0, OTP_LENGTH);
+  if (input.value.length === OTP_LENGTH) verifyAuthCode();
+}
+
+async function verifyAuthCode() {
+  if (authBusy) return;
+  const token = document.getElementById('authCode').value;
+  const errEl = document.getElementById('authCodeError');
+  if (token.length !== OTP_LENGTH) { errEl.textContent = `Enter the ${OTP_LENGTH}-digit code from the email.`; return; }
+
+  errEl.textContent = '';
+  setAuthBusy('authVerifyBtn', true, 'Verifying…');
+  const { data, error } = await sb.auth.verifyOtp({ email: authEmail, token, type: 'email' });
+  setAuthBusy('authVerifyBtn', false);
+  if (error || !data.session) { errEl.textContent = authErrorMessage(error || {}); return; }
+  routeAfterAuth(data.session.user);
+}
+
+// ── Signup form (PC1–PC4) ─────────────────────────────────────
+function openSignup() {
+  const stateSel = document.getElementById('suState');
+  if (stateSel.options.length === 1) {
+    stateSel.insertAdjacentHTML('beforeend', US_STATES.map(([code, name]) => `<option value="${code}">${name}</option>`).join(''));
+  }
+  showAuthView('signup');
+}
+
+function onSignupUsernameInput() {
+  const input = document.getElementById('suUsername');
+  const lower = input.value.toLowerCase();
+  if (input.value !== lower) input.value = lower;
+  if (document.getElementById('suUsernameError').textContent) checkSignupUsername();
+}
+
+function checkSignupUsername() {
+  const problem = usernameProblem(normalizeUsername(document.getElementById('suUsername').value));
+  document.getElementById('suUsernameError').textContent = problem;
+  return !problem;
+}
+
+function checkSignupBirthdate() {
+  const value = document.getElementById('suBirthdate').value;
+  const errEl = document.getElementById('suBirthdateError');
+  errEl.textContent = !value ? '' : (isOldEnough(value, new Date()) ? '' : AGE_GATE_MSG);   // PC3 inline
+  return !!value && !errEl.textContent;
+}
+
+function onSignupCountryChange() {
+  const isUS = document.getElementById('suCountry').value === 'US';
+  document.getElementById('suStateWrap').style.display = isUS ? '' : 'none';
+  if (!isUS) document.getElementById('suState').value = '';
+  document.getElementById('suLocationError').textContent = '';
+}
+
+function readSignupForm() {
+  const val = id => document.getElementById(id).value.trim();
+  return {
+    username: normalizeUsername(val('suUsername')),
+    birthdate: val('suBirthdate'),
+    country: val('suCountry'),
+    state: val('suState'),
+    firstName: val('suFirstName'),
+    lastName: val('suLastName'),
+    gender: val('suGender'),
+    termsAccepted: document.getElementById('suTerms').checked,
+    shareData: document.getElementById('suShare').checked,
+  };
+}
+
+async function submitSignup() {
+  if (authBusy) return;
+  const form = readSignupForm();
+  const setErr = (id, msg) => { document.getElementById(id).textContent = msg; };
+  document.querySelectorAll('#authView-signup .auth-error').forEach(e => { e.textContent = ''; });
+
+  let ok = checkSignupUsername();
+  if (!form.birthdate) { setErr('suBirthdateError', 'Enter your birthdate.'); ok = false; }
+  else if (!checkSignupBirthdate()) ok = false;
+  if (!form.country) { setErr('suLocationError', 'Choose your country.'); ok = false; }
+  else if (form.country === 'US' && !form.state) { setErr('suLocationError', 'Choose your state.'); ok = false; }
+  if (!form.termsAccepted) { setErr('suTermsError', 'Please agree to the Terms & Conditions to continue.'); ok = false; }
+  if (!ok) {
+    const first = document.querySelector('#authView-signup .auth-error:not(:empty)');
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  setAuthBusy('suSubmitBtn', true, 'Saving…');
+  const { error } = await sb.from('profiles').insert(buildProfileRow(authUser, form, new Date()));
+  setAuthBusy('suSubmitBtn', false);
+  if (error) {
+    const { field, message } = profileInsertError(error);   // PC3 fallback + O3 collision
+    if (field) {
+      setErr(field, message);
+      document.getElementById(field).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+  localStorage.setItem(PROFILE_OK_KEY, authUser.id);
+  enterApp();
+}
+
+// ── Account (Profile tab) — OS4: sign-out keeps the local cache ──
+function updateAccountEmail() {
+  const el = document.getElementById('accountEmail');
+  if (el) el.textContent = authUser ? `Signed in as ${authUser.email}` : '';
+}
+
+async function signOutUser() {
+  if (!sb) { showToast('⚠️ Could not sign out — check your connection'); return; }
+  if (!confirm('Sign out of Hopprint on this device? Your check-ins stay on this device.')) return;
+  const { error } = await sb.auth.signOut({ scope: 'local' });
+  if (error) { showToast('⚠️ Could not sign out — check your connection'); return; }
+  localStorage.removeItem(PROFILE_OK_KEY);
+  location.reload();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // HIDDEN IMPORT INPUT + EXPORT BUTTONS (bottom of Profile tab — P1)
 // ═══════════════════════════════════════════════════════════════
 
@@ -3980,10 +4446,13 @@ document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
     <button class="btn-action" onclick="importUntappd()">📥 Import from Untappd CSV</button>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImport(event)">
     <div id="importDiagnostic"></div>
+    <div class="sec-label">👤 Account</div>
+    <div class="account-email" id="accountEmail"></div>
+    <button class="btn-action" onclick="signOutUser()">Sign Out</button>
   </div>
 `);
 
-init();
+authBoot();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
