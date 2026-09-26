@@ -2278,7 +2278,7 @@ function skipRating() {
 // FEEDBACK
 // ═══════════════════════════════════════════════════════════════
 const FEEDBACK_CAT_ICONS = { Bug: 'feedback-bug', Idea: 'feedback-idea', Confusion: 'feedback-confusion', Other: 'feedback-other' };
-const TAB_LABELS = { checkin: 'Check In', history: 'My Beers', analytics: 'Analytics', profile: 'Profile', discover: 'Discover' };
+const TAB_LABELS = { checkin: 'Check In', history: 'My Beers', analytics: 'Analytics', profile: 'Your Hopprint', discover: 'Discover' };
 
 function buildFeedbackCatGrid() {
   document.getElementById('fbCatGrid').innerHTML = FEEDBACK_CATEGORIES.map(c => `
@@ -5180,14 +5180,14 @@ function continuePreSync() {
 // Inject export controls at the bottom of the profile tab
 document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
   <div class="screen-inner" style="padding-top:0">
-    <div class="sec-label" style="margin-top:8px">⬇ Data</div>
+    <div class="sec-label" style="margin-top:8px">Data</div>
     <button class="btn-action needs-first-sync" onclick="exportCSV()">${icon('export-csv', 16, 2.2)}Export CSV</button>
     <button class="btn-action needs-first-sync" onclick="exportJSON()">${icon('export-json', 16, 2.2)}Export JSON</button>
     <button class="btn-action needs-first-sync" onclick="importUntappd()">${icon('import', 16, 2.2)}Import from Untappd CSV</button>
     <div class="first-sync-hint">Export and import unlock once your check-ins finish loading.</div>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImport(event)">
     <div id="importDiagnostic"></div>
-    <div class="sec-label">👤 Account</div>
+    <div class="sec-label">Account</div>
     <div class="account-email" id="accountEmail"></div>
     <button class="btn-action" onclick="syncNowFromAccount()">⟳ Sync Now</button>
     <button class="btn-action" onclick="signOutUser()">Sign Out</button>
