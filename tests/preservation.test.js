@@ -29,6 +29,12 @@ const ALLOWED_CHANGES = {
   renderWishlist: 'SY11 remove by id',
   // Phase 4 — OS1
   maybeShowWelcome: 'OS1 wait for the first pull',
+  // Icons + nav (ICONS_NAV_WORKPLAN.md) — IT3 icon → iconName consumers (IN20)
+  buildOccasionGrid: 'IN20 occasion icon()',
+  openRatingModal: 'IN20 rating band icon()',
+  buildFeedbackCatGrid: 'IN20 feedback category icon()',
+  drillBandSection: 'IN20 band segment icon() (IN7)',
+  buildModeGrid: 'IN20 mode icon()',
 };
 
 let baselineScript;

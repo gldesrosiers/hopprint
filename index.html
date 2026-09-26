@@ -132,6 +132,7 @@ body {
 
 /* ── ICONS ──────────────────────────────────────────────────── */
 .ico { display: block; flex-shrink: 0; }
+.ico-pair { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
 
 /* ── SECTION LABEL ──────────────────────────────────────────── */
 .sec-label {
@@ -205,7 +206,7 @@ body {
 }
 .occ-pill:hover { border-color: var(--orange-dim); color: var(--text); }
 .occ-pill.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
-.occ-pill .occ-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+.occ-pill .occ-icon { display: flex; align-items: center; justify-content: center; height: 26px; margin-bottom: 2px; }
 
 .ctx-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .ctx-pill {
@@ -303,7 +304,7 @@ body {
 .etag.serve { color: var(--orange); border-color: var(--orange-glow); background: var(--orange-glow2); }
 .entry-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
 .entry-date { font-size: 11px; color: var(--text-dim); font-weight: 300; }
-.entry-occ { font-size: 11px; color: var(--text-muted); }
+.entry-occ { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
 .entry-notes-preview { font-size: 12px; color: var(--text-muted); margin-top: 8px; font-style: italic; border-top: 1px solid var(--border); padding-top: 7px; font-weight: 300; line-height: 1.4; }
 
 /* ── EDIT MODAL ─────────────────────────────────────────────── */
@@ -352,7 +353,7 @@ body {
   font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
   transition: all 0.15s;
 }
-.rb-btn .rb-icon { font-size: 22px; display: block; margin-bottom: 4px; }
+.rb-btn .rb-icon { display: flex; align-items: center; justify-content: center; height: 30px; margin-bottom: 4px; }
 .rb-btn:hover { border-color: var(--border-orange); color: var(--text); }
 .rb-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
 .rating-fine-tune { margin-top: 18px; display: none; }
@@ -374,7 +375,7 @@ body {
   padding: 3px 9px; border-radius: 20px; cursor: pointer;
 }
 .rate-badge:hover { background: var(--orange-glow); }
-.etag.rated { color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
+.etag.rated { display: inline-flex; align-items: center; gap: 5px; color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
 
 /* ── EMPTY STATE CTA ────────────────────────────────────────── */
 .empty-cta {
@@ -403,6 +404,7 @@ body {
   border: 1px solid var(--border); background: var(--charcoal3); color: var(--text-muted);
   font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
   cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
 }
 .fb-cat-btn:hover { border-color: var(--border-orange); color: var(--text); }
 .fb-cat-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
@@ -622,7 +624,7 @@ body {
 }
 .mode-card:hover { border-color: var(--border-orange); }
 .mode-card.sel { background: var(--orange-glow); border-color: var(--orange); }
-.mode-icon { font-size: 24px; margin-bottom: 5px; }
+.mode-icon { display: flex; align-items: center; justify-content: center; height: 32px; margin-bottom: 5px; }
 .mode-name { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
 .mode-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 300; line-height: 1.3; }
 
@@ -1366,12 +1368,12 @@ const NOTE_PROMPTS = [
 ];
 
 const OCCASIONS = [
-  { id:'home-solo', icon:'🛋️', label:'Home · Solo' },
-  { id:'home-social', icon:'🏠', label:'Home · Social' },
-  { id:'bar-taproom', icon:'🍺', label:'Bar / Taproom' },
-  { id:'event', icon:'🎉', label:'Event' },
-  { id:'dining', icon:'🍽️', label:'Dining Out' },
-  { id:'traveling', icon:'✈️', label:'Traveling' },
+  { id:'home-solo', iconName:'occasion-home-solo', label:'Home · Solo' },
+  { id:'home-social', iconName:'occasion-home-social', label:'Home · Social' },
+  { id:'bar-taproom', iconName:'occasion-bar', label:'Bar / Taproom' },
+  { id:'event', iconName:'occasion-event', label:'Event' },
+  { id:'dining', iconName:'occasion-dining', label:'Dining Out' },
+  { id:'traveling', iconName:'occasion-traveling', label:'Traveling' },
 ];
 
 const CTX_TAGS = ['With food','With friends','Outdoors','Celebrating','Trying something new','Winding down','Working through a pack','Post-work','Weekend'];
@@ -1388,10 +1390,10 @@ let fbCategory = null;
 const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','Side Pull','Taster'];
 
 const DISC_MODES = [
-  { id:'wheelhouse', icon:'🎯', name:'In Your Wheelhouse', desc:'Beers that match your pattern' },
-  { id:'adjacent', icon:'🌊', name:'Slightly Outside', desc:'One or two steps from your norm' },
-  { id:'wildcard', icon:'🎲', name:'Way Outside', desc:'Styles you rarely or never drink' },
-  { id:'random', icon:'🎰', name:'Random', desc:'Anything goes — surprise me' },
+  { id:'wheelhouse', iconName:'mode-wheelhouse', name:'In Your Wheelhouse', desc:'Beers that match your pattern' },
+  { id:'adjacent', iconName:'mode-adjacent', name:'Slightly Outside', desc:'One or two steps from your norm' },
+  { id:'wildcard', iconName:'mode-wildcard', name:'Way Outside', desc:'Styles you rarely or never drink' },
+  { id:'random', iconName:'mode-random', name:'Random', desc:'Anything goes — surprise me' },
 ];
 
 // Resolve a raw beer_type string (as stored on an entry — could come from
@@ -1997,7 +1999,7 @@ function buildOccasionGrid(containerId, occasions, setter, getter) {
   if (!el) return;
   el.innerHTML = occasions.map(o => `
     <div class="occ-pill" id="occ-${containerId}-${o.id}" onclick="selectOccasion('${containerId}','${o.id}',event)">
-      <span class="occ-icon">${o.icon}</span>${o.label}
+      <span class="occ-icon">${icon(o.iconName, 15, 2.2)}</span>${o.label}
     </div>`).join('');
   el._setter = setter;
   el._getter = getter;
@@ -2189,9 +2191,9 @@ function resetForm() {
 // RATING MODAL — "Would you drink this beer again?"
 // ═══════════════════════════════════════════════════════════════
 const RATING_BANDS = [
-  { id:'never', icon:'👎', label:'Never', base:15, min:0, max:33 },
-  { id:'maybe', icon:'🤔', label:'Maybe', base:50, min:34, max:66 },
-  { id:'definitely', icon:'🤩', label:'Definitely', base:85, min:67, max:100 },
+  { id:'never', iconName:'rating-never', label:'Never', base:15, min:0, max:33 },
+  { id:'maybe', iconName:'rating-maybe', label:'Maybe', base:50, min:34, max:66 },
+  { id:'definitely', iconName:'rating-definitely', label:'Definitely', base:85, min:67, max:100 },
 ];
 let ratingEntryId = null;
 let ratingBand = null;
@@ -2207,7 +2209,7 @@ function openRatingModal(id) {
   document.getElementById('ratingBreweryName').textContent = e.brewery_name || '';
   document.getElementById('ratingButtons').innerHTML = RATING_BANDS.map(b => `
     <div class="rb-btn" id="rb-${b.id}" onclick="selectRatingBand('${b.id}')">
-      <span class="rb-icon">${b.icon}</span>${b.label}
+      <span class="rb-icon">${icon(b.iconName, 19, 2.2)}</span>${b.label}
     </div>`).join('');
   document.getElementById('ratingFineTune').classList.remove('show');
   document.getElementById('ratingSubmit').classList.remove('show');
@@ -2263,12 +2265,12 @@ function skipRating() {
 // ═══════════════════════════════════════════════════════════════
 // FEEDBACK
 // ═══════════════════════════════════════════════════════════════
-const FEEDBACK_CAT_ICONS = { Bug: '🐞', Idea: '💡', Confusion: '😕', Other: '💬' };
+const FEEDBACK_CAT_ICONS = { Bug: 'feedback-bug', Idea: 'feedback-idea', Confusion: 'feedback-confusion', Other: 'feedback-other' };
 const TAB_LABELS = { checkin: 'Check In', history: 'My Beers', analytics: 'Analytics', profile: 'Profile', discover: 'Discover' };
 
 function buildFeedbackCatGrid() {
   document.getElementById('fbCatGrid').innerHTML = FEEDBACK_CATEGORIES.map(c => `
-    <div class="fb-cat-btn" id="fbcat-${c}" onclick="selectFbCategory('${c}')">${FEEDBACK_CAT_ICONS[c]} ${c}</div>`).join('');
+    <div class="fb-cat-btn" id="fbcat-${c}" onclick="selectFbCategory('${c}')">${icon(FEEDBACK_CAT_ICONS[c], 18, 2.2)}<span>${c}</span></div>`).join('');
 }
 
 function selectFbCategory(cat) {
@@ -2363,12 +2365,12 @@ function renderHistory() {
         ${e.serving_type ? `<span class="etag serve">${e.serving_type}</span>` : ''}
         ${e.beer_abv ? `<span class="etag">${e.beer_abv}% ABV</span>` : ''}
         ${e.venue_name ? `<span class="etag">📍 ${e.venue_name}</span>` : ''}
-        ${band ? `<span class="etag rated">${band.icon} ${band.label}</span>` : ''}
+        ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
       </div>
       ${e.comment ? `<div class="entry-notes-preview">"${e.comment.slice(0,120)}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
       <div class="entry-foot">
         <div class="entry-date">${date}${e.purchase_venue ? ` · ${e.purchase_venue}` : ''}</div>
-        <div class="entry-occ">${occ ? occ.icon + ' ' + occ.label : ''}</div>
+        <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
       </div>
       ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
     </div>`;
@@ -2400,10 +2402,10 @@ function openEdit(id) {
     <div class="sec-label">Serve</div>
     <div class="serve-pills" id="editServePills">${SERVE_TYPES.map(t => `<div class="serve-pill${e.serving_type===t?' sel':''}" onclick="editServeSelect(this,'${t}')">${t}</div>`).join('')}</div>
     <div class="sec-label">Occasion</div>
-    <div style="font-size:13px;color:var(--text-muted);font-weight:300;">${occ ? occ.icon + ' ' + occ.label : 'Not specified'}${e.occasion_ctx && e.occasion_ctx.length ? ' · ' + e.occasion_ctx.join(', ') : ''}</div>
+    <div style="font-size:13px;color:var(--text-muted);font-weight:300;">${occ ? `<span class="ico-pair">${icon(occ.iconName, 13, 2.2)}${occ.label}</span>` : 'Not specified'}${e.occasion_ctx && e.occasion_ctx.length ? ' · ' + e.occasion_ctx.join(', ') : ''}</div>
     <div class="sec-label">Would you drink this beer again?</div>
     <div style="font-size:13px;color:var(--text-muted);font-weight:300;">
-      ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `${band.icon} ${band.label} (${e.rating})` : 'Not rated yet'; })()}
+      ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `<span class="ico-pair">${icon(band.iconName, 14, 2.2)}${band.label} (${e.rating})</span>` : 'Not rated yet'; })()}
       <span class="rate-badge" style="margin-left:8px;" onclick="closeModal(); openRatingModal(${idArg(e.id)})">${typeof e.rating === 'number' ? 'Change' : 'Rate it →'}</span>
     </div>
     <div class="sec-label">Notes</div>
@@ -2624,7 +2626,7 @@ function drillBandSection(bd) {
     if (!count) return '';
     const pct = Math.round(count / bd.rated * 100);
     const meta = RATING_BANDS.find(b => b.id === id);
-    return `<div class="band-seg band-${id}" style="flex:${count}" title="${meta.label}: ${count}">${pct >= 12 ? meta.icon : ''}</div>`;
+    return `<div class="band-seg band-${id}" style="flex:${count}" title="${meta.label}: ${count}">${pct >= 12 ? icon(meta.iconName, 14, 2.4) : ''}</div>`;
   };
   return `<div class="drill-section">
     <div class="drill-section-title">How you've rated it</div>
@@ -3903,7 +3905,7 @@ function renderProfile() {
 function buildModeGrid() {
   document.getElementById('modeGrid').innerHTML = DISC_MODES.map(m => `
     <div class="mode-card" id="mode-${m.id}" onclick="selectMode('${m.id}')">
-      <div class="mode-icon">${m.icon}</div>
+      <div class="mode-icon">${icon(m.iconName, 24, 2.2)}</div>
       <div class="mode-name">${m.name}</div>
       <div class="mode-desc">${m.desc}</div>
     </div>`).join('');
