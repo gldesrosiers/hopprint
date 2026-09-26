@@ -1,0 +1,5 @@
+# Local planning docs — kept next to the code, never committed
+docs/
+
+# macOS
+.DS_Store
