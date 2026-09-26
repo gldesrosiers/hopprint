@@ -35,6 +35,10 @@ const ALLOWED_CHANGES = {
   buildFeedbackCatGrid: 'IN20 feedback category icon()',
   drillBandSection: 'IN20 band segment icon() (IN7)',
   buildModeGrid: 'IN20 mode icon()',
+  // IT4 — milestones keyed by kind (IN19)
+  computeMilestones: 'IN19 kind replaces emoji icon',
+  renderAnalytics: 'IN19 milestone icon from kind',
+  computeAnalyticsContext: 'IN19 compare on kind',
 };
 
 let baselineScript;

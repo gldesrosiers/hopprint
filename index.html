@@ -749,7 +749,7 @@ body {
 .ms-list { display: flex; flex-direction: column; gap: 2px; }
 .ms-row { display: flex; align-items: center; gap: 11px; padding: 9px 6px; border-bottom: 1px solid var(--border); }
 .ms-row:last-child { border-bottom: none; }
-.ms-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+.ms-icon { display: flex; justify-content: center; width: 24px; flex-shrink: 0; }
 .ms-body { flex: 1; min-width: 0; }
 .ms-label { font-size: 13px; font-weight: 600; color: var(--text); }
 .ms-sub { font-size: 12px; color: var(--text-dim); font-weight: 300; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2681,6 +2681,7 @@ function drillRow(rank, key, count, max, grad, type) {
 const MS_CHECKIN_STEPS = [100, 250, 500, 1000, 1500, 2000, 2500, 3000];
 const MS_BREWERY_STEPS = [25, 50, 100, 150, 200, 250, 300];
 const MS_STYLE_STEPS = [25, 50, 75, 100, 125, 150];
+const MS_KIND_ICONS = { checkins: 'checkin', breweries: 'milestone-brewery', styles: 'milestone-style' };
 
 function computeMilestones() {
   const sorted = [...entries]
@@ -2689,16 +2690,16 @@ function computeMilestones() {
   const out = [];
 
   MS_CHECKIN_STEPS.forEach(step => {
-    if (sorted.length >= step) out.push({ icon: '🍺', label: `${step.toLocaleString()}th check-in`, sub: sorted[step - 1].beer_name || '', date: sorted[step - 1].created_at });
+    if (sorted.length >= step) out.push({ kind: 'checkins', label: `${step.toLocaleString()}th check-in`, sub: sorted[step - 1].beer_name || '', date: sorted[step - 1].created_at });
   });
 
   const seenB = new Set(); const bMile = {};
   sorted.forEach(e => { if (e.brewery_name && !seenB.has(e.brewery_name)) { seenB.add(e.brewery_name); if (MS_BREWERY_STEPS.includes(seenB.size)) bMile[seenB.size] = e; } });
-  MS_BREWERY_STEPS.forEach(step => { if (bMile[step]) out.push({ icon: '🏭', label: `${step}th brewery`, sub: bMile[step].brewery_name, date: bMile[step].created_at }); });
+  MS_BREWERY_STEPS.forEach(step => { if (bMile[step]) out.push({ kind: 'breweries', label: `${step}th brewery`, sub: bMile[step].brewery_name, date: bMile[step].created_at }); });
 
   const seenS = new Set(); const sMile = {};
   sorted.forEach(e => { if (e.beer_type && !seenS.has(e.beer_type)) { seenS.add(e.beer_type); if (MS_STYLE_STEPS.includes(seenS.size)) sMile[seenS.size] = e; } });
-  MS_STYLE_STEPS.forEach(step => { if (sMile[step]) out.push({ icon: '🎨', label: `${step}th style`, sub: sMile[step].beer_type, date: sMile[step].created_at }); });
+  MS_STYLE_STEPS.forEach(step => { if (sMile[step]) out.push({ kind: 'styles', label: `${step}th style`, sub: sMile[step].beer_type, date: sMile[step].created_at }); });
 
   return out.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
@@ -2971,7 +2972,7 @@ function renderAnalytics() {
     <div class="chart-sub">The moments worth a screenshot</div>
     ${milestones.length ? `<div class="ms-list">${milestones.map(m => `
       <div class="ms-row">
-        <div class="ms-icon">${m.icon}</div>
+        <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
         <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
         <div class="ms-date">${fmtMonthYear(m.date)}</div>
       </div>`).join('')}</div>` : ''}
@@ -3631,12 +3632,12 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
   //    Phase C thresholds via computeMilestones(). Rank check-ins > breweries >
   //    styles, biggest first; derive the round number + noun from the label.
   const yearMilestones = computeMilestones().filter(m => new Date(m.date).getFullYear() === analyticsYear);
-  const msWeight = m => (m.icon === '🍺' ? 3 : m.icon === '🏭' ? 2 : 1);
+  const msWeight = m => (m.kind === 'checkins' ? 3 : m.kind === 'breweries' ? 2 : 1);
   const topMs = yearMilestones.slice().sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date))[0] || null;
   let milestone = null;
   if (topMs) {
     const n = parseInt(String(topMs.label).replace(/[^0-9]/g, ''), 10);
-    const kind = topMs.icon === '🍺' ? 'checkins' : topMs.icon === '🏭' ? 'breweries' : 'styles';
+    const kind = topMs.kind;
     const md = new Date(topMs.date);
     const monthName = isNaN(md) ? '' : MONTHS[md.getMonth()];
     if (!isNaN(n)) milestone = { n, kind, monthName };
