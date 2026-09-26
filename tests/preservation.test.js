@@ -45,6 +45,11 @@ const ALLOWED_CHANGES = {
   renderProfile: 'IN1 empty state, ABV trend, trend rows',
   generateRecs: 'IN1/IN18 empty state + CTA',
   renderNextRec: 'IN1/IN18 empty state, Show Another',
+  // IT7 — showToast(msg, iconName) (IN8)
+  showToast: 'IN8 icon + textContent span',
+  submitFeedback: 'IN8 toast iconName',
+  exportCSV: 'IN8 toast iconName',
+  exportJSON: 'IN8 toast iconName',
 };
 
 let baselineScript;
