@@ -141,6 +141,7 @@ body {
   margin: 24px 0 10px;
 }
 .sec-label:first-child { margin-top: 6px; }
+.sec-label.has-icon { display: flex; align-items: center; gap: 5px; }
 
 /* ── FIELD ──────────────────────────────────────────────────── */
 .field { position: relative; margin-bottom: 8px; }
@@ -264,6 +265,7 @@ body {
 }
 .btn-checkin:hover { background: var(--orange-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(233,115,36,0.35); }
 .btn-checkin:active { transform: none; }
+.btn-checkin.has-icon { gap: 9px; }
 
 /* ── TOAST ──────────────────────────────────────────────────── */
 .toast {
@@ -280,7 +282,7 @@ body {
 /* ── HISTORY ────────────────────────────────────────────────── */
 .search-wrap { position: relative; margin-bottom: 14px; }
 .search-wrap input { padding-left: 38px; }
-.search-wrap::before { content: '🔍'; position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; }
+.search-wrap .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
 
 .entry-card {
   background: var(--charcoal2);
@@ -325,6 +327,8 @@ body {
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .modal-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; }
+.modal-title.has-icon { display: flex; align-items: center; gap: 8px; }
+.modal-title.has-icon .ico { color: var(--orange); }
 .modal-close { font-size: 22px; cursor: pointer; color: var(--text-muted); padding: 4px 8px; }
 .btn-save, .btn-delete {
   width: 100%; padding: 13px; margin-top: 10px;
@@ -335,6 +339,7 @@ body {
 }
 .btn-save { background: var(--orange); color: var(--charcoal); }
 .btn-save:hover { background: var(--orange-hover); }
+.btn-save.has-icon { display: flex; align-items: center; justify-content: center; gap: 7px; }
 .btn-delete { background: rgba(255,80,80,0.12); color: var(--danger); border: 1px solid rgba(255,80,80,0.2); margin-top: 8px; }
 .btn-delete:hover { background: rgba(255,80,80,0.2); }
 
@@ -414,7 +419,7 @@ body {
 .welcome-lede { font-size: 14px; color: var(--text-muted); font-weight: 300; line-height: 1.55; margin-bottom: 18px; }
 .welcome-tabs-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
 .welcome-tab-row { display: flex; gap: 12px; align-items: flex-start; }
-.welcome-tab-icon { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
+.welcome-tab-icon { display: flex; justify-content: center; width: 26px; flex-shrink: 0; }
 .welcome-tab-copy strong { display: block; font-size: 14px; color: var(--text); }
 .welcome-tab-copy span { font-size: 12px; color: var(--text-dim); font-weight: 300; }
 
@@ -428,7 +433,7 @@ body {
   transition: all 0.15s;
 }
 .header-tool:hover { border-color: var(--border-orange); color: var(--orange); }
-.header-tool .header-tool-icon { font-size: 14px; line-height: 1; }
+.header-tool .header-tool-icon { display: flex; }
 
 /* ── DATE LOOKUP MODAL ──────────────────────────────────────── */
 .dl-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
@@ -984,7 +989,7 @@ body.first-sync .first-sync-hint { display: block; }
   </div>
   <div class="header-right">
     <div class="sync-pill" id="syncPill" onclick="onSyncPillTap()" role="button" hidden></div>
-    <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon">📅</span>Check can date</div>
+    <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon" data-icon="calendar" data-icon-size="16" data-icon-weight="2.2"></span>Check can date</div>
   </div>
 </div>
 
@@ -1059,7 +1064,7 @@ body.first-sync .first-sync-hint { display: block; }
     <textarea id="notes" placeholder="Your thoughts..."></textarea>
   </div>
 
-  <button class="btn-checkin" onclick="submitCheckin()">🍻 Check In</button>
+  <button class="btn-checkin has-icon" onclick="submitCheckin()"><span data-icon="checkin" data-icon-size="20" data-icon-weight="2.6"></span>Check In</button>
 
 </div>
 </div>
@@ -1071,6 +1076,7 @@ body.first-sync .first-sync-hint { display: block; }
 <div class="screen-inner">
   <div class="first-sync-note"></div>
   <div class="search-wrap field">
+    <span class="search-icon" data-icon="search" data-icon-size="17" data-icon-weight="2.2"></span>
     <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="renderHistory()">
   </div>
   <div id="historyList"></div>
@@ -1109,7 +1115,7 @@ body.first-sync .first-sync-hint { display: block; }
   <div id="recResults" style="margin-top:16px"></div>
 
   <div id="wishlistSection" style="margin-top:8px">
-    <div class="sec-label">📌 Wish List</div>
+    <div class="sec-label has-icon"><span data-icon="wishlist" data-icon-size="14" data-icon-weight="2.2"></span>Wish List</div>
     <div class="field ac-wrap">
       <input id="wishBeerName" type="text" placeholder="Beer name" autocomplete="off">
       <div class="ac-drop" id="drop-wishBeerName"></div>
@@ -1160,7 +1166,7 @@ body.first-sync .first-sync-hint { display: block; }
 </div>
 
 <!-- FEEDBACK FAB -->
-<div class="fab-feedback" onclick="openFeedbackModal()" title="Send feedback">💬</div>
+<div class="fab-feedback" onclick="openFeedbackModal()" title="Send feedback" data-icon="feedback" data-icon-size="22" data-icon-weight="2.2"></div>
 
 <!-- FEEDBACK MODAL -->
 <div class="modal-backdrop" id="drillModal" onclick="if(event.target===this)closeDrill()">
@@ -1191,16 +1197,16 @@ body.first-sync .first-sync-hint { display: block; }
 <div class="modal-backdrop" id="welcomeModal">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Welcome to Hopprint 🍺</div>
+      <div class="modal-title has-icon">Welcome to Hopprint<span data-icon="checkin" data-icon-size="20" data-icon-weight="2.3"></span></div>
       <div class="modal-close" onclick="closeWelcomeModal()">✕</div>
     </div>
     <div class="welcome-lede">A personal beer log that's actually yours — no paywalled exports, no clutter. Just your check-ins, your data, your taste.</div>
     <div class="welcome-tabs-list">
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">🍻</span><div class="welcome-tab-copy"><strong>Check In</strong><span>Log a beer in a few seconds</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">📖</span><div class="welcome-tab-copy"><strong>My Beers</strong><span>Your full check-in history</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">📊</span><div class="welcome-tab-copy"><strong>Analytics</strong><span>Trends once you've logged a few</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">🌱</span><div class="welcome-tab-copy"><strong>Profile</strong><span>Your flavor identity — unlocks at 10 check-ins</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">🎲</span><div class="welcome-tab-copy"><strong>Discover</strong><span>Personalized recommendations as you go</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="checkin" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Check In</strong><span>Log a beer in a few seconds</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="beers" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>My Beers</strong><span>Your full check-in history</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="stats" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Analytics</strong><span>Trends once you've logged a few</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="print" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Your Hopprint</strong><span>Your flavor identity — unlocks at 10 check-ins</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="discover" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Discover</strong><span>Personalized recommendations as you go</span></div></div>
     </div>
     <button class="btn-checkin" onclick="closeWelcomeModal()">Let's Go</button>
   </div>
@@ -1213,7 +1219,7 @@ body.first-sync .first-sync-hint { display: block; }
       <div class="modal-title">Before your first sync</div>
     </div>
     <div class="welcome-lede" id="preSyncText"></div>
-    <button class="btn-save" onclick="exportPreSync()">📦 Export Them</button>
+    <button class="btn-save has-icon" onclick="exportPreSync()"><span data-icon="export-json" data-icon-size="16" data-icon-weight="2.2"></span>Export Them</button>
     <button class="btn-action" style="margin-top:8px" onclick="continuePreSync()">Continue</button>
   </div>
 </div>
