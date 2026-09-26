@@ -50,6 +50,8 @@ const ALLOWED_CHANGES = {
   submitFeedback: 'IN8 toast iconName',
   exportCSV: 'IN8 toast iconName',
   exportJSON: 'IN8 toast iconName',
+  // IT9 — bottom nav (IN16)
+  switchTab: 'IN16 .bn-item selector + aria-current',
 };
 
 let baselineScript;

@@ -100,30 +100,31 @@ body {
 .header-meta { font-size: 13px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.5px; }
 .header-meta strong { color: var(--lime); }
 
-/* ── TABS ───────────────────────────────────────────────────── */
-.tabs {
-  display: flex;
+/* ── BOTTOM NAV ─────────────────────────────────────────────── */
+.bottom-nav {
+  position: fixed; z-index: 50;
+  left: 12px; right: 12px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  max-width: 496px; margin: 0 auto;           /* the 520px app column minus 2×12 */
+  height: 54px; padding: 0 6px;
+  display: flex; align-items: center; justify-content: space-around;
   background: var(--charcoal2);
-  border-bottom: 2px solid var(--border);
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 27px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
 }
-.tabs::-webkit-scrollbar { display: none; }
-.tab {
-  flex: 1; min-width: 72px;
-  padding: 11px 4px 10px;
-  text-align: center;
-  font-family: var(--font-body);
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 1px; text-transform: uppercase;
-  color: var(--text-dim);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  transition: all 0.18s;
-  white-space: nowrap;
+.bn-item {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 7px 11px; border: 0; border-radius: 19px;
+  background: transparent; color: var(--text-dim);
+  font: 700 9px/1 var(--font-body); letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+  cursor: pointer; transition: color .18s, background .18s;
+  -webkit-tap-highlight-color: transparent;
 }
-.tab.active { color: var(--orange); border-bottom-color: var(--orange); }
-.tab:hover:not(.active) { color: var(--text-muted); }
+.bn-item:hover:not(.active) { color: var(--text-muted); }
+.bn-item.active { color: var(--orange); background: var(--orange-glow); }
+.bn-item:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 
 /* ── SCREENS ────────────────────────────────────────────────── */
 .screen { display: none; }
@@ -997,15 +998,6 @@ body.first-sync .first-sync-hint { display: block; }
   </div>
 </div>
 
-<!-- TABS -->
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('checkin')" id="tab-checkin">Check In</div>
-  <div class="tab" onclick="switchTab('history')" id="tab-history">My Beers</div>
-  <div class="tab" onclick="switchTab('analytics')" id="tab-analytics">Analytics</div>
-  <div class="tab" onclick="switchTab('profile')" id="tab-profile">Profile</div>
-  <div class="tab" onclick="switchTab('discover')" id="tab-discover">Discover</div>
-</div>
-
 <!-- ══════════════════════════════════════════════════════════ -->
 <!-- CHECK-IN SCREEN -->
 <!-- ══════════════════════════════════════════════════════════ -->
@@ -1251,6 +1243,15 @@ body.first-sync .first-sync-hint { display: block; }
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav" aria-label="Sections">
+  <button class="bn-item active" id="tab-checkin" onclick="switchTab('checkin')" aria-current="page"><span data-icon="checkin" data-icon-size="19" data-icon-weight="2.3"></span><span>Check In</span></button>
+  <button class="bn-item" id="tab-history" onclick="switchTab('history')"><span data-icon="beers" data-icon-size="19" data-icon-weight="2.3"></span><span>Beers</span></button>
+  <button class="bn-item" id="tab-analytics" onclick="switchTab('analytics')"><span data-icon="stats" data-icon-size="19" data-icon-weight="2.3"></span><span>Stats</span></button>
+  <button class="bn-item" id="tab-profile" onclick="switchTab('profile')"><span data-icon="print" data-icon-size="19" data-icon-weight="2.3"></span><span>Print</span></button>
+  <button class="bn-item" id="tab-discover" onclick="switchTab('discover')"><span data-icon="discover" data-icon-size="19" data-icon-weight="2.3"></span><span>Discover</span></button>
+</nav>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
@@ -4242,9 +4243,10 @@ function showToast(msg, iconName) {
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.bn-item').forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('tab-'+tab).setAttribute('aria-current', 'page');
   document.getElementById('screen-'+tab).classList.add('active');
   if (tab === 'history') renderHistory();
   if (tab === 'analytics') renderAnalytics();
