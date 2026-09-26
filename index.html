@@ -125,6 +125,8 @@ body {
 .bn-item:hover:not(.active) { color: var(--text-muted); }
 .bn-item.active { color: var(--orange); background: var(--orange-glow); }
 .bn-item:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+body.input-focused .bottom-nav,
+body.input-focused .fab-feedback { display: none; }
 
 /* ── SCREENS ────────────────────────────────────────────────── */
 .screen { display: none; }
@@ -4255,6 +4257,24 @@ function switchTab(tab) {
   if (tab === 'profile') renderProfile();
   if (tab === 'discover') renderWishlist();
 }
+
+// Hide the bottom nav and feedback FAB while a text-entry field has focus, so
+// they don't ride up on the on-screen keyboard (IN11). focusout defers one tick
+// so tabbing between two fields never clears the class in between.
+const NON_TEXT_INPUT_TYPES = ['range', 'checkbox', 'radio', 'button', 'submit', 'file'];
+function isTextEntry(el) {
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+  return el.tagName === 'INPUT' && !NON_TEXT_INPUT_TYPES.includes(el.type);
+}
+document.addEventListener('focusin', e => {
+  if (isTextEntry(e.target)) document.body.classList.add('input-focused');
+});
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (!isTextEntry(document.activeElement)) document.body.classList.remove('input-focused');
+  }, 0);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // AUTH GATE (SY8 / SY12 / PC1–PC9)
