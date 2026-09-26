@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Hopprint">
@@ -91,7 +91,7 @@ body {
 .header {
   background: var(--charcoal2);
   border-bottom: 1px solid var(--border);
-  padding: 13px 20px 11px;
+  padding: calc(13px + env(safe-area-inset-top)) 20px 11px;
   display: flex; align-items: center; justify-content: space-between;
   position: sticky; top: 0; z-index: 100;
 }
@@ -100,35 +100,42 @@ body {
 .header-meta { font-size: 13px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.5px; }
 .header-meta strong { color: var(--lime); }
 
-/* ── TABS ───────────────────────────────────────────────────── */
-.tabs {
-  display: flex;
+/* ── BOTTOM NAV ─────────────────────────────────────────────── */
+.bottom-nav {
+  position: fixed; z-index: 50;
+  left: 12px; right: 12px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  max-width: 496px; margin: 0 auto;           /* the 520px app column minus 2×12 */
+  height: 54px; padding: 0 6px;
+  display: flex; align-items: center; justify-content: space-around;
   background: var(--charcoal2);
-  border-bottom: 2px solid var(--border);
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 27px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
 }
-.tabs::-webkit-scrollbar { display: none; }
-.tab {
-  flex: 1; min-width: 72px;
-  padding: 11px 4px 10px;
-  text-align: center;
-  font-family: var(--font-body);
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 1px; text-transform: uppercase;
-  color: var(--text-dim);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  transition: all 0.18s;
-  white-space: nowrap;
+.bn-item {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 7px 11px; border: 0; border-radius: 19px;
+  background: transparent; color: var(--text-dim);
+  font: 700 9px/1 var(--font-body); letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+  cursor: pointer; transition: color .18s, background .18s;
+  -webkit-tap-highlight-color: transparent;
 }
-.tab.active { color: var(--orange); border-bottom-color: var(--orange); }
-.tab:hover:not(.active) { color: var(--text-muted); }
+.bn-item:hover:not(.active) { color: var(--text-muted); }
+.bn-item.active { color: var(--orange); background: var(--orange-glow); }
+.bn-item:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+body.input-focused .bottom-nav,
+body.input-focused .fab-feedback { display: none; }
 
 /* ── SCREENS ────────────────────────────────────────────────── */
 .screen { display: none; }
 .screen.active { display: block; }
-.screen-inner { max-width: 520px; margin: 0 auto; padding: 20px 16px 80px; }
+.screen-inner { max-width: 520px; margin: 0 auto; padding: 20px 16px calc(96px + env(safe-area-inset-bottom)); }
+
+/* ── ICONS ──────────────────────────────────────────────────── */
+.ico { display: block; flex-shrink: 0; }
+.ico-pair { display: inline-flex; align-items: center; gap: 5px; vertical-align: middle; }
 
 /* ── SECTION LABEL ──────────────────────────────────────────── */
 .sec-label {
@@ -137,6 +144,7 @@ body {
   margin: 24px 0 10px;
 }
 .sec-label:first-child { margin-top: 6px; }
+.sec-label.has-icon { display: flex; align-items: center; gap: 5px; }
 
 /* ── FIELD ──────────────────────────────────────────────────── */
 .field { position: relative; margin-bottom: 8px; }
@@ -202,7 +210,7 @@ body {
 }
 .occ-pill:hover { border-color: var(--orange-dim); color: var(--text); }
 .occ-pill.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
-.occ-pill .occ-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+.occ-pill .occ-icon { display: flex; align-items: center; justify-content: center; height: 26px; margin-bottom: 2px; }
 
 .ctx-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .ctx-pill {
@@ -237,7 +245,9 @@ body {
 .note-prompt-text {
   font-size: 13px; color: var(--text-muted); font-style: italic; font-weight: 300;
   line-height: 1.4;
+  display: flex; align-items: center; gap: 5px;
 }
+.note-prompt-text .ico { color: var(--text-dim); }
 .note-shuffle {
   font-size: 11px; color: var(--text-dim);
   cursor: pointer; padding: 3px 7px;
@@ -260,23 +270,25 @@ body {
 }
 .btn-checkin:hover { background: var(--orange-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(233,115,36,0.35); }
 .btn-checkin:active { transform: none; }
+.btn-checkin.has-icon { gap: 9px; }
 
 /* ── TOAST ──────────────────────────────────────────────────── */
 .toast {
-  position: fixed; bottom: 24px; left: 50%;
-  transform: translateX(-50%) translateY(80px);
+  position: fixed; bottom: calc(104px + env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%) translateY(calc(100% + 104px + env(safe-area-inset-bottom)));
   background: var(--lime); color: var(--charcoal);
   font-family: var(--font-body); font-weight: 700; font-size: 14px; letter-spacing: 0.5px;
   padding: 11px 22px; border-radius: 30px; z-index: 999;
   transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
   white-space: nowrap; box-shadow: 0 4px 20px rgba(143,198,64,0.4);
+  display: inline-flex; align-items: center; gap: 7px;
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
 
 /* ── HISTORY ────────────────────────────────────────────────── */
 .search-wrap { position: relative; margin-bottom: 14px; }
 .search-wrap input { padding-left: 38px; }
-.search-wrap::before { content: '🔍'; position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; }
+.search-wrap .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
 
 .entry-card {
   background: var(--charcoal2);
@@ -297,10 +309,11 @@ body {
   border: 1px solid var(--border); letter-spacing: 0.3px;
 }
 .etag.style { color: var(--lime); border-color: rgba(143,198,64,0.2); background: rgba(143,198,64,0.06); }
+.etag.venue { display: inline-flex; align-items: center; gap: 5px; }
 .etag.serve { color: var(--orange); border-color: var(--orange-glow); background: var(--orange-glow2); }
 .entry-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
 .entry-date { font-size: 11px; color: var(--text-dim); font-weight: 300; }
-.entry-occ { font-size: 11px; color: var(--text-muted); }
+.entry-occ { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
 .entry-notes-preview { font-size: 12px; color: var(--text-muted); margin-top: 8px; font-style: italic; border-top: 1px solid var(--border); padding-top: 7px; font-weight: 300; line-height: 1.4; }
 
 /* ── EDIT MODAL ─────────────────────────────────────────────── */
@@ -321,6 +334,8 @@ body {
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .modal-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; }
+.modal-title.has-icon { display: flex; align-items: center; gap: 8px; }
+.modal-title.has-icon .ico { color: var(--orange); }
 .modal-close { font-size: 22px; cursor: pointer; color: var(--text-muted); padding: 4px 8px; }
 .btn-save, .btn-delete {
   width: 100%; padding: 13px; margin-top: 10px;
@@ -331,6 +346,7 @@ body {
 }
 .btn-save { background: var(--orange); color: var(--charcoal); }
 .btn-save:hover { background: var(--orange-hover); }
+.btn-save.has-icon { display: flex; align-items: center; justify-content: center; gap: 7px; }
 .btn-delete { background: rgba(255,80,80,0.12); color: var(--danger); border: 1px solid rgba(255,80,80,0.2); margin-top: 8px; }
 .btn-delete:hover { background: rgba(255,80,80,0.2); }
 
@@ -349,7 +365,7 @@ body {
   font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
   transition: all 0.15s;
 }
-.rb-btn .rb-icon { font-size: 22px; display: block; margin-bottom: 4px; }
+.rb-btn .rb-icon { display: flex; align-items: center; justify-content: center; height: 30px; margin-bottom: 4px; }
 .rb-btn:hover { border-color: var(--border-orange); color: var(--text); }
 .rb-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
 .rating-fine-tune { margin-top: 18px; display: none; }
@@ -371,21 +387,21 @@ body {
   padding: 3px 9px; border-radius: 20px; cursor: pointer;
 }
 .rate-badge:hover { background: var(--orange-glow); }
-.etag.rated { color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
+.etag.rated { display: inline-flex; align-items: center; gap: 5px; color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
 
 /* ── EMPTY STATE CTA ────────────────────────────────────────── */
 .empty-cta {
   margin-top: 16px; padding: 10px 22px;
   background: var(--orange); color: var(--charcoal);
   font-family: var(--font-body); font-size: 13px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
-  border: none; border-radius: 30px; cursor: pointer; display: inline-block;
+  border: none; border-radius: 30px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
   transition: all 0.18s;
 }
 .empty-cta:hover { background: var(--orange-hover); transform: translateY(-1px); }
 
 /* ── FEEDBACK FAB + MODAL ───────────────────────────────────── */
 .fab-feedback {
-  position: fixed; right: 18px; bottom: 24px; z-index: 500;
+  position: fixed; right: 18px; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 500;
   width: 46px; height: 46px; border-radius: 50%;
   background: var(--charcoal2); border: 1px solid var(--border-orange);
   color: var(--orange); font-size: 19px;
@@ -400,6 +416,7 @@ body {
   border: 1px solid var(--border); background: var(--charcoal3); color: var(--text-muted);
   font-family: var(--font-body); font-size: 13px; font-weight: 600; letter-spacing: 0.3px;
   cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
 }
 .fb-cat-btn:hover { border-color: var(--border-orange); color: var(--text); }
 .fb-cat-btn.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
@@ -409,7 +426,7 @@ body {
 .welcome-lede { font-size: 14px; color: var(--text-muted); font-weight: 300; line-height: 1.55; margin-bottom: 18px; }
 .welcome-tabs-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
 .welcome-tab-row { display: flex; gap: 12px; align-items: flex-start; }
-.welcome-tab-icon { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
+.welcome-tab-icon { display: flex; justify-content: center; width: 26px; flex-shrink: 0; }
 .welcome-tab-copy strong { display: block; font-size: 14px; color: var(--text); }
 .welcome-tab-copy span { font-size: 12px; color: var(--text-dim); font-weight: 300; }
 
@@ -423,7 +440,7 @@ body {
   transition: all 0.15s;
 }
 .header-tool:hover { border-color: var(--border-orange); color: var(--orange); }
-.header-tool .header-tool-icon { font-size: 14px; line-height: 1; }
+.header-tool .header-tool-icon { display: flex; }
 
 /* ── DATE LOOKUP MODAL ──────────────────────────────────────── */
 .dl-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
@@ -503,7 +520,7 @@ body {
   border-radius: var(--radius); padding: 14px 16px;
   display: flex; align-items: flex-start; gap: 12px;
 }
-.insight-icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
+.insight-icon { display: flex; align-items: center; height: 30px; flex-shrink: 0; margin-top: 1px; }
 .insight-body { flex: 1; }
 .insight-headline { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); margin-bottom: 2px; }
 .insight-detail { font-size: 12px; color: var(--text-muted); font-weight: 300; line-height: 1.4; }
@@ -544,6 +561,8 @@ body {
 .data-table tr:hover td { background: var(--orange-glow2); }
 
 /* ── PROFILE ────────────────────────────────────────────────── */
+/* The export block follows in its own .screen-inner and carries the nav clearance */
+#profileInner { padding-bottom: 80px; }
 .profile-hero {
   background: var(--charcoal2); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 22px 18px; margin-bottom: 9px;
@@ -601,7 +620,7 @@ body {
 
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .trend-row:last-child { border-bottom: none; }
-.trend-icon { font-size: 18px; flex-shrink: 0; }
+.trend-icon { display: flex; align-items: center; height: 28px; flex-shrink: 0; }
 .trend-label { font-size: 13px; font-weight: 500; flex: 1; }
 .trend-val { font-size: 13px; color: var(--orange); font-weight: 600; font-family: var(--font-display); max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 
@@ -619,7 +638,7 @@ body {
 }
 .mode-card:hover { border-color: var(--border-orange); }
 .mode-card.sel { background: var(--orange-glow); border-color: var(--orange); }
-.mode-icon { font-size: 24px; margin-bottom: 5px; }
+.mode-icon { display: flex; align-items: center; justify-content: center; height: 32px; margin-bottom: 5px; }
 .mode-name { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
 .mode-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 300; line-height: 1.3; }
 
@@ -698,7 +717,7 @@ body {
 
 /* ── EMPTY STATE ─────────────────────────────────────────────── */
 .empty { text-align: center; padding: 60px 20px; color: var(--text-dim); }
-.empty-icon { font-size: 44px; margin-bottom: 10px; }
+.empty-icon { display: flex; align-items: center; justify-content: center; height: 58px; margin-bottom: 10px; }
 .empty p { font-size: 15px; font-weight: 300; line-height: 1.5; white-space: pre-line; }
 
 /* ── ANIMATIONS ─────────────────────────────────────────────── */
@@ -744,7 +763,7 @@ body {
 .ms-list { display: flex; flex-direction: column; gap: 2px; }
 .ms-row { display: flex; align-items: center; gap: 11px; padding: 9px 6px; border-bottom: 1px solid var(--border); }
 .ms-row:last-child { border-bottom: none; }
-.ms-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+.ms-icon { display: flex; justify-content: center; width: 24px; flex-shrink: 0; }
 .ms-body { flex: 1; min-width: 0; }
 .ms-label { font-size: 13px; font-weight: 600; color: var(--text); }
 .ms-sub { font-size: 12px; color: var(--text-dim); font-weight: 300; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -979,17 +998,8 @@ body.first-sync .first-sync-hint { display: block; }
   </div>
   <div class="header-right">
     <div class="sync-pill" id="syncPill" onclick="onSyncPillTap()" role="button" hidden></div>
-    <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon">📅</span>Check can date</div>
+    <div class="header-tool" id="dateLookupLauncher" onclick="openDateLookup()"><span class="header-tool-icon" data-icon="calendar" data-icon-size="16" data-icon-weight="2.2"></span>Check can date</div>
   </div>
-</div>
-
-<!-- TABS -->
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('checkin')" id="tab-checkin">Check In</div>
-  <div class="tab" onclick="switchTab('history')" id="tab-history">My Beers</div>
-  <div class="tab" onclick="switchTab('analytics')" id="tab-analytics">Analytics</div>
-  <div class="tab" onclick="switchTab('profile')" id="tab-profile">Profile</div>
-  <div class="tab" onclick="switchTab('discover')" id="tab-discover">Discover</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════ -->
@@ -1054,7 +1064,7 @@ body.first-sync .first-sync-hint { display: block; }
     <textarea id="notes" placeholder="Your thoughts..."></textarea>
   </div>
 
-  <button class="btn-checkin" onclick="submitCheckin()">🍻 Check In</button>
+  <button class="btn-checkin has-icon" onclick="submitCheckin()"><span data-icon="checkin" data-icon-size="20" data-icon-weight="2.6"></span>Check In</button>
 
 </div>
 </div>
@@ -1066,6 +1076,7 @@ body.first-sync .first-sync-hint { display: block; }
 <div class="screen-inner">
   <div class="first-sync-note"></div>
   <div class="search-wrap field">
+    <span class="search-icon" data-icon="search" data-icon-size="17" data-icon-weight="2.2"></span>
     <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="renderHistory()">
   </div>
   <div id="historyList"></div>
@@ -1104,7 +1115,7 @@ body.first-sync .first-sync-hint { display: block; }
   <div id="recResults" style="margin-top:16px"></div>
 
   <div id="wishlistSection" style="margin-top:8px">
-    <div class="sec-label">📌 Wish List</div>
+    <div class="sec-label has-icon"><span data-icon="wishlist" data-icon-size="14" data-icon-weight="2.2"></span>Wish List</div>
     <div class="field ac-wrap">
       <input id="wishBeerName" type="text" placeholder="Beer name" autocomplete="off">
       <div class="ac-drop" id="drop-wishBeerName"></div>
@@ -1155,7 +1166,7 @@ body.first-sync .first-sync-hint { display: block; }
 </div>
 
 <!-- FEEDBACK FAB -->
-<div class="fab-feedback" onclick="openFeedbackModal()" title="Send feedback">💬</div>
+<div class="fab-feedback" onclick="openFeedbackModal()" title="Send feedback" data-icon="feedback" data-icon-size="22" data-icon-weight="2.2"></div>
 
 <!-- FEEDBACK MODAL -->
 <div class="modal-backdrop" id="drillModal" onclick="if(event.target===this)closeDrill()">
@@ -1186,16 +1197,16 @@ body.first-sync .first-sync-hint { display: block; }
 <div class="modal-backdrop" id="welcomeModal">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Welcome to Hopprint 🍺</div>
+      <div class="modal-title has-icon">Welcome to Hopprint<span data-icon="checkin" data-icon-size="20" data-icon-weight="2.3"></span></div>
       <div class="modal-close" onclick="closeWelcomeModal()">✕</div>
     </div>
     <div class="welcome-lede">A personal beer log that's actually yours — no paywalled exports, no clutter. Just your check-ins, your data, your taste.</div>
     <div class="welcome-tabs-list">
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">🍻</span><div class="welcome-tab-copy"><strong>Check In</strong><span>Log a beer in a few seconds</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">📖</span><div class="welcome-tab-copy"><strong>My Beers</strong><span>Your full check-in history</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">📊</span><div class="welcome-tab-copy"><strong>Analytics</strong><span>Trends once you've logged a few</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">🌱</span><div class="welcome-tab-copy"><strong>Profile</strong><span>Your flavor identity — unlocks at 10 check-ins</span></div></div>
-      <div class="welcome-tab-row"><span class="welcome-tab-icon">🎲</span><div class="welcome-tab-copy"><strong>Discover</strong><span>Personalized recommendations as you go</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="checkin" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Check In</strong><span>Log a beer in a few seconds</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="beers" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>My Beers</strong><span>Your full check-in history</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="stats" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Analytics</strong><span>Trends once you've logged a few</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="print" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Your Hopprint</strong><span>Your flavor identity — unlocks at 10 check-ins</span></div></div>
+      <div class="welcome-tab-row"><span class="welcome-tab-icon" data-icon="discover" data-icon-size="20" data-icon-weight="2.3"></span><div class="welcome-tab-copy"><strong>Discover</strong><span>Personalized recommendations as you go</span></div></div>
     </div>
     <button class="btn-checkin" onclick="closeWelcomeModal()">Let's Go</button>
   </div>
@@ -1208,7 +1219,7 @@ body.first-sync .first-sync-hint { display: block; }
       <div class="modal-title">Before your first sync</div>
     </div>
     <div class="welcome-lede" id="preSyncText"></div>
-    <button class="btn-save" onclick="exportPreSync()">📦 Export Them</button>
+    <button class="btn-save has-icon" onclick="exportPreSync()"><span data-icon="export-json" data-icon-size="16" data-icon-weight="2.2"></span>Export Them</button>
     <button class="btn-action" style="margin-top:8px" onclick="continuePreSync()">Continue</button>
   </div>
 </div>
@@ -1237,7 +1248,89 @@ body.first-sync .first-sync-hint { display: block; }
 
 <div class="toast" id="toast"></div>
 
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav" aria-label="Sections">
+  <button class="bn-item active" id="tab-checkin" onclick="switchTab('checkin')" aria-current="page"><span data-icon="checkin" data-icon-size="19" data-icon-weight="2.3"></span><span>Check In</span></button>
+  <button class="bn-item" id="tab-history" onclick="switchTab('history')"><span data-icon="beers" data-icon-size="19" data-icon-weight="2.3"></span><span>Beers</span></button>
+  <button class="bn-item" id="tab-analytics" onclick="switchTab('analytics')"><span data-icon="stats" data-icon-size="19" data-icon-weight="2.3"></span><span>Stats</span></button>
+  <button class="bn-item" id="tab-profile" onclick="switchTab('profile')"><span data-icon="print" data-icon-size="19" data-icon-weight="2.3"></span><span>Print</span></button>
+  <button class="bn-item" id="tab-discover" onclick="switchTab('discover')"><span data-icon="discover" data-icon-size="19" data-icon-weight="2.3"></span><span>Discover</span></button>
+</nav>
+
 <script>
+// ═══════════════════════════════════════════════════════════════
+// ICONS — pasted unmodified from design/icons/icons.js (IN4)
+// ═══════════════════════════════════════════════════════════════
+// Hopprint line icons. 20×20 grid, stroke = currentColor.
+// Usage: icon('checkin')            -> SVG string, 20px, stroke 2.2
+//        icon('checkin', 19, 2.3)   -> nav size/weight
+// Paths that carry their own stroke-width (print, beers) keep it at every size.
+const ICON_PATHS = {
+  'checkin': '<path d="M6.4 3h7.2a.7.7 0 0 1 .7.7L14.08 7H5.92L5.7 3.7A.7.7 0 0 1 6.4 3Z" fill="currentColor" stroke="none"></path><circle cx="13.7" cy="2.4" r="1.5" fill="currentColor" stroke="none"></circle><path d="M6.4 3h7.2a.7.7 0 0 1 .7.7l-.8 12.2a1.7 1.7 0 0 1-1.7 1.6H8.2a1.7 1.7 0 0 1-1.7-1.6L5.7 3.7A.7.7 0 0 1 6.4 3Z"></path>',
+  'beers': '<path d="M2.9 3.4h5.2M3.2 3.9 3.8 11.8M11.9 3.4h5.2M16.8 3.9 16.2 11.8" stroke-width="1.6"></path><path d="M7.1 6.4h5.8a.6.6 0 0 1 .6.6l-.19 2.9H6.69L6.5 7A.6.6 0 0 1 7.1 6.4Z" fill="currentColor" stroke="none"></path><circle cx="12.9" cy="5.8" r="1.15" fill="currentColor" stroke="none"></circle><path d="M7.1 6.4h5.8a.6.6 0 0 1 .6.6l-.55 8.5a1.4 1.4 0 0 1-1.4 1.3H8.45a1.4 1.4 0 0 1-1.4-1.3L6.5 7A.6.6 0 0 1 7.1 6.4Z"></path>',
+  'stats': '<path d="M4 16V9M10 16V4M16 16v-5"></path>',
+  'print': '<path stroke-linejoin="round" stroke-width="1.3" d="M7 3C4.6 3.8 2.6 5.3 2.4 7.6c-.1 1.8.2 3.4 1.3 4.9 1-.2 1.9-.7 2.3-1.1-.4-1-.5-2-.4-2.8 1.4 2.2 3.6 3.6 6.1 4 1.3-2.3 1.6-4.8.9-7.2.8.8 1.6 1.8 1.8 2 .9-.2 1.7-.6 2.3-1.2C15.8 3.6 14 2.3 12.8 1.3 10.9.8 9 1.4 7 3zM16.2 7.3c1.2 1.3 1.8 2.9 1.6 5-1.6.6-3.2.2-4.6-.5.4-1.2.6-2.4.5-3.4.9-.3 1.8-.6 2.5-1.1zM16 13.3c.2 2-.4 4-1.6 5.5-1.8-.2-3.6-1.2-4.8-2.4.6-.9 1.1-1.9 1.5-2.8.5.2 1 .3 1.4.3.2-.5.4-.9.6-1.3.9.4 1.9.6 2.9.7zM4.9 12.8c.1 2 1.1 3.5 2.7 4.4 1.4-.8 2.2-2.3 2.6-3.9-1.1-.5-2.1-.9-2.9-1.7-.7.5-1.5.9-2.4 1.2z"></path><path stroke-linejoin="round" stroke-width="2.3" d="M6.2 .9 7 3M7 3C4.6 3.8 2.6 5.3 2.4 7.6c-.1 1.8.2 3.4 1.3 4.9M4.9 12.8c.1 2 1.1 3.5 2.7 4.4M9.6 16.4c1.2 1.2 3 2.2 4.8 2.4 1.2-1.5 1.8-3.5 1.6-5.5M17.8 12.3c.2-2.1-.4-3.7-1.6-5M16.7 6.2C15.8 3.6 14 2.3 12.8 1.3 10.9.8 9 1.4 7 3"></path>',
+  'discover': '<circle cx="10" cy="10" r="7"></circle><circle cx="10" cy="10" r="2.6"></circle>',
+  'calendar': '<rect x="3" y="4.5" width="14" height="13" rx="3"></rect><path d="M3 8.5h14M7 3v3M13 3v3"></path>',
+  'venue': '<path d="M10 17.5s5.5-5 5.5-9a5.5 5.5 0 0 0-11 0c0 4 5.5 9 5.5 9Z"></path><circle cx="10" cy="8.4" r="1.9"></circle>',
+  'wishlist': '<path d="M4 5.5h12v9l-4-2.4-4 2.4Z"></path>',
+  'sort': '<path d="M3 5.5h14M5.5 10h9M8 14.5h4"></path>',
+  'search': '<circle cx="9" cy="9" r="5.5"></circle><path d="M13.2 13.2 17 17"></path>',
+  'share': '<path d="M10 13V4M6.5 7.5 10 4l3.5 3.5"></path><path d="M4 16.5h12"></path>',
+  'rating-never': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.8 13.8Q10 10.9 13.2 13.8"></path>',
+  'rating-maybe': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M7.1 12.8 12.9 12.5"></path>',
+  'rating-definitely': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.8 11.5Q10 14.8 13.2 11.5"></path>',
+  'occasion-home-solo': '<path d="M3 9.5 10 4l7 5.5V16a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16Z"></path>',
+  'occasion-home-social': '<path d="M3 9.5 10 4l7 5.5V16a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16Z"></path><circle cx="10" cy="12" r="1.6"></circle>',
+  'occasion-bar': '<path d="M6 3h8l-1 12.5A1.6 1.6 0 0 1 11.4 17H8.6A1.6 1.6 0 0 1 7 15.5Z"></path><path d="M6.4 8h7.2"></path>',
+  'occasion-event': '<path d="M10 3v3.5M10 13.5V17M3 10h3.5M13.5 10H17M5.2 5.2l2.4 2.4M12.4 12.4l2.4 2.4M14.8 5.2l-2.4 2.4M7.6 12.4l-2.4 2.4"></path>',
+  'occasion-dining': '<path d="M6 3v6.5M6 9.5V17M4 3v4a2 2 0 0 0 4 0V3M14 3c-1.6 0-2.6 1.4-2.6 3.2S12.4 9.5 14 9.5V17"></path>',
+  'occasion-traveling': '<path d="M3 11.5 17 6l-4.5 9-2-3.5Z"></path>',
+  // set 2: modes, feedback, milestones, trends, actions, status
+  'mode-wheelhouse': '<circle cx="9" cy="11" r="6"></circle><circle cx="9" cy="11" r="2.2"></circle><path d="M9 11 16.5 3.5M13.5 3.5h3v3"></path>',
+  'mode-adjacent': '<path d="M2.5 8q2.5-2.6 5 0t5 0t5 0M2.5 13.5q2.5-2.6 5 0t5 0t5 0"></path>',
+  'mode-wildcard': '<rect x="3.5" y="3.5" width="13" height="13" rx="3"></rect><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="10" cy="10" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="13" cy="13" r="1.2" fill="currentColor" stroke="none"></circle>',
+  'mode-random': '<path d="M3 6h2.8c2.2 0 3.4 1 4.4 4s2.2 4 4.4 4H17M3 14h2.8c1.3 0 2.2-.4 2.9-1.2M11.3 7.2c.7-.8 1.6-1.2 2.9-1.2H17M14.8 3.8 17 6l-2.2 2.2M14.8 11.8 17 14l-2.2 2.2"></path>',
+  'feedback': '<path d="M4.5 4h11A1.5 1.5 0 0 1 17 5.5v7a1.5 1.5 0 0 1-1.5 1.5H9l-4 3v-3h-.5A1.5 1.5 0 0 1 3 12.5v-7A1.5 1.5 0 0 1 4.5 4Z"></path><path d="M6.5 7.8h7M6.5 10.8h4.5"></path>',
+  'feedback-bug': '<rect x="6" y="6.5" width="8" height="10.5" rx="4"></rect><path d="M7.6 6.8a2.4 2.4 0 0 1 4.8 0M3.5 9.5 6 10.5M16.5 9.5 14 10.5M3.5 14.5 6 14M16.5 14.5 14 14M7.5 3.2l.9 1.4M12.5 3.2l-.9 1.4"></path>',
+  'feedback-idea': '<path d="M7.2 13.5c0-1.4-2.2-2.6-2.2-5.3a5 5 0 0 1 10 0c0 2.7-2.2 3.9-2.2 5.3Z"></path><path d="M7.8 16.6h4.4"></path>',
+  'feedback-confusion': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.9 13.2q1.05-1.2 2.1 0t2.1 0t2.1 0"></path>',
+  'feedback-other': '<path d="M4.5 4h11A1.5 1.5 0 0 1 17 5.5v7a1.5 1.5 0 0 1-1.5 1.5H9l-4 3v-3h-.5A1.5 1.5 0 0 1 3 12.5v-7A1.5 1.5 0 0 1 4.5 4Z"></path><circle cx="7" cy="9" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="10" cy="9" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="13" cy="9" r="1.1" fill="currentColor" stroke="none"></circle>',
+  'milestone-brewery': '<path d="M4.2 17V9l4 2.5V9l4 2.5V4.5h3.5V17Z"></path><path d="M3 17h14"></path>',
+  'milestone-style': '<path d="M3.5 3.5h5l7 7a1.5 1.5 0 0 1 0 2.1l-3.9 3.9a1.5 1.5 0 0 1-2.1 0l-6-6Z"></path><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"></circle>',
+  'trend-abv': '<path d="M11 2.5 4.5 11.5H10L9 17.5l6.5-9H10Z"></path>',
+  'trend-up': '<path d="M3 14.5 8 9.5l3 3 6-6M13 6.5h4v4"></path>',
+  'trend-down': '<path d="M3 5.5l5 5 3-3 6 6M13 13.5h4v-4"></path>',
+  'trend-region': '<path d="M3 5.5 7.5 3.5l5 2 4.5-2v11l-4.5 2-5-2-4.5 2Z"></path><path d="M7.5 3.5v11M12.5 5.5v11"></path>',
+  'trend-loyal': '<path d="M10 16.5S3 12.4 3 7.6A3.6 3.6 0 0 1 10 6a3.6 3.6 0 0 1 7 1.6c0 4.8-7 8.9-7 8.9Z"></path>',
+  'note': '<path d="M12.8 4.2l3 3-8.3 8.3-3.5.5.5-3.5Z"></path><path d="M11 6l3 3"></path>',
+  'account': '<circle cx="10" cy="7" r="3.2"></circle><path d="M4 17c.6-3.2 3-5 6-5s5.4 1.8 6 5"></path>',
+  'refresh': '<path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2"></path>',
+  'export-csv': '<path d="M5.5 3h6l3.5 3.5V16a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"></path><path d="M11.5 3v3.5H15M7.5 10.5h5M7.5 13.5h5"></path>',
+  'export-json': '<path d="M3.5 6.5 10 3.5l6.5 3v7L10 16.5l-6.5-3Z"></path><path d="M3.5 6.5 10 9.5l6.5-3M10 9.5v7"></path>',
+  'import': '<path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 16.5h12"></path>',
+  'warning': '<path d="M10 3.5l7.5 13h-15Z"></path><path d="M10 8.5v3.4"></path><circle cx="10" cy="14.3" r="1" fill="currentColor" stroke="none"></circle>',
+  'success': '<circle cx="10" cy="10" r="7.2"></circle><path d="M6.8 10.2 9 12.4l4.3-4.6"></path>',
+  'error': '<circle cx="10" cy="10" r="7.2"></circle><path d="M7.5 7.5l5 5M12.5 7.5l-5 5"></path>',
+  'trash': '<path d="M3.5 5.5h13M8 5.5v-2h4v2M5.2 5.5l.8 10.6a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.8-10.6"></path>',
+  'mail': '<rect x="3" y="4.5" width="14" height="11" rx="2"></rect><path d="M3.5 5.5 10 10.5l6.5-5"></path>',
+};
+function icon(name, size = 20, weight = 2.2, cls = '') {
+  const p = ICON_PATHS[name];
+  if (!p) { console.warn('icon: unknown', name); return ''; }
+  return `<svg class="ico${cls ? ' ' + cls : ''}" width="${size}" height="${size}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="${weight}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${p}</svg>`;
+}
+
+// Fill every static [data-icon] slot (IN3). Size and weight fall back to
+// icon()'s defaults when data-icon-size / data-icon-weight are absent.
+function hydrateIcons(root = document) {
+  root.querySelectorAll('[data-icon]').forEach(el => {
+    const size = el.dataset.iconSize ? Number(el.dataset.iconSize) : undefined;
+    const weight = el.dataset.iconWeight ? Number(el.dataset.iconWeight) : undefined;
+    el.innerHTML = icon(el.dataset.icon, size, weight);
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // SEED DATA — beer lookup, brewery lookup, and lists from history
 // ═══════════════════════════════════════════════════════════════
@@ -1290,12 +1383,12 @@ const NOTE_PROMPTS = [
 ];
 
 const OCCASIONS = [
-  { id:'home-solo', icon:'🛋️', label:'Home · Solo' },
-  { id:'home-social', icon:'🏠', label:'Home · Social' },
-  { id:'bar-taproom', icon:'🍺', label:'Bar / Taproom' },
-  { id:'event', icon:'🎉', label:'Event' },
-  { id:'dining', icon:'🍽️', label:'Dining Out' },
-  { id:'traveling', icon:'✈️', label:'Traveling' },
+  { id:'home-solo', iconName:'occasion-home-solo', label:'Home · Solo' },
+  { id:'home-social', iconName:'occasion-home-social', label:'Home · Social' },
+  { id:'bar-taproom', iconName:'occasion-bar', label:'Bar / Taproom' },
+  { id:'event', iconName:'occasion-event', label:'Event' },
+  { id:'dining', iconName:'occasion-dining', label:'Dining Out' },
+  { id:'traveling', iconName:'occasion-traveling', label:'Traveling' },
 ];
 
 const CTX_TAGS = ['With food','With friends','Outdoors','Celebrating','Trying something new','Winding down','Working through a pack','Post-work','Weekend'];
@@ -1312,10 +1405,10 @@ let fbCategory = null;
 const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','Side Pull','Taster'];
 
 const DISC_MODES = [
-  { id:'wheelhouse', icon:'🎯', name:'In Your Wheelhouse', desc:'Beers that match your pattern' },
-  { id:'adjacent', icon:'🌊', name:'Slightly Outside', desc:'One or two steps from your norm' },
-  { id:'wildcard', icon:'🎲', name:'Way Outside', desc:'Styles you rarely or never drink' },
-  { id:'random', icon:'🎰', name:'Random', desc:'Anything goes — surprise me' },
+  { id:'wheelhouse', iconName:'mode-wheelhouse', name:'In Your Wheelhouse', desc:'Beers that match your pattern' },
+  { id:'adjacent', iconName:'mode-adjacent', name:'Slightly Outside', desc:'One or two steps from your norm' },
+  { id:'wildcard', iconName:'mode-wildcard', name:'Way Outside', desc:'Styles you rarely or never drink' },
+  { id:'random', iconName:'mode-random', name:'Random', desc:'Anything goes — surprise me' },
 ];
 
 // Resolve a raw beer_type string (as stored on an entry — could come from
@@ -1921,7 +2014,7 @@ function buildOccasionGrid(containerId, occasions, setter, getter) {
   if (!el) return;
   el.innerHTML = occasions.map(o => `
     <div class="occ-pill" id="occ-${containerId}-${o.id}" onclick="selectOccasion('${containerId}','${o.id}',event)">
-      <span class="occ-icon">${o.icon}</span>${o.label}
+      <span class="occ-icon">${icon(o.iconName, 15, 2.2)}</span>${o.label}
     </div>`).join('');
   el._setter = setter;
   el._getter = getter;
@@ -1967,7 +2060,9 @@ function selectServe(el, type) {
 // NOTE PROMPTS
 // ═══════════════════════════════════════════════════════════════
 function setPrompt() {
-  document.getElementById('notePrompt').textContent = `💭 ${NOTE_PROMPTS[currentPromptIdx]}`;
+  const el = document.getElementById('notePrompt');
+  el.innerHTML = icon('note', 14, 2.2) + '<span></span>';
+  el.lastChild.textContent = NOTE_PROMPTS[currentPromptIdx];
 }
 function shufflePrompt() {
   currentPromptIdx = (currentPromptIdx + 1) % NOTE_PROMPTS.length;
@@ -2055,7 +2150,7 @@ function setDefaultDate() {
 // ═══════════════════════════════════════════════════════════════
 function submitCheckin() {
   const beerName = document.getElementById('beerName').value.trim();
-  if (!beerName) { document.getElementById('beerName').focus(); showToast('⚠️ Beer name required'); return; }
+  if (!beerName) { document.getElementById('beerName').focus(); showToast('Beer name required', 'warning'); return; }
   const entry = {
     id: newId(),
     beer_name: beerName,
@@ -2087,7 +2182,7 @@ function submitCheckin() {
     upsertBreweryDB(entry.brewery_name, { c: entry.brewery_city, s: entry.brewery_state });
   }
   buildLiveLists();
-  showToast('🍻 Checked in!');
+  showToast('Checked in!', 'checkin');
   resetForm();
   updateHeaderMeta();
   openRatingModal(entry.id);
@@ -2113,9 +2208,9 @@ function resetForm() {
 // RATING MODAL — "Would you drink this beer again?"
 // ═══════════════════════════════════════════════════════════════
 const RATING_BANDS = [
-  { id:'never', icon:'👎', label:'Never', base:15, min:0, max:33 },
-  { id:'maybe', icon:'🤔', label:'Maybe', base:50, min:34, max:66 },
-  { id:'definitely', icon:'🤩', label:'Definitely', base:85, min:67, max:100 },
+  { id:'never', iconName:'rating-never', label:'Never', base:15, min:0, max:33 },
+  { id:'maybe', iconName:'rating-maybe', label:'Maybe', base:50, min:34, max:66 },
+  { id:'definitely', iconName:'rating-definitely', label:'Definitely', base:85, min:67, max:100 },
 ];
 let ratingEntryId = null;
 let ratingBand = null;
@@ -2131,7 +2226,7 @@ function openRatingModal(id) {
   document.getElementById('ratingBreweryName').textContent = e.brewery_name || '';
   document.getElementById('ratingButtons').innerHTML = RATING_BANDS.map(b => `
     <div class="rb-btn" id="rb-${b.id}" onclick="selectRatingBand('${b.id}')">
-      <span class="rb-icon">${b.icon}</span>${b.label}
+      <span class="rb-icon">${icon(b.iconName, 19, 2.2)}</span>${b.label}
     </div>`).join('');
   document.getElementById('ratingFineTune').classList.remove('show');
   document.getElementById('ratingSubmit').classList.remove('show');
@@ -2187,12 +2282,12 @@ function skipRating() {
 // ═══════════════════════════════════════════════════════════════
 // FEEDBACK
 // ═══════════════════════════════════════════════════════════════
-const FEEDBACK_CAT_ICONS = { Bug: '🐞', Idea: '💡', Confusion: '😕', Other: '💬' };
-const TAB_LABELS = { checkin: 'Check In', history: 'My Beers', analytics: 'Analytics', profile: 'Profile', discover: 'Discover' };
+const FEEDBACK_CAT_ICONS = { Bug: 'feedback-bug', Idea: 'feedback-idea', Confusion: 'feedback-confusion', Other: 'feedback-other' };
+const TAB_LABELS = { checkin: 'Check In', history: 'My Beers', analytics: 'Analytics', profile: 'Your Hopprint', discover: 'Discover' };
 
 function buildFeedbackCatGrid() {
   document.getElementById('fbCatGrid').innerHTML = FEEDBACK_CATEGORIES.map(c => `
-    <div class="fb-cat-btn" id="fbcat-${c}" onclick="selectFbCategory('${c}')">${FEEDBACK_CAT_ICONS[c]} ${c}</div>`).join('');
+    <div class="fb-cat-btn" id="fbcat-${c}" onclick="selectFbCategory('${c}')">${icon(FEEDBACK_CAT_ICONS[c], 18, 2.2)}<span>${c}</span></div>`).join('');
 }
 
 function selectFbCategory(cat) {
@@ -2215,7 +2310,7 @@ function closeFeedbackModal() {
 
 async function submitFeedback() {
   const message = document.getElementById('fbMessage').value.trim();
-  if (!message) { showToast('⚠️ Add a quick note first'); return; }
+  if (!message) { showToast('Add a quick note first', 'warning'); return; }
   const category = fbCategory || 'Other';
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback`, {
@@ -2229,10 +2324,10 @@ async function submitFeedback() {
       body: JSON.stringify({ category, message, tab: currentTab, user_agent: navigator.userAgent }),
     });
     if (!res.ok) throw new Error('Request failed');
-    showToast('💬 Feedback sent — thank you!');
+    showToast('Feedback sent — thank you!', 'feedback');
     closeFeedbackModal();
   } catch (err) {
-    showToast('⚠️ Could not send — check your connection');
+    showToast('Could not send — check your connection', 'warning');
   }
 }
 
@@ -2266,8 +2361,8 @@ function renderHistory() {
   const list = document.getElementById('historyList');
   if (!filtered.length) {
     list.innerHTML = entries.length
-      ? `<div class="empty"><div class="empty-icon">🍺</div><p>No matches found.</p></div>`
-      : `<div class="empty"><div class="empty-icon">🍺</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log Your First Beer</button></div>`;
+      ? `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>No matches found.</p></div>`
+      : `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log Your First Beer</button></div>`;
     return;
   }
   list.innerHTML = filtered.map(e => {
@@ -2286,13 +2381,13 @@ function renderHistory() {
         ${e.beer_type ? `<span class="etag style">${e.beer_type}</span>` : ''}
         ${e.serving_type ? `<span class="etag serve">${e.serving_type}</span>` : ''}
         ${e.beer_abv ? `<span class="etag">${e.beer_abv}% ABV</span>` : ''}
-        ${e.venue_name ? `<span class="etag">📍 ${e.venue_name}</span>` : ''}
-        ${band ? `<span class="etag rated">${band.icon} ${band.label}</span>` : ''}
+        ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${e.venue_name}</span>` : ''}
+        ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
       </div>
       ${e.comment ? `<div class="entry-notes-preview">"${e.comment.slice(0,120)}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
       <div class="entry-foot">
         <div class="entry-date">${date}${e.purchase_venue ? ` · ${e.purchase_venue}` : ''}</div>
-        <div class="entry-occ">${occ ? occ.icon + ' ' + occ.label : ''}</div>
+        <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
       </div>
       ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
     </div>`;
@@ -2324,10 +2419,10 @@ function openEdit(id) {
     <div class="sec-label">Serve</div>
     <div class="serve-pills" id="editServePills">${SERVE_TYPES.map(t => `<div class="serve-pill${e.serving_type===t?' sel':''}" onclick="editServeSelect(this,'${t}')">${t}</div>`).join('')}</div>
     <div class="sec-label">Occasion</div>
-    <div style="font-size:13px;color:var(--text-muted);font-weight:300;">${occ ? occ.icon + ' ' + occ.label : 'Not specified'}${e.occasion_ctx && e.occasion_ctx.length ? ' · ' + e.occasion_ctx.join(', ') : ''}</div>
+    <div style="font-size:13px;color:var(--text-muted);font-weight:300;">${occ ? `<span class="ico-pair">${icon(occ.iconName, 13, 2.2)}${occ.label}</span>` : 'Not specified'}${e.occasion_ctx && e.occasion_ctx.length ? ' · ' + e.occasion_ctx.join(', ') : ''}</div>
     <div class="sec-label">Would you drink this beer again?</div>
     <div style="font-size:13px;color:var(--text-muted);font-weight:300;">
-      ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `${band.icon} ${band.label} (${e.rating})` : 'Not rated yet'; })()}
+      ${(() => { const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null; return band ? `<span class="ico-pair">${icon(band.iconName, 14, 2.2)}${band.label} (${e.rating})</span>` : 'Not rated yet'; })()}
       <span class="rate-badge" style="margin-left:8px;" onclick="closeModal(); openRatingModal(${idArg(e.id)})">${typeof e.rating === 'number' ? 'Change' : 'Rate it →'}</span>
     </div>
     <div class="sec-label">Notes</div>
@@ -2363,7 +2458,7 @@ function saveEdit() {
   queueSync('check_ins', e.id, 'upsert');
   closeModal();
   renderHistory();
-  showToast('✅ Updated');
+  showToast('Updated', 'success');
 }
 
 function deleteEntry() {
@@ -2374,7 +2469,7 @@ function deleteEntry() {
   closeModal();
   renderHistory();
   updateHeaderMeta();
-  showToast('🗑️ Deleted');
+  showToast('Deleted', 'trash');
 }
 
 function closeModal() {
@@ -2548,7 +2643,7 @@ function drillBandSection(bd) {
     if (!count) return '';
     const pct = Math.round(count / bd.rated * 100);
     const meta = RATING_BANDS.find(b => b.id === id);
-    return `<div class="band-seg band-${id}" style="flex:${count}" title="${meta.label}: ${count}">${pct >= 12 ? meta.icon : ''}</div>`;
+    return `<div class="band-seg band-${id}" style="flex:${count}" title="${meta.label}: ${count}">${pct >= 12 ? icon(meta.iconName, 14, 2.4) : ''}</div>`;
   };
   return `<div class="drill-section">
     <div class="drill-section-title">How you've rated it</div>
@@ -2603,6 +2698,7 @@ function drillRow(rank, key, count, max, grad, type) {
 const MS_CHECKIN_STEPS = [100, 250, 500, 1000, 1500, 2000, 2500, 3000];
 const MS_BREWERY_STEPS = [25, 50, 100, 150, 200, 250, 300];
 const MS_STYLE_STEPS = [25, 50, 75, 100, 125, 150];
+const MS_KIND_ICONS = { checkins: 'checkin', breweries: 'milestone-brewery', styles: 'milestone-style' };
 
 function computeMilestones() {
   const sorted = [...entries]
@@ -2611,16 +2707,16 @@ function computeMilestones() {
   const out = [];
 
   MS_CHECKIN_STEPS.forEach(step => {
-    if (sorted.length >= step) out.push({ icon: '🍺', label: `${step.toLocaleString()}th check-in`, sub: sorted[step - 1].beer_name || '', date: sorted[step - 1].created_at });
+    if (sorted.length >= step) out.push({ kind: 'checkins', label: `${step.toLocaleString()}th check-in`, sub: sorted[step - 1].beer_name || '', date: sorted[step - 1].created_at });
   });
 
   const seenB = new Set(); const bMile = {};
   sorted.forEach(e => { if (e.brewery_name && !seenB.has(e.brewery_name)) { seenB.add(e.brewery_name); if (MS_BREWERY_STEPS.includes(seenB.size)) bMile[seenB.size] = e; } });
-  MS_BREWERY_STEPS.forEach(step => { if (bMile[step]) out.push({ icon: '🏭', label: `${step}th brewery`, sub: bMile[step].brewery_name, date: bMile[step].created_at }); });
+  MS_BREWERY_STEPS.forEach(step => { if (bMile[step]) out.push({ kind: 'breweries', label: `${step}th brewery`, sub: bMile[step].brewery_name, date: bMile[step].created_at }); });
 
   const seenS = new Set(); const sMile = {};
   sorted.forEach(e => { if (e.beer_type && !seenS.has(e.beer_type)) { seenS.add(e.beer_type); if (MS_STYLE_STEPS.includes(seenS.size)) sMile[seenS.size] = e; } });
-  MS_STYLE_STEPS.forEach(step => { if (sMile[step]) out.push({ icon: '🎨', label: `${step}th style`, sub: sMile[step].beer_type, date: sMile[step].created_at }); });
+  MS_STYLE_STEPS.forEach(step => { if (sMile[step]) out.push({ kind: 'styles', label: `${step}th style`, sub: sMile[step].beer_type, date: sMile[step].created_at }); });
 
   return out.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
@@ -2741,7 +2837,7 @@ function renderAnalytics() {
   }
 
   if (!es.length) {
-    inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">📊</div><p>No data for this period.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">${icon('stats', 44, 2.2)}</div><p>No data for this period.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     return;
   }
 
@@ -2893,7 +2989,7 @@ function renderAnalytics() {
     <div class="chart-sub">The moments worth a screenshot</div>
     ${milestones.length ? `<div class="ms-list">${milestones.map(m => `
       <div class="ms-row">
-        <div class="ms-icon">${m.icon}</div>
+        <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
         <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
         <div class="ms-date">${fmtMonthYear(m.date)}</div>
       </div>`).join('')}</div>` : ''}
@@ -3553,12 +3649,12 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
   //    Phase C thresholds via computeMilestones(). Rank check-ins > breweries >
   //    styles, biggest first; derive the round number + noun from the label.
   const yearMilestones = computeMilestones().filter(m => new Date(m.date).getFullYear() === analyticsYear);
-  const msWeight = m => (m.icon === '🍺' ? 3 : m.icon === '🏭' ? 2 : 1);
+  const msWeight = m => (m.kind === 'checkins' ? 3 : m.kind === 'breweries' ? 2 : 1);
   const topMs = yearMilestones.slice().sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date))[0] || null;
   let milestone = null;
   if (topMs) {
     const n = parseInt(String(topMs.label).replace(/[^0-9]/g, ''), 10);
-    const kind = topMs.icon === '🍺' ? 'checkins' : topMs.icon === '🏭' ? 'breweries' : 'styles';
+    const kind = topMs.kind;
     const md = new Date(topMs.date);
     const monthName = isNaN(md) ? '' : MONTHS[md.getMonth()];
     if (!isNaN(n)) milestone = { n, kind, monthName };
@@ -3671,7 +3767,7 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
     .map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1))
     .join('. ') + '.';
   return `<div class="insight-card fade-up">
-    <div class="insight-icon">🍺</div>
+    <div class="insight-icon">${icon('checkin', 22, 2.2)}</div>
     <div class="insight-body"><div class="insight-text">${sentences}</div></div>
   </div>`;
 }
@@ -3679,7 +3775,7 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
 function renderProfile() {
   const inner = document.getElementById('profileInner');
   if (entries.length < 10) {
-    inner.innerHTML = `<div class="empty"><div class="empty-icon">🌱</div><p>Log at least 10 beers to unlock your flavor profile.\n${entries.length}/10 so far — keep going!</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    inner.innerHTML = `<div class="empty"><div class="empty-icon">${icon('print', 44, 2.2)}</div><p>Log at least 10 beers to unlock your flavor profile.\n${entries.length}/10 so far — keep going!</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     return;
   }
 
@@ -3736,7 +3832,7 @@ function renderProfile() {
   const secHalf = sorted.slice(Math.floor(sorted.length/2)).map(e=>parseFloat(e.beer_abv));
   const avgFirst = firstHalf.reduce((a,b)=>a+b,0)/firstHalf.length||0;
   const avgSec = secHalf.reduce((a,b)=>a+b,0)/secHalf.length||0;
-  const abvTrend = avgSec > avgFirst + 0.2 ? '📈 trending stronger' : avgSec < avgFirst - 0.2 ? '📉 trending lighter' : '→ holding steady';
+  const abvTrend = avgSec > avgFirst + 0.2 ? `<span class="ico-pair">${icon('trend-up', 14, 2.2)}trending stronger</span>` : avgSec < avgFirst - 0.2 ? `<span class="ico-pair">${icon('trend-down', 14, 2.2)}trending lighter</span>` : '→ holding steady';
 
   // Home pct
   const homePct = Math.round(useEntries.filter(isHomeEntry).length/useEntries.length*100);
@@ -3810,12 +3906,12 @@ function renderProfile() {
     <div class="chart-title">Taste Trends</div>
     <div class="chart-sub">How your drinking habits are shifting</div>
     <div>
-      <div class="trend-row"><div class="trend-icon">⚡</div><div class="trend-label">ABV preference</div><div class="trend-val">${abvTrend}</div></div>
-      <div class="trend-row"><div class="trend-icon">🏠</div><div class="trend-label">Drinks at home</div><div class="trend-val">${homePct}%</div></div>
-      <div class="trend-row"><div class="trend-icon">🗺️</div><div class="trend-label">Top region</div><div class="trend-val">${regionName || topState || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">🍺</div><div class="trend-label">Dominant style</div><div class="trend-val">${styleParent || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">❤️</div><div class="trend-label">Most loyal to</div><div class="trend-val" title="${topBrew || ''}">${topBrew || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">📅</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('trend-abv', 18, 2.2)}</div><div class="trend-label">ABV preference</div><div class="trend-val">${abvTrend}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('occasion-home-social', 18, 2.2)}</div><div class="trend-label">Drinks at home</div><div class="trend-val">${homePct}%</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('trend-region', 18, 2.2)}</div><div class="trend-label">Top region</div><div class="trend-val">${regionName || topState || '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('checkin', 18, 2.2)}</div><div class="trend-label">Dominant style</div><div class="trend-val">${styleParent || '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('trend-loyal', 18, 2.2)}</div><div class="trend-label">Most loyal to</div><div class="trend-val" title="${topBrew || ''}">${topBrew || '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('calendar', 18, 2.2)}</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
     </div>
   </div>
   `;
@@ -3827,7 +3923,7 @@ function renderProfile() {
 function buildModeGrid() {
   document.getElementById('modeGrid').innerHTML = DISC_MODES.map(m => `
     <div class="mode-card" id="mode-${m.id}" onclick="selectMode('${m.id}')">
-      <div class="mode-icon">${m.icon}</div>
+      <div class="mode-icon">${icon(m.iconName, 24, 2.2)}</div>
       <div class="mode-name">${m.name}</div>
       <div class="mode-desc">${m.desc}</div>
     </div>`).join('');
@@ -3839,7 +3935,7 @@ function selectMode(id) {
 }
 
 function generateRecs() {
-  if (!entries.length) { showToast('Log some beers first!'); return; }
+  if (!entries.length) { showToast('Log some beers first!', 'warning'); return; }
   const el = document.getElementById('recResults');
   el.innerHTML = '';
 
@@ -3871,7 +3967,7 @@ function generateRecs() {
   }
 
   if (!cards.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     discoverQueue = [];
     return;
   }
@@ -3893,7 +3989,7 @@ function renderNextRec() {
   const mode = discoverQueueMode;
 
   if (!discoverQueue.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
     return;
   }
 
@@ -3934,7 +4030,7 @@ function renderNextRec() {
     ${styleTag}
     ${why ? `<div class="rec-why">${why}</div>` : ''}
     <div class="rec-footer">
-      <div class="rec-footer-btn" onclick="showAnotherRec()">🔄 Show Another</div>
+      <div class="rec-footer-btn" onclick="showAnotherRec()"><span class="ico-pair">${icon('refresh', 14, 2.2)}Show Another</span></div>
       <div class="rec-footer-btn negative" onclick="notInterestedRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}')">✕ Not Interested</div>
     </div>
   </div>`;
@@ -3959,14 +4055,14 @@ function addWishlistItem() {
   const name = nameEl.value.trim();
   const brewery = breweryEl.value.trim();
   const style = styleEl.value.trim();
-  if (!name) { showToast('Enter a beer name'); return; }
+  if (!name) { showToast('Enter a beer name', 'warning'); return; }
   const item = { id: newId(), name, brewery, style, added: new Date().toISOString() };
   wishlist.push(item);
   localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
   queueSync('wishlist', item.id, 'upsert', true);
   nameEl.value = ''; breweryEl.value = ''; styleEl.value = '';
   renderWishlist();
-  showToast('📌 Added to wish list');
+  showToast('Added to wish list', 'wishlist');
 }
 
 function renderWishlist() {
@@ -3997,16 +4093,16 @@ function removeWish(id) {
 // EXPORT / IMPORT (via discover/export via data tab)
 // ═══════════════════════════════════════════════════════════════
 function exportCSV() {
-  if (!entries.length) { showToast('No entries yet'); return; }
+  if (!entries.length) { showToast('No entries yet', 'warning'); return; }
   const cols = ['beer_name','brewery_name','brewery_city','brewery_state','beer_type','beer_abv','venue_name','purchase_venue','created_at','serving_type','occasion','rating','rating_mode','source','comment'];
   const csv = [cols.join(','), ...entries.map(e => cols.map(c => JSON.stringify(e[c]||'')).join(','))].join('\n');
   download('hopprint_export.csv', csv, 'text/csv');
-  showToast('📄 Exported!');
+  showToast('Exported!', 'export-csv');
 }
 
 function exportJSON() {
   download('hopprint_export.json', JSON.stringify(entries,null,2), 'application/json');
-  showToast('📦 Exported!');
+  showToast('Exported!', 'export-json');
 }
 
 function importUntappd() {
@@ -4071,7 +4167,7 @@ function handleImport(event) {
       });
       buildLiveLists();
       updateHeaderMeta();
-      showToast(`✅ Imported ${newOnes.length} entries`);
+      showToast(`Imported ${newOnes.length} entries`, 'success');
 
       // Diagnostic, not decoration: style-match and rating coverage directly
       // determine whether Discover's wheelhouse/adjacent/wildcard modes will
@@ -4094,7 +4190,7 @@ function handleImport(event) {
       if (diagEl && undatedCount) {
         diagEl.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">${undatedCount} row${undatedCount !== 1 ? 's' : ''} in the CSV had no check-in date and ${undatedCount !== 1 ? 'were' : 'was'} skipped.</div>`);
       }
-    } catch(err) { showToast('❌ Import failed'); }
+    } catch(err) { showToast('Import failed', 'error'); }
   };
   reader.readAsText(file);
   event.target.value = '';
@@ -4139,9 +4235,10 @@ function updateHeaderMeta() {
   if (el) el.innerHTML = `<strong>${entries.length}</strong> beer${entries.length!==1?'s':''}`;
 }
 
-function showToast(msg) {
+function showToast(msg, iconName) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
+  t.innerHTML = (iconName ? icon(iconName, 16, 2.4) : '') + '<span></span>';
+  t.lastChild.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2600);
 }
 
@@ -4150,15 +4247,34 @@ function showToast(msg) {
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.bn-item').forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('tab-'+tab).setAttribute('aria-current', 'page');
   document.getElementById('screen-'+tab).classList.add('active');
   if (tab === 'history') renderHistory();
   if (tab === 'analytics') renderAnalytics();
   if (tab === 'profile') renderProfile();
   if (tab === 'discover') renderWishlist();
 }
+
+// Hide the bottom nav and feedback FAB while a text-entry field has focus, so
+// they don't ride up on the on-screen keyboard (IN11). focusout defers one tick
+// so tabbing between two fields never clears the class in between.
+const NON_TEXT_INPUT_TYPES = ['range', 'checkbox', 'radio', 'button', 'submit', 'file'];
+function isTextEntry(el) {
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+  return el.tagName === 'INPUT' && !NON_TEXT_INPUT_TYPES.includes(el.type);
+}
+document.addEventListener('focusin', e => {
+  if (isTextEntry(e.target)) document.body.classList.add('input-focused');
+});
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (!isTextEntry(document.activeElement)) document.body.classList.remove('input-focused');
+  }, 0);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // AUTH GATE (SY8 / SY12 / PC1–PC9)
@@ -4381,7 +4497,7 @@ async function resendAuthCode() {
   startResendCooldown();
   const { error } = await sb.auth.signInWithOtp({ email: authEmail, options: { shouldCreateUser: true } });
   if (error) { errEl.textContent = authErrorMessage(error); return; }
-  showToast('📧 New code sent');
+  showToast('New code sent', 'mail');
 }
 
 function onAuthCodeInput() {
@@ -4495,10 +4611,10 @@ function updateAccountEmail() {
 }
 
 async function signOutUser() {
-  if (!sb) { showToast('⚠️ Could not sign out — check your connection'); return; }
+  if (!sb) { showToast('Could not sign out — check your connection', 'warning'); return; }
   if (!confirm('Sign out of Hopprint on this device? Your check-ins stay on this device.')) return;
   const { error } = await sb.auth.signOut({ scope: 'local' });
-  if (error) { showToast('⚠️ Could not sign out — check your connection'); return; }
+  if (error) { showToast('Could not sign out — check your connection', 'warning'); return; }
   localStorage.removeItem(PROFILE_OK_KEY);
   location.reload();
 }
@@ -4757,9 +4873,9 @@ function updateSyncPill() {
 async function onSyncPillTap() {
   if (syncing || pulling) return;
   await syncNow();
-  if (syncPaused()) { showToast('⚠️ Data here is from another account'); return; }
+  if (syncPaused()) { showToast('Data here is from another account', 'warning'); return; }
   const n = myPendingCount();
-  showToast(n ? `⚠️ ${n} still not synced` : '✅ All synced');
+  showToast(n ? `${n} still not synced` : 'All synced', n ? 'warning' : 'success');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4980,9 +5096,9 @@ async function syncNow(opts) {
 async function syncNowFromAccount() {
   if (syncing || pulling) return;
   await syncNow({ forceIdCheck: true });
-  if (syncPaused()) { showToast('⚠️ Data here is from another account'); return; }
+  if (syncPaused()) { showToast('Data here is from another account', 'warning'); return; }
   const n = myPendingCount();
-  showToast(n ? `⚠️ ${n} still not synced` : '✅ Up to date');
+  showToast(n ? `${n} still not synced` : 'Up to date', n ? 'warning' : 'success');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -5070,7 +5186,7 @@ function confirmDropUnsyncedLocal(tables) {
 function exportPreSync() {
   if (!preSyncRows) return;
   download('hopprint_before_signin.json', JSON.stringify(preSyncRows, null, 2), 'application/json');
-  showToast('📦 Exported!');
+  showToast('Exported!', 'export-json');
 }
 
 function continuePreSync() {
@@ -5088,20 +5204,21 @@ function continuePreSync() {
 // Inject export controls at the bottom of the profile tab
 document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
   <div class="screen-inner" style="padding-top:0">
-    <div class="sec-label" style="margin-top:8px">⬇ Data</div>
-    <button class="btn-action needs-first-sync" onclick="exportCSV()">📄 Export CSV</button>
-    <button class="btn-action needs-first-sync" onclick="exportJSON()">📦 Export JSON</button>
-    <button class="btn-action needs-first-sync" onclick="importUntappd()">📥 Import from Untappd CSV</button>
+    <div class="sec-label" style="margin-top:8px">Data</div>
+    <button class="btn-action needs-first-sync" onclick="exportCSV()">${icon('export-csv', 16, 2.2)}Export CSV</button>
+    <button class="btn-action needs-first-sync" onclick="exportJSON()">${icon('export-json', 16, 2.2)}Export JSON</button>
+    <button class="btn-action needs-first-sync" onclick="importUntappd()">${icon('import', 16, 2.2)}Import from Untappd CSV</button>
     <div class="first-sync-hint">Export and import unlock once your check-ins finish loading.</div>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImport(event)">
     <div id="importDiagnostic"></div>
-    <div class="sec-label">👤 Account</div>
+    <div class="sec-label">Account</div>
     <div class="account-email" id="accountEmail"></div>
     <button class="btn-action" onclick="syncNowFromAccount()">⟳ Sync Now</button>
     <button class="btn-action" onclick="signOutUser()">Sign Out</button>
   </div>
 `);
 
+hydrateIcons();
 authBoot();
 
 if ('serviceWorker' in navigator) {
