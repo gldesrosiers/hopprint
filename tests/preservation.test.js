@@ -39,6 +39,12 @@ const ALLOWED_CHANGES = {
   computeMilestones: 'IN19 kind replaces emoji icon',
   renderAnalytics: 'IN19 milestone icon from kind',
   computeAnalyticsContext: 'IN19 compare on kind',
+  // IT6 — template icon slots (IN1)
+  setPrompt: 'IN1 note icon + textContent span',
+  buildAnalyticsInsightCard: 'IN1 insight icon',
+  renderProfile: 'IN1 empty state, ABV trend, trend rows',
+  generateRecs: 'IN1/IN18 empty state + CTA',
+  renderNextRec: 'IN1/IN18 empty state, Show Another',
 };
 
 let baselineScript;

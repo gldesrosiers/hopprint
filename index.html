@@ -242,7 +242,9 @@ body {
 .note-prompt-text {
   font-size: 13px; color: var(--text-muted); font-style: italic; font-weight: 300;
   line-height: 1.4;
+  display: flex; align-items: center; gap: 5px;
 }
+.note-prompt-text .ico { color: var(--text-dim); }
 .note-shuffle {
   font-size: 11px; color: var(--text-dim);
   cursor: pointer; padding: 3px 7px;
@@ -303,6 +305,7 @@ body {
   border: 1px solid var(--border); letter-spacing: 0.3px;
 }
 .etag.style { color: var(--lime); border-color: rgba(143,198,64,0.2); background: rgba(143,198,64,0.06); }
+.etag.venue { display: inline-flex; align-items: center; gap: 5px; }
 .etag.serve { color: var(--orange); border-color: var(--orange-glow); background: var(--orange-glow2); }
 .entry-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
 .entry-date { font-size: 11px; color: var(--text-dim); font-weight: 300; }
@@ -387,7 +390,7 @@ body {
   margin-top: 16px; padding: 10px 22px;
   background: var(--orange); color: var(--charcoal);
   font-family: var(--font-body); font-size: 13px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
-  border: none; border-radius: 30px; cursor: pointer; display: inline-block;
+  border: none; border-radius: 30px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
   transition: all 0.18s;
 }
 .empty-cta:hover { background: var(--orange-hover); transform: translateY(-1px); }
@@ -513,7 +516,7 @@ body {
   border-radius: var(--radius); padding: 14px 16px;
   display: flex; align-items: flex-start; gap: 12px;
 }
-.insight-icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
+.insight-icon { display: flex; align-items: center; height: 30px; flex-shrink: 0; margin-top: 1px; }
 .insight-body { flex: 1; }
 .insight-headline { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); margin-bottom: 2px; }
 .insight-detail { font-size: 12px; color: var(--text-muted); font-weight: 300; line-height: 1.4; }
@@ -611,7 +614,7 @@ body {
 
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .trend-row:last-child { border-bottom: none; }
-.trend-icon { font-size: 18px; flex-shrink: 0; }
+.trend-icon { display: flex; flex-shrink: 0; }
 .trend-label { font-size: 13px; font-weight: 500; flex: 1; }
 .trend-val { font-size: 13px; color: var(--orange); font-weight: 600; font-family: var(--font-display); max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 
@@ -708,7 +711,7 @@ body {
 
 /* ── EMPTY STATE ─────────────────────────────────────────────── */
 .empty { text-align: center; padding: 60px 20px; color: var(--text-dim); }
-.empty-icon { font-size: 44px; margin-bottom: 10px; }
+.empty-icon { display: flex; align-items: center; justify-content: center; height: 58px; margin-bottom: 10px; }
 .empty p { font-size: 15px; font-weight: 300; line-height: 1.5; white-space: pre-line; }
 
 /* ── ANIMATIONS ─────────────────────────────────────────────── */
@@ -2051,7 +2054,9 @@ function selectServe(el, type) {
 // NOTE PROMPTS
 // ═══════════════════════════════════════════════════════════════
 function setPrompt() {
-  document.getElementById('notePrompt').textContent = `💭 ${NOTE_PROMPTS[currentPromptIdx]}`;
+  const el = document.getElementById('notePrompt');
+  el.innerHTML = icon('note', 14, 2.2) + '<span></span>';
+  el.lastChild.textContent = NOTE_PROMPTS[currentPromptIdx];
 }
 function shufflePrompt() {
   currentPromptIdx = (currentPromptIdx + 1) % NOTE_PROMPTS.length;
@@ -2350,8 +2355,8 @@ function renderHistory() {
   const list = document.getElementById('historyList');
   if (!filtered.length) {
     list.innerHTML = entries.length
-      ? `<div class="empty"><div class="empty-icon">🍺</div><p>No matches found.</p></div>`
-      : `<div class="empty"><div class="empty-icon">🍺</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log Your First Beer</button></div>`;
+      ? `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>No matches found.</p></div>`
+      : `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log Your First Beer</button></div>`;
     return;
   }
   list.innerHTML = filtered.map(e => {
@@ -2370,7 +2375,7 @@ function renderHistory() {
         ${e.beer_type ? `<span class="etag style">${e.beer_type}</span>` : ''}
         ${e.serving_type ? `<span class="etag serve">${e.serving_type}</span>` : ''}
         ${e.beer_abv ? `<span class="etag">${e.beer_abv}% ABV</span>` : ''}
-        ${e.venue_name ? `<span class="etag">📍 ${e.venue_name}</span>` : ''}
+        ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${e.venue_name}</span>` : ''}
         ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
       </div>
       ${e.comment ? `<div class="entry-notes-preview">"${e.comment.slice(0,120)}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
@@ -2826,7 +2831,7 @@ function renderAnalytics() {
   }
 
   if (!es.length) {
-    inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">📊</div><p>No data for this period.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    inner.innerHTML = yearHTML + `<div class="empty"><div class="empty-icon">${icon('stats', 44, 2.2)}</div><p>No data for this period.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     return;
   }
 
@@ -3756,7 +3761,7 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
     .map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1))
     .join('. ') + '.';
   return `<div class="insight-card fade-up">
-    <div class="insight-icon">🍺</div>
+    <div class="insight-icon">${icon('checkin', 22, 2.2)}</div>
     <div class="insight-body"><div class="insight-text">${sentences}</div></div>
   </div>`;
 }
@@ -3764,7 +3769,7 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
 function renderProfile() {
   const inner = document.getElementById('profileInner');
   if (entries.length < 10) {
-    inner.innerHTML = `<div class="empty"><div class="empty-icon">🌱</div><p>Log at least 10 beers to unlock your flavor profile.\n${entries.length}/10 so far — keep going!</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    inner.innerHTML = `<div class="empty"><div class="empty-icon">${icon('print', 44, 2.2)}</div><p>Log at least 10 beers to unlock your flavor profile.\n${entries.length}/10 so far — keep going!</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     return;
   }
 
@@ -3821,7 +3826,7 @@ function renderProfile() {
   const secHalf = sorted.slice(Math.floor(sorted.length/2)).map(e=>parseFloat(e.beer_abv));
   const avgFirst = firstHalf.reduce((a,b)=>a+b,0)/firstHalf.length||0;
   const avgSec = secHalf.reduce((a,b)=>a+b,0)/secHalf.length||0;
-  const abvTrend = avgSec > avgFirst + 0.2 ? '📈 trending stronger' : avgSec < avgFirst - 0.2 ? '📉 trending lighter' : '→ holding steady';
+  const abvTrend = avgSec > avgFirst + 0.2 ? `<span class="ico-pair">${icon('trend-up', 14, 2.2)}trending stronger</span>` : avgSec < avgFirst - 0.2 ? `<span class="ico-pair">${icon('trend-down', 14, 2.2)}trending lighter</span>` : '→ holding steady';
 
   // Home pct
   const homePct = Math.round(useEntries.filter(isHomeEntry).length/useEntries.length*100);
@@ -3895,12 +3900,12 @@ function renderProfile() {
     <div class="chart-title">Taste Trends</div>
     <div class="chart-sub">How your drinking habits are shifting</div>
     <div>
-      <div class="trend-row"><div class="trend-icon">⚡</div><div class="trend-label">ABV preference</div><div class="trend-val">${abvTrend}</div></div>
-      <div class="trend-row"><div class="trend-icon">🏠</div><div class="trend-label">Drinks at home</div><div class="trend-val">${homePct}%</div></div>
-      <div class="trend-row"><div class="trend-icon">🗺️</div><div class="trend-label">Top region</div><div class="trend-val">${regionName || topState || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">🍺</div><div class="trend-label">Dominant style</div><div class="trend-val">${styleParent || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">❤️</div><div class="trend-label">Most loyal to</div><div class="trend-val" title="${topBrew || ''}">${topBrew || '—'}</div></div>
-      <div class="trend-row"><div class="trend-icon">📅</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('trend-abv', 18, 2.2)}</div><div class="trend-label">ABV preference</div><div class="trend-val">${abvTrend}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('occasion-home-social', 18, 2.2)}</div><div class="trend-label">Drinks at home</div><div class="trend-val">${homePct}%</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('trend-region', 18, 2.2)}</div><div class="trend-label">Top region</div><div class="trend-val">${regionName || topState || '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('checkin', 18, 2.2)}</div><div class="trend-label">Dominant style</div><div class="trend-val">${styleParent || '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('trend-loyal', 18, 2.2)}</div><div class="trend-label">Most loyal to</div><div class="trend-val" title="${topBrew || ''}">${topBrew || '—'}</div></div>
+      <div class="trend-row"><div class="trend-icon">${icon('calendar', 18, 2.2)}</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
     </div>
   </div>
   `;
@@ -3956,7 +3961,7 @@ function generateRecs() {
   }
 
   if (!cards.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">🍻 Log a Beer</button></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     discoverQueue = [];
     return;
   }
@@ -3978,7 +3983,7 @@ function renderNextRec() {
   const mode = discoverQueueMode;
 
   if (!discoverQueue.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">🎲</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
     return;
   }
 
@@ -4019,7 +4024,7 @@ function renderNextRec() {
     ${styleTag}
     ${why ? `<div class="rec-why">${why}</div>` : ''}
     <div class="rec-footer">
-      <div class="rec-footer-btn" onclick="showAnotherRec()">🔄 Show Another</div>
+      <div class="rec-footer-btn" onclick="showAnotherRec()"><span class="ico-pair">${icon('refresh', 14, 2.2)}Show Another</span></div>
       <div class="rec-footer-btn negative" onclick="notInterestedRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}')">✕ Not Interested</div>
     </div>
   </div>`;
@@ -5174,9 +5179,9 @@ function continuePreSync() {
 document.getElementById('screen-profile').insertAdjacentHTML('beforeend', `
   <div class="screen-inner" style="padding-top:0">
     <div class="sec-label" style="margin-top:8px">⬇ Data</div>
-    <button class="btn-action needs-first-sync" onclick="exportCSV()">📄 Export CSV</button>
-    <button class="btn-action needs-first-sync" onclick="exportJSON()">📦 Export JSON</button>
-    <button class="btn-action needs-first-sync" onclick="importUntappd()">📥 Import from Untappd CSV</button>
+    <button class="btn-action needs-first-sync" onclick="exportCSV()">${icon('export-csv', 16, 2.2)}Export CSV</button>
+    <button class="btn-action needs-first-sync" onclick="exportJSON()">${icon('export-json', 16, 2.2)}Export JSON</button>
+    <button class="btn-action needs-first-sync" onclick="importUntappd()">${icon('import', 16, 2.2)}Import from Untappd CSV</button>
     <div class="first-sync-hint">Export and import unlock once your check-ins finish loading.</div>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImport(event)">
     <div id="importDiagnostic"></div>
