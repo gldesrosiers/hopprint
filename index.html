@@ -401,7 +401,7 @@ body.input-focused .fab-feedback { display: none; }
 
 /* ── FEEDBACK FAB + MODAL ───────────────────────────────────── */
 .fab-feedback {
-  position: fixed; right: 18px; bottom: calc(80px + max(env(safe-area-inset-bottom), 20px)); z-index: 500;
+  position: fixed; right: 18px; bottom: calc(80px + max(env(safe-area-inset-bottom), 20px)); z-index: 250;  /* below modals (300) so sheets cover it */
   width: 46px; height: 46px; border-radius: 50%;
   background: var(--charcoal2); border: 1px solid var(--border-orange);
   color: var(--orange); font-size: 19px;
