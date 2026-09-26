@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Hopprint">
 <meta name="theme-color" content="#242223">
 <title>Hopprint</title>
@@ -275,7 +275,7 @@ body.input-focused .fab-feedback { display: none; }
 /* ── TOAST ──────────────────────────────────────────────────── */
 .toast {
   position: fixed; bottom: calc(104px + env(safe-area-inset-bottom)); left: 50%;
-  transform: translateX(-50%) translateY(calc(100% + 104px + env(safe-area-inset-bottom)));
+  transform: translateX(-50%) translateY(calc(100% + 144px + env(safe-area-inset-bottom)));  /* +40px keeps the glow off-screen */
   background: var(--lime); color: var(--charcoal);
   font-family: var(--font-body); font-weight: 700; font-size: 14px; letter-spacing: 0.5px;
   padding: 11px 22px; border-radius: 30px; z-index: 999;
