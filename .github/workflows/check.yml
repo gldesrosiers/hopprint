@@ -1,0 +1,16 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the preservation and IA-T4 tests read older builds from git history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check.js
