@@ -1955,6 +1955,21 @@ function buildLiveLists() {
   mergeInPlace(SEED.styles,    pick('beer_type'));
   mergeInPlace(SEED.venues,    pick('venue_name'));
   mergeInPlace(SEED.purchase,  pick('purchase_venue'));
+
+  // Autofill details come from every check-in, not only the ones logged this
+  // session, so a beer or brewery logged before the app was last opened still
+  // fills in. Keyed on the exact name the dropdown shows. Fill-blank-only:
+  // seed details win, and entries are newest-first so the latest check-in
+  // wins among the user's own.
+  const shownBeer = new Map(SEED.beers.map(v => [acNormKey(v), v]));
+  const shownBrewery = new Map(SEED.breweries.map(v => [acNormKey(v), v]));
+  entries.forEach(e => {
+    if (!e || !e.brewery_name) return;
+    if (e.beer_name) {
+      upsertBeerDB(shownBeer.get(acNormKey(e.beer_name)), { b: acClean(e.brewery_name), s: e.beer_type, a: parseFloat(e.beer_abv)||'', bc: e.brewery_city, bs: e.brewery_state });
+    }
+    upsertBreweryDB(shownBrewery.get(acNormKey(e.brewery_name)), { c: e.brewery_city, s: e.brewery_state });
+  });
 }
 
 // Fill-blank-only writes to the autofill lookups: populate missing fields,

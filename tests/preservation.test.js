@@ -52,6 +52,8 @@ const ALLOWED_CHANGES = {
   exportJSON: 'IN8 toast iconName',
   // IT9 — bottom nav (IN16)
   switchTab: 'IN16 .bn-item selector + aria-current',
+  // Autofill details rebuilt from every check-in (tests/autofill.test.js)
+  buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
 };
 
 let baselineScript;
