@@ -13,13 +13,10 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const nodeCrypto = require('crypto');
-const { execFileSync } = require('child_process');
 const vm = require('vm');
 
-const { ROOT, script, inlineScript, extractFunctionFrom, allFunctions } = require('./helpers');
+const { ROOT, script, extractFunctionFrom } = require('./helpers');
 
-// main at the start of the print-cache branch.
-const BRANCH_BASE = '217c18f';
 const TABS = ['checkin', 'history', 'analytics', 'profile', 'discover'];
 const STYLE_MATRIX_JS = fs.readFileSync(path.join(ROOT, 'style_matrix.js'), 'utf8');
 
@@ -249,30 +246,4 @@ test('PT7: a rebuilt Print keeps its fade-up cards', () => {
   a.run(`save(); refreshAfterPull()`);
   assert.match(a.html, /<div class="profile-hero fade-up">/);
   assert.match(a.html, /<div class="chart-card fade-up">\s*<div class="chart-title">Taste Trends/);
-});
-
-// ── Byte-identical preservation against the branch base ─────────
-// Retire after merge (as with history-perf and stats-page).
-const PT_ALLOWED = {
-  save: 'PT1 marks Print dirty',
-  renderProfile: 'PT1/PT5 clears dirty, records the build date',
-  switchTab: 'PT2 enterProfile()',
-  refreshAfterPull: 'PT3 refreshProfile()',
-  handleImport: 'PT6 refreshProfile()',
-};
-
-let baseScript;
-try {
-  baseScript = inlineScript(execFileSync('git', ['show', `${BRANCH_BASE}:index.html`], { cwd: ROOT, encoding: 'utf8' }));
-} catch (e) {
-  baseScript = null;
-}
-
-test('functions outside the workplan are byte-identical to the branch base', { skip: baseScript ? false : 'git history not available' }, () => {
-  const before = allFunctions(baseScript);
-  const now = allFunctions(script);
-  assert.deepEqual(Object.keys(before).filter(n => !(n in now)), [], 'no function removed');
-  const changed = Object.keys(before).filter(n => before[n] !== now[n]);
-  assert.deepEqual(changed.filter(n => !(n in PT_ALLOWED)), [], 'changed without a listed reason');
-  assert.deepEqual(Object.keys(PT_ALLOWED).filter(n => !changed.includes(n)), [], 'listed but unchanged');
 });
