@@ -24,7 +24,7 @@ const ALLOWED_CHANGES = {
   addWishlistItem: 'SY11 uuid id + SY6 queue',
   removeWish: 'SY11 remove by id + SY6 queue delete',
   // Phase 2 — quoted ids in inline handlers (SY4 build-time catch)
-  renderHistory: 'SY4 idArg at two sites',
+  renderHistory: 'SY4 idArg at two sites; HL11 esc() on user text',
   openEdit: 'SY4 idArg at one site',
   renderWishlist: 'SY11 remove by id',
   // Phase 4 — OS1
@@ -54,6 +54,8 @@ const ALLOWED_CHANGES = {
   switchTab: 'IN16 .bn-item selector + aria-current',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
   buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
+  // History perf (HISTORY_PERF_WORKPLAN.md)
+  esc: 'HL11 escapes & too; String() so numeric values do not throw',
 };
 
 let baselineScript;

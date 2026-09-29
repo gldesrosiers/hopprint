@@ -2388,20 +2388,20 @@ function renderHistory() {
     return `<div class="entry-card fade-up" onclick="openEdit(${idArg(e.id)})">
       <div class="entry-top">
         <div>
-          <div class="entry-beer">${e.beer_name}</div>
-          <div class="entry-brewery">${e.brewery_name}${loc ? ` · ${loc}` : ''}</div>
+          <div class="entry-beer">${esc(e.beer_name)}</div>
+          <div class="entry-brewery">${esc(e.brewery_name)}${loc ? ` · ${esc(loc)}` : ''}</div>
         </div>
       </div>
       <div class="entry-tags">
-        ${e.beer_type ? `<span class="etag style">${e.beer_type}</span>` : ''}
-        ${e.serving_type ? `<span class="etag serve">${e.serving_type}</span>` : ''}
-        ${e.beer_abv ? `<span class="etag">${e.beer_abv}% ABV</span>` : ''}
-        ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${e.venue_name}</span>` : ''}
+        ${e.beer_type ? `<span class="etag style">${esc(e.beer_type)}</span>` : ''}
+        ${e.serving_type ? `<span class="etag serve">${esc(e.serving_type)}</span>` : ''}
+        ${e.beer_abv ? `<span class="etag">${esc(e.beer_abv)}% ABV</span>` : ''}
+        ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${esc(e.venue_name)}</span>` : ''}
         ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
       </div>
-      ${e.comment ? `<div class="entry-notes-preview">"${e.comment.slice(0,120)}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
+      ${e.comment ? `<div class="entry-notes-preview">"${esc(e.comment.slice(0,120))}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
       <div class="entry-foot">
-        <div class="entry-date">${date}${e.purchase_venue ? ` · ${e.purchase_venue}` : ''}</div>
+        <div class="entry-date">${date}${e.purchase_venue ? ` · ${esc(e.purchase_venue)}` : ''}</div>
         <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
       </div>
       ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
@@ -2492,7 +2492,7 @@ function closeModal() {
   editingId = null; editServe = '';
 }
 
-function esc(s) { return (s || '').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // ═══════════════════════════════════════════════════════════════
 // ANALYTICS
