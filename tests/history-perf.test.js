@@ -22,16 +22,39 @@ function constFrom(src, name) {
   return m[0];
 }
 
-// A fresh app with the given entries and an empty My Beers screen.
-function app(entries, { query = '' } = {}) {
+const SENTINEL = '<div class="history-sentinel" id="historySentinel" aria-hidden="true"></div>';
+
+// A fresh app with the given entries and an empty My Beers screen. The list is
+// a markup string; #historySentinel exists while that string contains it.
+// `io` is a hand-driven IntersectionObserver: io.fire() reports every watched
+// target as intersecting.
+function app(entries, { query = '', observer = true } = {}) {
   const els = {
     historySearch: { value: query },
     historyList: { innerHTML: '' },
   };
+  const sentinel = {
+    insertAdjacentHTML(pos, markup) {
+      assert.equal(pos, 'beforebegin');
+      els.historyList.innerHTML = els.historyList.innerHTML.replace(SENTINEL, () => markup + SENTINEL);
+    },
+    remove() { els.historyList.innerHTML = els.historyList.innerHTML.replace(SENTINEL, ''); },
+  };
+  const io = { created: 0, observes: 0, watching: new Set(), options: null, callback: null,
+    fire() { this.callback([...this.watching].map(target => ({ target, isIntersecting: true }))); } };
+  class FakeIntersectionObserver {
+    constructor(cb, options) { io.created++; io.callback = cb; io.options = options; }
+    observe(t) { io.observes++; io.watching.add(t); }
+    unobserve(t) { io.watching.delete(t); }
+    disconnect() { io.watching.clear(); }
+  }
   const ctx = vm.createContext({
     console,
     entries,
-    document: { getElementById: id => els[id] || null },
+    ...(observer && { IntersectionObserver: FakeIntersectionObserver }),
+    document: { getElementById: id => (id === 'historySentinel'
+      ? (els.historyList.innerHTML.includes(SENTINEL) ? sentinel : null)
+      : els[id] || null) },
   });
   vm.runInContext([
     constFrom(script, 'ICON_PATHS'),
@@ -41,12 +64,12 @@ function app(entries, { query = '' } = {}) {
     ...['icon', 'idArg', 'esc', ...HISTORY_FNS].map(extractFunction),
   ].join('\n'), ctx);
   const get = name => vm.runInContext(name, ctx);
-  return { ctx, els, get };
+  return { ctx, els, get, io, sentinel };
 }
 
 // The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
 const historyState = () => [...script.matchAll(/^(?:const HISTORY_BATCH|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
-const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory'];
+const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch', 'watchHistorySentinel'];
 
 // Rendered cards, in DOM order, by beer name.
 const cards = html => [...html.matchAll(/<div class="entry-beer">([^<]*)<\/div>/g)].map(m => m[1]);
@@ -183,10 +206,89 @@ test('HL9: undated entries sort last', () => {
   assert.deepEqual(get('historyFiltered').map(e => e.beer_name), ['Beer 1', 'Beer 0', 'Beer 2']);
 });
 
+// ── HL3 append on scroll ────────────────────────────────────────
+test('HL3: first render watches the sentinel with a lookahead margin', () => {
+  const { ctx, io, sentinel } = app(log(130));
+  ctx.renderHistory();
+  assert.equal(io.created, 1);
+  assert.deepEqual([...io.watching], [sentinel]);
+  assert.equal(io.options.rootMargin, '0px 0px 800px 0px');
+});
+
+test('HL3: appending a batch yields 100 cards, in order, no duplicates, old cards untouched', () => {
+  const { ctx, els, get, io } = app(log(130));
+  ctx.renderHistory();
+  const firstBatch = els.historyList.innerHTML.replace(SENTINEL, '');
+  io.fire();
+  const names = cards(els.historyList.innerHTML);
+  assert.equal(names.length, 100);
+  assert.equal(new Set(names).size, 100);
+  assert.deepEqual(names, Array.from({ length: 100 }, (_, i) => `Beer ${129 - i}`));
+  assert.equal(get('historyLoaded'), 100);
+  assert.ok(els.historyList.innerHTML.startsWith(firstBatch), 'first 50 cards are not re-rendered');
+  assert.ok(els.historyList.innerHTML.endsWith(SENTINEL), 'sentinel stays last');
+  const appended = els.historyList.innerHTML.slice(firstBatch.length);
+  assert.equal((appended.match(/class="entry-card fade-up"/g) || []).length, 50, 'appended batch fades up');
+});
+
+test('HL3: the last batch removes the sentinel and stops observing', () => {
+  const { ctx, els, get, io } = app(log(130));
+  ctx.renderHistory();
+  io.fire();
+  io.fire();
+  assert.equal(cards(els.historyList.innerHTML).length, 130);
+  assert.equal(get('historyLoaded'), 130);
+  assert.doesNotMatch(els.historyList.innerHTML, /history-sentinel/);
+  assert.equal(io.watching.size, 0);
+  io.fire();                                   // a stray callback is harmless
+  assert.equal(cards(els.historyList.innerHTML).length, 130);
+});
+
+test('HL3: after an append the sentinel is re-observed, so one still in range fires again', () => {
+  const { ctx, io, sentinel } = app(log(200));
+  ctx.renderHistory();
+  const before = io.observes;
+  io.fire();
+  assert.equal(io.observes, before + 1);
+  assert.deepEqual([...io.watching], [sentinel]);
+});
+
+test('HL3: a non-intersecting report loads nothing', () => {
+  const { ctx, els, io } = app(log(130));
+  ctx.renderHistory();
+  io.callback([...io.watching].map(target => ({ target, isIntersecting: false })));
+  assert.equal(cards(els.historyList.innerHTML).length, 50);
+});
+
+test('HL3: a re-render reuses one observer and watches only the new sentinel', () => {
+  const { ctx, io } = app(log(130));
+  ctx.renderHistory();
+  ctx.renderHistory();
+  assert.equal(io.created, 1);
+  assert.equal(io.watching.size, 1);
+});
+
+test('HL3: a list that fits in one batch, or is empty, watches nothing', () => {
+  const small = app(log(10));
+  small.ctx.renderHistory();
+  assert.equal(small.io.watching.size, 0);
+  const big = app(log(130), { query: 'zzz' });
+  big.ctx.renderHistory();
+  assert.equal(big.io.watching.size, 0);
+});
+
+test('HL3: without IntersectionObserver every card renders', () => {
+  const { ctx, els, get } = app(log(130), { observer: false });
+  ctx.renderHistory();
+  assert.equal(cards(els.historyList.innerHTML).length, 130);
+  assert.equal(get('historyLoaded'), 130);
+  assert.doesNotMatch(els.historyList.innerHTML, /history-sentinel/);
+});
+
 // ── Byte-identical preservation against the branch base ─────────
 // Only functions this workplan deliberately touches may differ.
 const HL_ALLOWED = {
-  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard)',
+  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard); HL3 watch sentinel',
   esc: 'HL11 escapes &',
 };
 

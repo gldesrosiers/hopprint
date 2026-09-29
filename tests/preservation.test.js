@@ -24,7 +24,7 @@ const ALLOWED_CHANGES = {
   addWishlistItem: 'SY11 uuid id + SY6 queue',
   removeWish: 'SY11 remove by id + SY6 queue delete',
   // Phase 2 — quoted ids in inline handlers (SY4 build-time catch)
-  renderHistory: 'SY4 idArg at two sites; HL11 esc(); HL9/HL2 sort + batch, markup moved to historyCard',
+  renderHistory: 'SY4 idArg at two sites; HL11 esc(); HL9/HL2 sort + batch, markup moved to historyCard; HL3 watch sentinel',
   openEdit: 'SY4 idArg at one site',
   renderWishlist: 'SY11 remove by id',
   // Phase 4 — OS1

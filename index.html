@@ -2372,6 +2372,7 @@ function save() {
 const HISTORY_BATCH = 50;   // HL2 — cards rendered per batch
 let historyFiltered = [];    // sorted, filtered entries the batches slice from
 let historyLoaded = 0;       // cards currently in #historyList
+let historyObserver = null;  // HL3 — watches #historySentinel
 
 // HL9: newest first by created_at, not array order (saveEdit can move a date).
 // Undated entries sort last.
@@ -2423,10 +2424,46 @@ function renderHistory(count = HISTORY_BATCH) {
     list.innerHTML = entries.length
       ? `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>No matches found.</p></div>`
       : `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log Your First Beer</button></div>`;
+    watchHistorySentinel();
     return;
   }
   historyLoaded = Math.min(Math.max(count, HISTORY_BATCH), historyFiltered.length);
   list.innerHTML = historyFiltered.slice(0, historyLoaded).map(e => historyCard(e, true)).join('') + historySentinel();
+  watchHistorySentinel();
+}
+
+// HL3: append the next batch in front of the sentinel. Only the new cards
+// fade up; the sentinel goes once everything is rendered.
+function appendHistoryBatch() {
+  const sentinel = document.getElementById('historySentinel');
+  if (!sentinel) return;
+  const next = historyFiltered.slice(historyLoaded, historyLoaded + HISTORY_BATCH);
+  historyLoaded += next.length;
+  sentinel.insertAdjacentHTML('beforebegin', next.map(e => historyCard(e, true)).join(''));
+  const done = historyLoaded >= historyFiltered.length;
+  if (historyObserver) {
+    // Re-observe so a sentinel that is still in range after the append fires again.
+    historyObserver.unobserve(sentinel);
+    if (!done) historyObserver.observe(sentinel);
+  }
+  if (done) sentinel.remove();
+}
+
+// HL3: load the next batch when the sentinel comes within ~800px of the
+// viewport. A hidden screen never intersects, so nothing loads off-tab.
+function watchHistorySentinel() {
+  if (typeof IntersectionObserver === 'undefined') {   // no observer: show everything
+    while (document.getElementById('historySentinel')) appendHistoryBatch();
+    return;
+  }
+  if (!historyObserver) {
+    historyObserver = new IntersectionObserver(hits => {
+      if (hits.some(h => h.isIntersecting)) appendHistoryBatch();
+    }, { rootMargin: '0px 0px 800px 0px' });
+  }
+  historyObserver.disconnect();
+  const sentinel = document.getElementById('historySentinel');
+  if (sentinel) historyObserver.observe(sentinel);
 }
 
 // ═══════════════════════════════════════════════════════════════
