@@ -299,6 +299,7 @@ body.input-focused .fab-feedback { display: none; }
   transition: border-color 0.18s;
 }
 .entry-card:hover { border-color: rgba(233,115,36,0.25); }
+.history-sentinel { height: 1px; }
 .entry-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .entry-beer { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-height: 1.2; }
 .entry-brewery { font-size: 13px; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
@@ -1077,7 +1078,7 @@ body.first-sync .first-sync-hint { display: block; }
   <div class="first-sync-note"></div>
   <div class="search-wrap field">
     <span class="search-icon" data-icon="search" data-icon-size="17" data-icon-weight="2.2"></span>
-    <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="renderHistory()">
+    <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="onHistorySearch()">
   </div>
   <div id="historyList"></div>
 </div>
@@ -2281,7 +2282,7 @@ function saveRating(value, mode) {
   e.rating_mode = mode;
   save();
   queueSync('check_ins', e.id, 'upsert');
-  renderHistory();
+  refreshHistory();
 }
 
 function submitRating() {
@@ -2363,50 +2364,158 @@ function closeWelcomeModal() {
 
 function save() {
   localStorage.setItem('hopprint_entries', JSON.stringify(entries));
+  historyDirty = true;   // HL4: any persisted write rebuilds My Beers on the next visit
 }
 
 // ═══════════════════════════════════════════════════════════════
 // HISTORY
 // ═══════════════════════════════════════════════════════════════
-function renderHistory() {
+const HISTORY_BATCH = 50;   // HL2 — cards rendered per batch
+let historyFiltered = [];    // sorted, filtered entries the batches slice from
+let historyLoaded = 0;       // cards currently in #historyList
+let historyObserver = null;  // HL3 — watches #historySentinel
+let historyDirty = true;     // HL4 — entries changed since the list was built
+let historyScroll = 0;       // HL5/HL10 — window scroll when My Beers was left (session only)
+let historyPreSearch = null; // HL8 — { scroll, loaded } from before the current search
+let historySearchTimer = null;
+const HISTORY_SEARCH_DELAY = 150;   // HL8 — ms of typing pause before the list updates
+
+// HL9: newest first by created_at, not array order (saveEdit can move a date).
+// Undated entries sort last.
+function historyTime(e) { return Date.parse(e.created_at) || 0; }
+
+// Invisible marker after the last card; present only while more remain (HL3).
+function historySentinel() {
+  return historyLoaded < historyFiltered.length ? '<div class="history-sentinel" id="historySentinel" aria-hidden="true"></div>' : '';
+}
+
+// The one card template (HL6: no second path). `animate` adds fade-up.
+function historyCard(e, animate) {
+  const date = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+  const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
+  const occ = OCCASIONS.find(o => o.id === e.occasion);
+  const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
+  return `<div class="entry-card${animate ? ' fade-up' : ''}" onclick="openEdit(${idArg(e.id)})">
+    <div class="entry-top">
+      <div>
+        <div class="entry-beer">${esc(e.beer_name)}</div>
+        <div class="entry-brewery">${esc(e.brewery_name)}${loc ? ` · ${esc(loc)}` : ''}</div>
+      </div>
+    </div>
+    <div class="entry-tags">
+      ${e.beer_type ? `<span class="etag style">${esc(e.beer_type)}</span>` : ''}
+      ${e.serving_type ? `<span class="etag serve">${esc(e.serving_type)}</span>` : ''}
+      ${e.beer_abv ? `<span class="etag">${esc(e.beer_abv)}% ABV</span>` : ''}
+      ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${esc(e.venue_name)}</span>` : ''}
+      ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
+    </div>
+    ${e.comment ? `<div class="entry-notes-preview">"${esc(e.comment.slice(0,120))}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
+    <div class="entry-foot">
+      <div class="entry-date">${date}${e.purchase_venue ? ` · ${esc(e.purchase_venue)}` : ''}</div>
+      <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
+    </div>
+    ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
+  </div>`;
+}
+
+// HL9 + HL2: sort, filter, and render the first `count` cards (min one batch).
+// `animate` fades the cards in; re-renders that restore a position pass false.
+function renderHistory(count = HISTORY_BATCH, animate = true) {
+  historyDirty = false;
   const q = (document.getElementById('historySearch').value || '').toLowerCase();
-  const filtered = entries.filter(e =>
+  historyFiltered = entries.filter(e =>
     !q || [e.beer_name, e.brewery_name, e.venue_name, e.beer_type].some(v => v && v.toLowerCase().includes(q))
-  );
+  ).sort((a, b) => historyTime(b) - historyTime(a));
   const list = document.getElementById('historyList');
-  if (!filtered.length) {
+  if (!historyFiltered.length) {
+    historyLoaded = 0;
     list.innerHTML = entries.length
       ? `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>No matches found.</p></div>`
       : `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log Your First Beer</button></div>`;
+    watchHistorySentinel();
     return;
   }
-  list.innerHTML = filtered.map(e => {
-    const date = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
-    const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
-    const occ = OCCASIONS.find(o => o.id === e.occasion);
-    const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
-    return `<div class="entry-card fade-up" onclick="openEdit(${idArg(e.id)})">
-      <div class="entry-top">
-        <div>
-          <div class="entry-beer">${e.beer_name}</div>
-          <div class="entry-brewery">${e.brewery_name}${loc ? ` · ${loc}` : ''}</div>
-        </div>
-      </div>
-      <div class="entry-tags">
-        ${e.beer_type ? `<span class="etag style">${e.beer_type}</span>` : ''}
-        ${e.serving_type ? `<span class="etag serve">${e.serving_type}</span>` : ''}
-        ${e.beer_abv ? `<span class="etag">${e.beer_abv}% ABV</span>` : ''}
-        ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${e.venue_name}</span>` : ''}
-        ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
-      </div>
-      ${e.comment ? `<div class="entry-notes-preview">"${e.comment.slice(0,120)}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
-      <div class="entry-foot">
-        <div class="entry-date">${date}${e.purchase_venue ? ` · ${e.purchase_venue}` : ''}</div>
-        <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
-      </div>
-      ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
-    </div>`;
-  }).join('');
+  historyLoaded = Math.min(Math.max(count, HISTORY_BATCH), historyFiltered.length);
+  list.innerHTML = historyFiltered.slice(0, historyLoaded).map(e => historyCard(e, animate)).join('') + historySentinel();
+  watchHistorySentinel();
+}
+
+// HL5: window scroll, restored without the page's smooth scroll-behavior.
+function restoreScroll(y) { window.scrollTo({ top: y, behavior: 'instant' }); }
+
+// Entering My Beers: rebuild only if entries changed (HL4), at the count that
+// was loaded (fresh lists fade in), then return to where the user left off (HL5).
+function enterHistory() {
+  if (historyDirty) renderHistory(historyLoaded, !historyLoaded);
+  restoreScroll(historyScroll);
+}
+
+// HL6: after an edit, delete, rating, or pull, rebuild up to the loaded count
+// and put the user back where they were. Off-tab, the dirty flag set by
+// save() rebuilds on the next visit instead.
+function refreshHistory() {
+  if (currentTab !== 'history') return;
+  const y = window.scrollY;
+  renderHistory(historyLoaded, false);
+  restoreScroll(y);
+}
+
+// HL8: search box input. The first keystroke of a search saves where the
+// unfiltered list was; the query is applied once typing pauses.
+function onHistorySearch() {
+  if (!historyPreSearch) historyPreSearch = { scroll: window.scrollY, loaded: historyLoaded };
+  clearTimeout(historySearchTimer);
+  historySearchTimer = setTimeout(applyHistorySearch, HISTORY_SEARCH_DELAY);
+}
+
+// HL8: a new query shows its first batch from the top; clearing the query
+// restores the pre-search loaded count and scroll.
+function applyHistorySearch() {
+  let y = 0;
+  if (document.getElementById('historySearch').value) {
+    renderHistory();
+  } else {
+    const pre = historyPreSearch || { scroll: 0, loaded: 0 };
+    historyPreSearch = null;
+    renderHistory(pre.loaded, !pre.loaded);
+    y = pre.scroll;
+  }
+  if (currentTab === 'history') restoreScroll(y);
+  else historyScroll = y;             // typing paused as the user left the tab
+}
+
+// HL3: append the next batch in front of the sentinel. Only the new cards
+// fade up; the sentinel goes once everything is rendered.
+function appendHistoryBatch() {
+  const sentinel = document.getElementById('historySentinel');
+  if (!sentinel) return;
+  const next = historyFiltered.slice(historyLoaded, historyLoaded + HISTORY_BATCH);
+  historyLoaded += next.length;
+  sentinel.insertAdjacentHTML('beforebegin', next.map(e => historyCard(e, true)).join(''));
+  const done = historyLoaded >= historyFiltered.length;
+  if (historyObserver) {
+    // Re-observe so a sentinel that is still in range after the append fires again.
+    historyObserver.unobserve(sentinel);
+    if (!done) historyObserver.observe(sentinel);
+  }
+  if (done) sentinel.remove();
+}
+
+// HL3: load the next batch when the sentinel comes within ~800px of the
+// viewport. A hidden screen never intersects, so nothing loads off-tab.
+function watchHistorySentinel() {
+  if (typeof IntersectionObserver === 'undefined') {   // no observer: show everything
+    while (document.getElementById('historySentinel')) appendHistoryBatch();
+    return;
+  }
+  if (!historyObserver) {
+    historyObserver = new IntersectionObserver(hits => {
+      if (hits.some(h => h.isIntersecting)) appendHistoryBatch();
+    }, { rootMargin: '0px 0px 800px 0px' });
+  }
+  historyObserver.disconnect();
+  const sentinel = document.getElementById('historySentinel');
+  if (sentinel) historyObserver.observe(sentinel);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2472,7 +2581,7 @@ function saveEdit() {
   save();
   queueSync('check_ins', e.id, 'upsert');
   closeModal();
-  renderHistory();
+  refreshHistory();
   showToast('Updated', 'success');
 }
 
@@ -2482,7 +2591,7 @@ function deleteEntry() {
   save();
   queueSync('check_ins', editingId, 'delete');
   closeModal();
-  renderHistory();
+  refreshHistory();
   updateHeaderMeta();
   showToast('Deleted', 'trash');
 }
@@ -2492,7 +2601,7 @@ function closeModal() {
   editingId = null; editServe = '';
 }
 
-function esc(s) { return (s || '').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // ═══════════════════════════════════════════════════════════════
 // ANALYTICS
@@ -4173,6 +4282,8 @@ function handleImport(event) {
       const newOnes = imported.filter(e => !existing.has(`${e.beer_name}|${e.created_at}`));
       entries = [...entries, ...newOnes].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
       save();
+      historyLoaded = 0; historyScroll = 0;   // HL7: My Beers reopens at the top with one fresh batch
+      if (historyPreSearch) historyPreSearch = { scroll: 0, loaded: 0 };   // …and so does clearing a search
       queueSyncMany('check_ins', newOnes.map(e => e.id), 'upsert', true);
       // Record beer/brewery detail from imports for autofill (fill-blank-only),
       // then refresh autocomplete lists in place so imports are searchable now.
@@ -4261,13 +4372,15 @@ function showToast(msg, iconName) {
 // TABS
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
+  // HL5: save My Beers' scroll before the screen hides; re-tapping Beers jumps to the top.
+  if (currentTab === 'history') historyScroll = tab === 'history' ? 0 : window.scrollY;
   currentTab = tab;
   document.querySelectorAll('.bn-item').forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
   document.getElementById('tab-'+tab).setAttribute('aria-current', 'page');
   document.getElementById('screen-'+tab).classList.add('active');
-  if (tab === 'history') renderHistory();
+  if (tab === 'history') enterHistory();
   if (tab === 'analytics') renderAnalytics();
   if (tab === 'profile') renderProfile();
   if (tab === 'discover') renderWishlist();
@@ -5094,7 +5207,7 @@ function refreshAfterPull() {
   buildLiveLists();
   updateHeaderMeta();
   renderWishlist();
-  if (currentTab === 'history') renderHistory();
+  if (currentTab === 'history') refreshHistory();
   else if (currentTab === 'analytics') renderAnalytics();
   else if (currentTab === 'profile') renderProfile();
 }

@@ -315,6 +315,7 @@ test('handleImport: undated rows are skipped and reported; new rows get uuids an
   const diag = { innerHTML: '', insertAdjacentHTML(pos, h) { this.innerHTML += h; } };
   const ctx = {
     entries: [], queued,
+    historyLoaded: 0, historyScroll: 0, historyPreSearch: null,   // My Beers state handleImport resets (HL7)
     save() {}, upsertBeerDB() {}, upsertBreweryDB() {}, buildLiveLists() {}, updateHeaderMeta() {},
     showToast(msg) { ctx.toast = msg; }, resolveMatrixStyle: () => true,
     queueSyncMany(table, ids, op, isNew) { queued.push({ table, ids, op, isNew }); },
@@ -347,7 +348,7 @@ test('handleImport: undated rows are skipped and reported; new rows get uuids an
 
 test('quoted-id rendering: the onclick string hands the exact id back to openEdit', () => {
   const s = makeSync();
-  const card = extractFunction('renderHistory').match(/onclick="(openEdit\(\$\{idArg\(e\.id\)\}\))"/)[1];
+  const card = extractFunction('historyCard').match(/onclick="(openEdit\(\$\{idArg\(e\.id\)\}\))"/)[1];
   for (const id of [uuid(), 1719000000000, 1719000000000.1234]) {
     const handler = card.replace('${idArg(e.id)}', s.idArg(id));     // what the browser sees in the attribute
     let received;

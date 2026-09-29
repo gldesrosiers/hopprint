@@ -17,14 +17,14 @@ const BASELINE = 'eb1a746';
 const ALLOWED_CHANGES = {
   // Phase 2 — write sites queue uploads (SY6), client uuids (SY4), import skips undated rows (SY7d)
   submitCheckin: 'SY4 uuid id + SY6 queue',
-  saveRating: 'SY6 queue',
-  saveEdit: 'SY6 queue',
-  deleteEntry: 'SY6 queue delete',
-  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue',
+  saveRating: 'SY6 queue; HL6 refreshHistory()',
+  saveEdit: 'SY6 queue; HL6 refreshHistory()',
+  deleteEntry: 'SY6 queue delete; HL6 refreshHistory()',
+  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue; HL7 reset My Beers position',
   addWishlistItem: 'SY11 uuid id + SY6 queue',
   removeWish: 'SY11 remove by id + SY6 queue delete',
   // Phase 2 — quoted ids in inline handlers (SY4 build-time catch)
-  renderHistory: 'SY4 idArg at two sites',
+  renderHistory: 'SY4 idArg at two sites; HL11 esc(); HL9/HL2 sort + batch, markup moved to historyCard; HL3 watch sentinel; HL4 clears dirty, animate flag',
   openEdit: 'SY4 idArg at one site',
   renderWishlist: 'SY11 remove by id',
   // Phase 4 — OS1
@@ -51,9 +51,12 @@ const ALLOWED_CHANGES = {
   exportCSV: 'IN8 toast iconName',
   exportJSON: 'IN8 toast iconName',
   // IT9 — bottom nav (IN16)
-  switchTab: 'IN16 .bn-item selector + aria-current',
+  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory()',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
   buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
+  // History perf (HISTORY_PERF_WORKPLAN.md)
+  esc: 'HL11 escapes & too; String() so numeric values do not throw',
+  save: 'HL4 marks the My Beers list dirty',
 };
 
 let baselineScript;
