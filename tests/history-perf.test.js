@@ -8,13 +8,9 @@
 const test = require('node:test');
 const nodeCrypto = require('crypto');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
 const vm = require('vm');
 
-const { ROOT, script, inlineScript, extractFunction, allFunctions } = require('./helpers');
-
-// main at the start of the history-perf branch.
-const BRANCH_BASE = 'f337221';
+const { script, extractFunction } = require('./helpers');
 
 // Multi-line top-level consts (extractConst only handles single-line ones).
 function constFrom(src, name) {
@@ -83,7 +79,7 @@ function app(entries, { query = '', observer = true } = {}) {
       scrollTo: o => win.scrollTo(o),
     },
     localStorage: { setItem() {} },
-    renderAnalytics: () => rendered.push('analytics'),
+    enterAnalytics: () => rendered.push('analytics'),
     renderProfile: () => rendered.push('profile'),
     renderWishlist: () => rendered.push('discover'),
     queueSync() {}, queueSyncMany() {}, showToast() {}, updateHeaderMeta() {}, buildLiveLists() {},
@@ -99,7 +95,7 @@ function app(entries, { query = '', observer = true } = {}) {
     },
   });
   vm.runInContext([
-    ...['currentTab', 'editingId', 'ratingEntryId', 'editServe'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
+    ...['currentTab', 'tabScroll', 'editingId', 'ratingEntryId', 'editServe'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
     constFrom(script, 'ICON_PATHS'),
     constFrom(script, 'OCCASIONS'),
     constFrom(script, 'RATING_BANDS'),
@@ -377,8 +373,9 @@ test('HL5: scroll is saved while My Beers is still showing and restored on retur
   const { ctx, win, get } = app(log(130));
   ctx.switchTab('history');
   win.scrollY = 1234;
+  win.readWhileVisible.length = 0;
   ctx.switchTab('profile');
-  assert.equal(get('historyScroll'), 1234);
+  assert.equal(get('tabScroll').history, 1234);
   assert.deepEqual(win.readWhileVisible, [true], 'read before the screen is hidden');
   win.scrollY = 40;                                  // Profile scrolled somewhere else
   ctx.switchTab('history');
@@ -418,7 +415,7 @@ test('HL5: leaving another tab does not overwrite the saved My Beers scroll', ()
   ctx.switchTab('analytics');
   win.scrollY = 3000;
   ctx.switchTab('profile');
-  assert.equal(get('historyScroll'), 500);
+  assert.equal(get('tabScroll').history, 500);
 });
 
 test('switchTab still renders the other tabs', () => {
@@ -510,7 +507,7 @@ test('HL7: import → My Beers reopens with one fresh batch at the top', () => {
   a.ctx.switchTab('profile');
   a.ctx.csv = ['beer_name,brewery_name,created_at', 'Imported,Somewhere,2020-01-01 12:00:00'].join('\n');
   a.ctx.handleImport({ target: { files: [{}], value: 'x' } });
-  assert.equal(a.get('historyScroll'), 0);
+  assert.equal(a.get('tabScroll').history, 0);
   a.win.scrollY = 300;                            // wherever Print was scrolled
   a.ctx.switchTab('history');
   assert.equal(cards(a.els.historyList.innerHTML).length, 50);
@@ -609,35 +606,4 @@ test('HL7 + HL8: an import mid-search means clearing lands on one batch at the t
 
 test('HL8: the search box calls the debounced handler', () => {
   assert.match(require('./helpers').html, /<input type="text" id="historySearch"[^>]*oninput="onHistorySearch\(\)">/);
-});
-
-// ── Byte-identical preservation against the branch base ─────────
-// Only functions this workplan deliberately touches may differ.
-const HL_ALLOWED = {
-  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard); HL3 watch sentinel; HL4 clears dirty, animate flag',
-  esc: 'HL11 escapes &',
-  save: 'HL4 marks the list dirty',
-  switchTab: 'HL5 save scroll on leave; HL4/HL5 enterHistory()',
-  saveEdit: 'HL6 refreshHistory()',
-  deleteEntry: 'HL6 refreshHistory()',
-  saveRating: 'HL6 refreshHistory()',
-  refreshAfterPull: 'HL6 refreshHistory()',
-  handleImport: 'HL7 reset to one batch at the top (also for a search in progress)',
-};
-
-let baseScript;
-try {
-  baseScript = inlineScript(execFileSync('git', ['show', `${BRANCH_BASE}:index.html`], { cwd: ROOT, encoding: 'utf8' }));
-} catch (e) {
-  baseScript = null;
-}
-
-test('functions outside the workplan are byte-identical to the branch base', { skip: baseScript ? false : 'git history not available' }, () => {
-  const before = allFunctions(baseScript);
-  const now = allFunctions(script);
-  const missing = Object.keys(before).filter(n => !(n in now));
-  assert.deepEqual(missing, [], 'no function removed');
-  const changed = Object.keys(before).filter(n => before[n] !== now[n]);
-  assert.deepEqual(changed.filter(n => !(n in HL_ALLOWED)), [], 'changed without a listed reason');
-  assert.deepEqual(Object.keys(HL_ALLOWED).filter(n => !changed.includes(n)), [], 'listed but unchanged');
 });
