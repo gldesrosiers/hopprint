@@ -6,6 +6,7 @@
 // verbatim from index.html and run against a fake #historyList.
 
 const test = require('node:test');
+const nodeCrypto = require('crypto');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('child_process');
 const vm = require('vm');
@@ -43,9 +44,13 @@ function app(entries, { query = '', observer = true } = {}) {
     historySearch: { value: query },
     historyList: {
       get innerHTML() { return markup; },
-      set innerHTML(v) { markup = v; els.builds++; },
+      // A real list write can clamp the page's scroll; model the worst case.
+      set innerHTML(v) { markup = v; els.builds++; win.scrollY = 0; },
     },
+    importDiagnostic: null,
   };
+  for (const f of EDIT_FIELDS) els[f] = { value: '' };
+  els.editModal = fakeEl();
   for (const t of TABS) { els[`tab-${t}`] = fakeEl(); els[`screen-${t}`] = fakeEl(); }
   els['screen-checkin'].classList.add('active');
   const win = { scrollY: 0, scrolls: [], readWhileVisible: [],
@@ -78,13 +83,18 @@ function app(entries, { query = '', observer = true } = {}) {
     renderAnalytics: () => rendered.push('analytics'),
     renderProfile: () => rendered.push('profile'),
     renderWishlist: () => rendered.push('discover'),
+    queueSync() {}, queueSyncMany() {}, showToast() {}, updateHeaderMeta() {}, buildLiveLists() {},
+    upsertBeerDB() {}, upsertBreweryDB() {}, resolveMatrixStyle: () => true,
+    confirm: () => true,
+    FileReader: function () { this.readAsText = () => this.onload({ target: { result: ctx.csv } }); },
+    crypto: nodeCrypto.webcrypto,
     document: {
       getElementById: id => (id === 'historySentinel' ? (markup.includes(SENTINEL) ? sentinel : null) : els[id] || null),
       querySelectorAll: sel => (sel === '.bn-item' ? TABS.map(t => els[`tab-${t}`]) : sel === '.screen' ? TABS.map(t => els[`screen-${t}`]) : []),
     },
   });
   vm.runInContext([
-    script.match(/^let currentTab = [^\n]*;/m)[0],
+    ...['currentTab', 'editingId', 'ratingEntryId', 'editServe'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
     constFrom(script, 'ICON_PATHS'),
     constFrom(script, 'OCCASIONS'),
     constFrom(script, 'RATING_BANDS'),
@@ -98,16 +108,19 @@ function app(entries, { query = '', observer = true } = {}) {
 // The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
 const historyState = () => [...script.matchAll(/^(?:const HISTORY_BATCH|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
 const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch',
-  'watchHistorySentinel', 'restoreScroll', 'enterHistory', 'save', 'switchTab'];
+  'watchHistorySentinel', 'restoreScroll', 'enterHistory', 'save', 'switchTab',
+  'refreshHistory', 'closeModal', 'saveEdit', 'deleteEntry', 'saveRating', 'refreshAfterPull', 'newId', 'handleImport'];
+const EDIT_FIELDS = ['e_beerName', 'e_breweryName', 'e_city', 'e_state', 'e_style', 'e_abv', 'e_venue', 'e_purchase', 'e_date', 'e_notes'];
 
 // Rendered cards, in DOM order, by beer name.
 const cards = html => [...html.matchAll(/<div class="entry-beer">([^<]*)<\/div>/g)].map(m => m[1]);
 // n entries, stored oldest first so array order is the opposite of display order.
 const log = n => Array.from({ length: n }, (_, i) => entry(i));
 
+// created_at is a wall-clock 'YYYY-MM-DDTHH:MM' string, as the app stores it (SY5).
 const entry = (i, extra = {}) => ({
   id: `id-${i}`, beer_name: `Beer ${i}`, brewery_name: `Brewery ${i}`,
-  created_at: new Date(Date.UTC(2026, 0, 1) + i * 3600e3).toISOString(), ...extra,
+  created_at: new Date(Date.UTC(2026, 0, 1) + i * 3600e3).toISOString().slice(0, 16), ...extra,
 });
 
 // Text a browser would show for a fragment: strip tags, decode the entities esc() emits.
@@ -407,6 +420,98 @@ test('switchTab still renders the other tabs', () => {
   assert.deepEqual(rendered, ['analytics', 'profile', 'discover']);
 });
 
+// ── HL6 / HL7 write flows ───────────────────────────────────────
+// My Beers open with 150 of 200 cards loaded, scrolled to 4000.
+function scrolledDeep() {
+  const a = app(log(200));
+  a.ctx.switchTab('history');
+  a.io.fire(); a.io.fire();
+  a.win.scrollY = 4000;
+  return a;
+}
+// What openEdit() leaves in the edit form for an entry.
+function openForm(a, id) {
+  const e = a.ctx.entries.find(x => x.id === id);
+  vm.runInContext(`editingId = ${JSON.stringify(id)}`, a.ctx);
+  Object.assign(a.els, Object.fromEntries(EDIT_FIELDS.map(f => [f, { value: '' }])));
+  a.els.e_beerName.value = e.beer_name; a.els.e_breweryName.value = e.brewery_name;
+  a.els.e_date.value = e.created_at.slice(0, 16);
+}
+
+test('HL6: edit at loaded count 150 → 150 cards afterward, scroll restored, no fade', () => {
+  const a = scrolledDeep();
+  openForm(a, 'id-120');
+  a.els.e_beerName.value = 'Renamed';
+  a.ctx.saveEdit();
+  const names = cards(a.els.historyList.innerHTML);
+  assert.equal(names.length, 150);
+  assert.equal(names[199 - 120], 'Renamed', 'same place in the list');
+  assert.equal(a.win.scrollY, 4000);
+  assert.doesNotMatch(a.els.historyList.innerHTML, /fade-up/);
+  assert.equal(a.get('historyDirty'), false);
+});
+
+test('HL6: delete at 150 keeps 150 cards (the next one moves up), scroll restored', () => {
+  const a = scrolledDeep();
+  openForm(a, 'id-120');
+  a.ctx.deleteEntry();
+  const names = cards(a.els.historyList.innerHTML);
+  assert.equal(names.length, 150);
+  assert.ok(!names.includes('Beer 120'));
+  assert.equal(names.at(-1), 'Beer 49');
+  assert.equal(a.win.scrollY, 4000);
+});
+
+test('HL6: rating a card from My Beers keeps the loaded count and scroll', () => {
+  const a = scrolledDeep();
+  vm.runInContext('ratingEntryId = "id-100"', a.ctx);
+  a.ctx.saveRating(90, 'live_button');
+  assert.equal(cards(a.els.historyList.innerHTML).length, 150);
+  assert.match(a.els.historyList.innerHTML, /onclick="openEdit\('id-100'\)">[\s\S]*?etag rated/);
+  assert.equal(a.win.scrollY, 4000);
+});
+
+test('HL6: a sync pull while on My Beers keeps the loaded count and scroll', () => {
+  const a = scrolledDeep();
+  a.ctx.entries.unshift(entry(900));
+  a.ctx.save();
+  a.ctx.refreshAfterPull();
+  const names = cards(a.els.historyList.innerHTML);
+  assert.equal(names.length, 150);
+  assert.equal(names[0], 'Beer 900');
+  assert.equal(a.win.scrollY, 4000);
+});
+
+test('HL6: a write made off My Beers does not render now; the next visit rebuilds in place', () => {
+  const a = scrolledDeep();
+  a.ctx.switchTab('checkin');
+  const builds = a.els.builds;
+  a.ctx.entries.unshift(entry(900));             // HL7: a new check-in keeps position
+  a.ctx.save();
+  vm.runInContext('ratingEntryId = "id-900"', a.ctx);
+  a.ctx.saveRating(10, 'live_slider');           // the rating prompt after a check-in
+  assert.equal(a.els.builds, builds, 'no off-tab render');
+  a.ctx.switchTab('history');
+  assert.equal(a.els.builds, builds + 1);
+  assert.equal(cards(a.els.historyList.innerHTML).length, 150);
+  assert.equal(cards(a.els.historyList.innerHTML)[0], 'Beer 900');
+  assert.equal(a.win.scrollY, 4000);
+});
+
+test('HL7: import → My Beers reopens with one fresh batch at the top', () => {
+  const a = scrolledDeep();
+  a.ctx.switchTab('profile');
+  a.ctx.csv = ['beer_name,brewery_name,created_at', 'Imported,Somewhere,2020-01-01 12:00:00'].join('\n');
+  a.ctx.handleImport({ target: { files: [{}], value: 'x' } });
+  assert.equal(a.get('historyScroll'), 0);
+  a.win.scrollY = 300;                            // wherever Print was scrolled
+  a.ctx.switchTab('history');
+  assert.equal(cards(a.els.historyList.innerHTML).length, 50);
+  assert.equal(a.get('historyLoaded'), 50);
+  assert.equal(a.win.scrollY, 0);
+  assert.match(a.els.historyList.innerHTML, /class="entry-card fade-up"/);
+});
+
 // ── Byte-identical preservation against the branch base ─────────
 // Only functions this workplan deliberately touches may differ.
 const HL_ALLOWED = {
@@ -414,6 +519,11 @@ const HL_ALLOWED = {
   esc: 'HL11 escapes &',
   save: 'HL4 marks the list dirty',
   switchTab: 'HL5 save scroll on leave; HL4/HL5 enterHistory()',
+  saveEdit: 'HL6 refreshHistory()',
+  deleteEntry: 'HL6 refreshHistory()',
+  saveRating: 'HL6 refreshHistory()',
+  refreshAfterPull: 'HL6 refreshHistory()',
+  handleImport: 'HL7 reset to one batch at the top',
 };
 
 let baseScript;

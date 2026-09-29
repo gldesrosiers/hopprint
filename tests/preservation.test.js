@@ -17,10 +17,10 @@ const BASELINE = 'eb1a746';
 const ALLOWED_CHANGES = {
   // Phase 2 — write sites queue uploads (SY6), client uuids (SY4), import skips undated rows (SY7d)
   submitCheckin: 'SY4 uuid id + SY6 queue',
-  saveRating: 'SY6 queue',
-  saveEdit: 'SY6 queue',
-  deleteEntry: 'SY6 queue delete',
-  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue',
+  saveRating: 'SY6 queue; HL6 refreshHistory()',
+  saveEdit: 'SY6 queue; HL6 refreshHistory()',
+  deleteEntry: 'SY6 queue delete; HL6 refreshHistory()',
+  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue; HL7 reset My Beers position',
   addWishlistItem: 'SY11 uuid id + SY6 queue',
   removeWish: 'SY11 remove by id + SY6 queue delete',
   // Phase 2 — quoted ids in inline handlers (SY4 build-time catch)

@@ -2282,7 +2282,7 @@ function saveRating(value, mode) {
   e.rating_mode = mode;
   save();
   queueSync('check_ins', e.id, 'upsert');
-  renderHistory();
+  refreshHistory();
 }
 
 function submitRating() {
@@ -2447,6 +2447,16 @@ function enterHistory() {
   restoreScroll(historyScroll);
 }
 
+// HL6: after an edit, delete, rating, or pull, rebuild up to the loaded count
+// and put the user back where they were. Off-tab, the dirty flag set by
+// save() rebuilds on the next visit instead.
+function refreshHistory() {
+  if (currentTab !== 'history') return;
+  const y = window.scrollY;
+  renderHistory(historyLoaded, false);
+  restoreScroll(y);
+}
+
 // HL3: append the next batch in front of the sentinel. Only the new cards
 // fade up; the sentinel goes once everything is rendered.
 function appendHistoryBatch() {
@@ -2544,7 +2554,7 @@ function saveEdit() {
   save();
   queueSync('check_ins', e.id, 'upsert');
   closeModal();
-  renderHistory();
+  refreshHistory();
   showToast('Updated', 'success');
 }
 
@@ -2554,7 +2564,7 @@ function deleteEntry() {
   save();
   queueSync('check_ins', editingId, 'delete');
   closeModal();
-  renderHistory();
+  refreshHistory();
   updateHeaderMeta();
   showToast('Deleted', 'trash');
 }
@@ -4245,6 +4255,7 @@ function handleImport(event) {
       const newOnes = imported.filter(e => !existing.has(`${e.beer_name}|${e.created_at}`));
       entries = [...entries, ...newOnes].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
       save();
+      historyLoaded = 0; historyScroll = 0;   // HL7: My Beers reopens at the top with one fresh batch
       queueSyncMany('check_ins', newOnes.map(e => e.id), 'upsert', true);
       // Record beer/brewery detail from imports for autofill (fill-blank-only),
       // then refresh autocomplete lists in place so imports are searchable now.
@@ -5168,7 +5179,7 @@ function refreshAfterPull() {
   buildLiveLists();
   updateHeaderMeta();
   renderWishlist();
-  if (currentTab === 'history') renderHistory();
+  if (currentTab === 'history') refreshHistory();
   else if (currentTab === 'analytics') renderAnalytics();
   else if (currentTab === 'profile') renderProfile();
 }
