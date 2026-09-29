@@ -2382,6 +2382,7 @@ function save() {
   localStorage.setItem('hopprint_entries', JSON.stringify(entries));
   historyDirty = true;   // HL4: any persisted write rebuilds My Beers on the next visit
   statsDirty = true;     // ST10: …and Stats
+  profileDirty = true;   // PT1: …and Print
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3930,7 +3931,28 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
   </div>`;
 }
 
+let profileDirty = true;   // PT1 — entries changed since Print was built
+let profileDay = '';       // PT5 — local date Print was last built on
+
+// Entering Print: rebuild if entries changed (PT1) or the date has (PT5), so
+// the 90-day, 12-month and "in review" readouts stay current overnight.
+// Otherwise the page stays as it was. switchTab() then restores the scroll.
+function enterProfile() {
+  if (profileDirty || profileDay !== localDateKey(new Date())) renderProfile();
+}
+
+// PT3/PT6: after a pull or an import, rebuild in place and keep the user
+// where they were. Off Print, the dirty flag rebuilds on the next visit.
+function refreshProfile() {
+  if (currentTab !== 'profile') return;
+  const y = window.scrollY;
+  renderProfile();
+  restoreScroll(y);
+}
+
 function renderProfile() {
+  profileDirty = false;
+  profileDay = localDateKey(new Date());
   const inner = document.getElementById('profileInner');
   if (entries.length < 10) {
     inner.innerHTML = `<div class="empty"><div class="empty-icon">${icon('print', 44, 2.2)}</div><p>Log at least 10 beers to unlock your flavor profile.\n${entries.length}/10 so far — keep going!</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
@@ -4327,6 +4349,7 @@ function handleImport(event) {
       });
       buildLiveLists();
       updateHeaderMeta();
+      refreshProfile();   // PT6: import runs from Print — show the new numbers now
       showToast(`Imported ${newOnes.length} entries`, 'success');
 
       // Diagnostic, not decoration: style-match and rating coverage directly
@@ -4416,7 +4439,7 @@ function switchTab(tab) {
   document.getElementById('screen-'+tab).classList.add('active');
   if (tab === 'history') enterHistory();
   if (tab === 'analytics') enterAnalytics();
-  if (tab === 'profile') renderProfile();
+  if (tab === 'profile') enterProfile();
   if (tab === 'discover') renderWishlist();
   restoreScroll(tabScroll[tab]);   // ST1: after the page has rendered
 }
@@ -5244,7 +5267,7 @@ function refreshAfterPull() {
   renderWishlist();
   if (currentTab === 'history') refreshHistory();
   else if (currentTab === 'analytics') refreshAnalytics();
-  else if (currentTab === 'profile') renderProfile();
+  else if (currentTab === 'profile') refreshProfile();
 }
 
 // Part 2 "App open": upload what's pending, then pull. Also run on the
