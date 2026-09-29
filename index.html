@@ -2381,6 +2381,7 @@ function closeWelcomeModal() {
 function save() {
   localStorage.setItem('hopprint_entries', JSON.stringify(entries));
   historyDirty = true;   // HL4: any persisted write rebuilds My Beers on the next visit
+  statsDirty = true;     // ST10: …and Stats
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2941,8 +2942,8 @@ function buildBandCard(list) {
 let nvrField = 'brewery_name';
 let analyticsCompare = false;
 
-function setNvrField(field) { nvrField = field; renderAnalytics(); }
-function toggleAnalyticsCompare() { analyticsCompare = !analyticsCompare; renderAnalytics(); }
+function setNvrField(field) { nvrField = field; refreshAnalytics(); }   // ST14: keeps the position
+function toggleAnalyticsCompare() { analyticsCompare = !analyticsCompare; renderAnalytics(); restoreScroll(0); }   // ST4
 
 const NVR_LABELS = { brewery_name: 'breweries', beer_type: 'styles', beer_name: 'beers' };
 
@@ -2950,6 +2951,20 @@ const NVR_LABELS = { brewery_name: 'breweries', beer_type: 'styles', beer_name: 
 const STATS_OPEN_DEFAULT = ['milestones', 'ratings'];
 let statsOpen = new Set(STATS_OPEN_DEFAULT);
 let statsChartBuilders = {};   // ST11: card key → builds that card's chart, until it has run
+let statsDirty = true;         // ST10: entries changed since Stats was built
+
+// Entering Stats: rebuild only if entries changed (ST10); otherwise the cards
+// and live charts stay as they were. switchTab() then restores the scroll.
+function enterAnalytics() {
+  if (statsDirty) renderAnalytics();
+}
+
+// ST14 / pull: rebuild in place and keep the user where they were.
+function refreshAnalytics() {
+  const y = window.scrollY;
+  renderAnalytics();
+  restoreScroll(y);
+}
 
 // ST7/ST17: a collapsible Stats card. The header is one button; the body is
 // hidden unless the card is open. Title and sub keep their classes.
@@ -2986,6 +3001,7 @@ function buildStatsChart(key) {
 }
 
 function renderAnalytics() {
+  statsDirty = false;
   const inner = document.getElementById('analyticsInner');
   Object.values(analyticsCharts).forEach(c => { try { c.destroy(); } catch (e) {} });
   analyticsCharts = {};
@@ -3312,6 +3328,7 @@ function setAnalyticsYear(year, btn) {
   document.querySelectorAll('.yr-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderAnalytics();
+  restoreScroll(0);   // ST4: a new period starts at the top
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4398,7 +4415,7 @@ function switchTab(tab) {
   document.getElementById('tab-'+tab).setAttribute('aria-current', 'page');
   document.getElementById('screen-'+tab).classList.add('active');
   if (tab === 'history') enterHistory();
-  if (tab === 'analytics') renderAnalytics();
+  if (tab === 'analytics') enterAnalytics();
   if (tab === 'profile') renderProfile();
   if (tab === 'discover') renderWishlist();
   restoreScroll(tabScroll[tab]);   // ST1: after the page has rendered
@@ -5226,7 +5243,7 @@ function refreshAfterPull() {
   updateHeaderMeta();
   renderWishlist();
   if (currentTab === 'history') refreshHistory();
-  else if (currentTab === 'analytics') renderAnalytics();
+  else if (currentTab === 'analytics') refreshAnalytics();
   else if (currentTab === 'profile') renderProfile();
 }
 

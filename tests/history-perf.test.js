@@ -79,7 +79,7 @@ function app(entries, { query = '', observer = true } = {}) {
       scrollTo: o => win.scrollTo(o),
     },
     localStorage: { setItem() {} },
-    renderAnalytics: () => rendered.push('analytics'),
+    enterAnalytics: () => rendered.push('analytics'),
     renderProfile: () => rendered.push('profile'),
     renderWishlist: () => rendered.push('discover'),
     queueSync() {}, queueSyncMany() {}, showToast() {}, updateHeaderMeta() {}, buildLiveLists() {},

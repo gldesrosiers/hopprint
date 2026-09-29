@@ -42,7 +42,7 @@ function app() {
       getElementById: id => els[id] || null,
       querySelectorAll: sel => (sel === '.bn-item' ? TABS.map(t => els[`tab-${t}`]) : sel === '.screen' ? TABS.map(t => els[`screen-${t}`]) : []),
     },
-    enterHistory: render('history'), renderAnalytics: render('analytics'),
+    enterHistory: render('history'), enterAnalytics: render('analytics'),
     renderProfile: render('profile'), renderWishlist: render('discover'),
   });
   vm.runInContext([
@@ -142,33 +142,44 @@ test('ST2: the logo is a Check In tap, so on Check In it jumps to the top', () =
 const resolved = new Map();   // src → [code]; dependency resolution is per build
 function statsApp(src, entries, { year = 'all' } = {}) {
   let markup = '';
-  const inner = { writes: 0, get innerHTML() { return markup; }, set innerHTML(v) { markup = v; inner.writes++; } };
+  // A rebuild of the visible page can clamp the scroll; model the worst case.
+  const win = { scrollY: 0, scrollTo(o) { scrolls.push({ ...o }); this.scrollY = o.top; } };
+  const inner = { writes: 0, get innerHTML() { return markup; }, set innerHTML(v) { markup = v; inner.writes++; win.scrollY = 0; } };
   const els = new Map();
   const el = id => {
     if (!els.has(id)) els.set(id, { id, hidden: markup.includes(`id="${id}" hidden`),
       attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, classList: { add() {}, remove() {} } });
     return els.get(id);
   };
-  const charts = [], frames = [], scrolls = [];
+  const charts = [], frames = [], scrolls = [], stubs = [];
+  const stub = name => () => stubs.push(name);
   function Chart(canvas, config) { this.canvas = canvas; this.config = config; this.destroyed = false; charts.push(this); }
   Chart.prototype.destroy = function () { this.destroyed = true; };
   const makeCtx = () => vm.createContext({
     console, entries, Chart,
     document: {
-      getElementById: id => (id === 'analyticsInner' ? inner : markup.includes(`id="${id}"`) ? el(id) : null),
+      getElementById: id => (id === 'analyticsInner' ? inner
+        : markup.includes(`id="${id}"`) || /^(tab|screen)-/.test(id) ? el(id) : null),
       querySelectorAll: () => [],
       documentElement: {},
     },
     getComputedStyle: () => ({ getPropertyValue: () => '#e97324' }),
     requestAnimationFrame: fn => frames.push(fn),
-    window: { scrollTo: o => scrolls.push(o) },
+    window: win,
+    localStorage: { setItem() {} },
+    // What a pull or a tab switch touches outside Stats.
+    buildLiveLists: stub('buildLiveLists'), updateHeaderMeta: stub('updateHeaderMeta'),
+    renderWishlist: stub('renderWishlist'), renderProfile: stub('renderProfile'),
+    enterHistory: stub('enterHistory'), refreshHistory: stub('refreshHistory'),
   });
   const code = resolved.get(src) || [];
   const have = new Set(code.map(c => c.match(/^(?:async\s+)?(?:function|const|let)\s+(\w+)/)[1]));
   const pull = name => {
     let c = null;
     try { c = extractFunctionFrom(src, name); } catch (e) {
-      const m = src.match(new RegExp(`^(?:const|let) ${name} = [\\s\\S]*?;\\n`, 'm'));
+      // One-line declarations (a trailing comment allowed) first, then multi-line ones.
+      const m = src.match(new RegExp(`^(?:const|let) ${name} = [^\\n]*;(?:[ \\t]*//[^\\n]*)?$`, 'm'))
+        || src.match(new RegExp(`^(?:const|let) ${name} = [\\s\\S]*?;\\n`, 'm'));
       c = m && m[0];
     }
     if (!c) throw new Error(`cannot resolve ${name}`);
@@ -178,7 +189,9 @@ function statsApp(src, entries, { year = 'all' } = {}) {
     pull('renderAnalytics');
     // Reached only after a render (toggles, the next frame, chart builders),
     // so the render-time resolution below never sees them.
-    for (const late of ['toggleStatsCard', 'buildStatsChart', 'cssVar', 'rootStyle']) {
+    for (const late of ['toggleStatsCard', 'buildStatsChart', 'cssVar', 'rootStyle', 'statsChartBuilders',
+      'enterAnalytics', 'refreshAnalytics', 'setAnalyticsYear', 'toggleAnalyticsCompare', 'setNvrField',
+      'switchTab', 'save', 'refreshAfterPull', 'restoreScroll', 'currentTab', 'tabScroll', 'historyDirty']) {
       if (new RegExp(`^(?:function|const|let) ${late}\\b`, 'm').test(src)) pull(late);
     }
   }
@@ -200,7 +213,7 @@ function statsApp(src, entries, { year = 'all' } = {}) {
   const run = js => vm.runInContext(js, ctx);
   // A fresh fake per id after each rebuild, as a real innerHTML write replaces the nodes.
   const render = () => { els.clear(); ctx.renderAnalytics(); };
-  return { ctx, inner, get html() { return markup; }, charts, flush, run, render, el, scrolls };
+  return { ctx, inner, get html() { return markup; }, charts, flush, run, render, el, scrolls, win, stubs };
 }
 
 // A two-year log rich enough that every conditional card qualifies.
@@ -392,14 +405,121 @@ test('ST7: header styles — whole-card tap target, rotating chevron, hidden bod
   assert.match(style, /\.card-body\[hidden\] \{ display: none; \}/);
 });
 
+// ── ST10 / ST4 / ST14 rebuild caching and setting changes ───────
+// Stats open, scrolled to 1500, with the Monthly Pattern card (and its chart) open.
+function onStats(opts) {
+  const a = statsApp(script, richLog(), opts);
+  a.run(`switchTab('analytics')`);
+  a.run(`toggleStatsCard('monthly')`);
+  a.flush();
+  a.win.scrollY = 1500;
+  return a;
+}
+const liveCharts = a => a.charts.filter(c => !c.destroyed);
+
+test('ST10: the first visit builds Stats; coming back with no writes reuses the page and its charts', () => {
+  const a = statsApp(script, richLog());
+  a.run(`statsDirty = true`);                       // as on app load (the harness rendered once to resolve)
+  const writes = a.inner.writes;
+  a.run(`switchTab('analytics')`);
+  assert.equal(a.inner.writes, writes + 1, 'first visit builds');
+  assert.equal(a.run('statsDirty'), false);
+  a.run(`toggleStatsCard('monthly')`);
+  const chart = a.charts.at(-1);
+  a.win.scrollY = 1500;
+  a.run(`switchTab('profile')`);
+  a.win.scrollY = 200;
+  a.run(`switchTab('analytics')`);
+  assert.equal(a.inner.writes, writes + 1, 'no rebuild');
+  assert.equal(chart.destroyed, false, 'same live chart');
+  assert.deepEqual(liveCharts(a), [chart]);
+  assert.equal(a.win.scrollY, 1500, 'ST1 position restored');
+});
+
+test('ST10: after save(), the next visit rebuilds, keeping open cards and redrawing their charts', () => {
+  const a = onStats();
+  const writes = a.inner.writes, chart = a.charts.at(-1);
+  a.run(`switchTab('checkin')`);
+  a.run(`entries.push({ id: 'new', beer_name: 'New', brewery_name: 'B', beer_type: 'IPA', created_at: '2026-09-28T19:00' }); save()`);
+  assert.equal(a.run('statsDirty'), true);
+  a.run(`switchTab('analytics')`);
+  assert.equal(a.inner.writes, writes + 1);
+  assert.equal(chart.destroyed, true);
+  assert.equal(cardState(a.html).monthly.open, true);
+  a.flush();
+  assert.deepEqual(liveCharts(a).map(c => c.canvas.id), ['chartMonth']);
+  assert.equal(a.win.scrollY, 1500);
+});
+
+test('ST4: a year button rebuilds and jumps to the top, keeping open cards', () => {
+  const a = onStats();
+  const writes = a.inner.writes;
+  a.run(`setAnalyticsYear(2026, { classList: { add() {} } })`);
+  assert.equal(a.inner.writes, writes + 1);
+  assert.equal(a.win.scrollY, 0);
+  assert.deepEqual(a.scrolls.at(-1), { top: 0, behavior: 'instant' });
+  assert.equal(cardState(a.html).monthly.open, true);
+});
+
+test('ST4: the Compare toggle rebuilds and jumps to the top', () => {
+  const a = onStats({ year: 2026 });
+  assert.match(a.html, /toggleAnalyticsCompare\(\)/, 'compare is offered for 2026');
+  const writes = a.inner.writes;
+  a.run(`toggleAnalyticsCompare()`);
+  assert.equal(a.run('analyticsCompare'), true);
+  assert.equal(a.inner.writes, writes + 1);
+  assert.equal(a.win.scrollY, 0);
+  assert.deepEqual(a.scrolls.at(-1), { top: 0, behavior: 'instant' });
+  assert.equal(cardState(a.html).monthly.open, true);
+});
+
+test('ST14: the New vs. Repeat switch rebuilds and keeps the position', () => {
+  const a = onStats();
+  a.run(`toggleStatsCard('nvr')`);
+  const writes = a.inner.writes;
+  a.run(`setNvrField('beer_type')`);
+  assert.equal(a.inner.writes, writes + 1);
+  assert.equal(a.win.scrollY, 1500, 'restored after the rebuild clamped it');
+  assert.equal(cardState(a.html).nvr.open, true);
+  assert.match(a.html, /class="seg-btn active" onclick="setNvrField\('beer_type'\)"/);
+});
+
+test('ST10: a sync pull while on Stats rebuilds in place; off Stats it waits for the next visit', () => {
+  const on = onStats();
+  const writes = on.inner.writes;
+  on.run(`save(); refreshAfterPull()`);
+  assert.equal(on.inner.writes, writes + 1);
+  assert.equal(on.win.scrollY, 1500);
+  const off = onStats();
+  off.run(`switchTab('discover')`);
+  const offWrites = off.inner.writes;
+  off.run(`save(); refreshAfterPull()`);
+  assert.equal(off.inner.writes, offWrites, 'nothing renders off-tab');
+  off.run(`switchTab('analytics')`);
+  assert.equal(off.inner.writes, offWrites + 1);
+});
+
+test('ST10: re-tapping Stats jumps to the top without a rebuild', () => {
+  const a = onStats();
+  const writes = a.inner.writes;
+  a.run(`switchTab('analytics')`);
+  assert.equal(a.inner.writes, writes);
+  assert.equal(a.win.scrollY, 0);
+});
+
 // ── Byte-identical preservation against the branch base ─────────
 const ST_ALLOWED = {
-  switchTab: 'ST1/ST2 per-page scroll + restore after render',
+  switchTab: 'ST1/ST2 per-page scroll + restore after render; ST10 enterAnalytics()',
   enterHistory: 'ST1 scroll restore moves to switchTab',
   applyHistorySearch: 'ST1 off-tab pause writes tabScroll.history',
   handleImport: 'ST1 HL7 reset writes tabScroll.history',
   renderAnalytics: 'ST5 card order; ST7 statsCard(); ST11 per-card chart builders',
   buildBandCard: 'ST7 statsCard()',
+  save: 'ST10 marks Stats dirty',
+  setNvrField: 'ST14 refreshAnalytics() keeps the position',
+  toggleAnalyticsCompare: 'ST4 jump to top',
+  setAnalyticsYear: 'ST4 jump to top',
+  refreshAfterPull: 'ST10 refreshAnalytics() keeps the position',
 };
 
 test('functions outside the workplan are byte-identical to the branch base', { skip: baseScript() ? false : 'git history not available' }, () => {

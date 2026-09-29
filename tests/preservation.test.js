@@ -39,6 +39,9 @@ const ALLOWED_CHANGES = {
   computeMilestones: 'IN19 kind replaces emoji icon',
   renderAnalytics: 'IN19 milestone icon from kind; ST5 card order; ST7/ST11 collapsible cards, lazy charts',
   buildBandCard: 'ST7 collapsible card via statsCard()',
+  setNvrField: 'ST14 keep position on rebuild',
+  toggleAnalyticsCompare: 'ST4 jump to top',
+  setAnalyticsYear: 'ST4 jump to top',
   computeAnalyticsContext: 'IN19 compare on kind',
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',
@@ -52,12 +55,12 @@ const ALLOWED_CHANGES = {
   exportCSV: 'IN8 toast iconName',
   exportJSON: 'IN8 toast iconName',
   // IT9 — bottom nav (IN16)
-  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll',
+  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll; ST10 enterAnalytics()',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
   buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
   // History perf (HISTORY_PERF_WORKPLAN.md)
   esc: 'HL11 escapes & too; String() so numeric values do not throw',
-  save: 'HL4 marks the My Beers list dirty',
+  save: 'HL4 marks the My Beers list dirty; ST10 and Stats',
 };
 
 let baselineScript;
