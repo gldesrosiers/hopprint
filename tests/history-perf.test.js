@@ -44,8 +44,9 @@ function app(entries, { query = '', observer = true } = {}) {
     historySearch: { value: query },
     historyList: {
       get innerHTML() { return markup; },
-      // A real list write can clamp the page's scroll; model the worst case.
-      set innerHTML(v) { markup = v; els.builds++; win.scrollY = 0; },
+      // A write to the visible list can clamp the page's scroll; model the
+      // worst case. A hidden list cannot move the window.
+      set innerHTML(v) { markup = v; els.builds++; if (els['screen-history'].classList.contains('active')) win.scrollY = 0; },
     },
     importDiagnostic: null,
   };
@@ -56,6 +57,8 @@ function app(entries, { query = '', observer = true } = {}) {
   const win = { scrollY: 0, scrolls: [], readWhileVisible: [],
     scrollTo(opts) { this.scrolls.push(opts); this.scrollY = opts.top; } };
   const rendered = [];
+  const timers = [];   // fake setTimeout; flush() runs whatever is still pending
+  const flush = () => timers.forEach(t => { if (!t.cleared && !t.ran) { t.ran = true; t.fn(); } });
   const sentinel = {   // edits the markup in place — not a full list write
     insertAdjacentHTML(pos, html) {
       assert.equal(pos, 'beforebegin');
@@ -88,6 +91,8 @@ function app(entries, { query = '', observer = true } = {}) {
     confirm: () => true,
     FileReader: function () { this.readAsText = () => this.onload({ target: { result: ctx.csv } }); },
     crypto: nodeCrypto.webcrypto,
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout: id => { if (timers[id - 1]) timers[id - 1].cleared = true; },
     document: {
       getElementById: id => (id === 'historySentinel' ? (markup.includes(SENTINEL) ? sentinel : null) : els[id] || null),
       querySelectorAll: sel => (sel === '.bn-item' ? TABS.map(t => els[`tab-${t}`]) : sel === '.screen' ? TABS.map(t => els[`screen-${t}`]) : []),
@@ -102,14 +107,16 @@ function app(entries, { query = '', observer = true } = {}) {
     ...['icon', 'idArg', 'esc', ...HISTORY_FNS].map(extractFunction),
   ].join('\n'), ctx);
   const get = name => vm.runInContext(name, ctx);
-  return { ctx, els, get, io, sentinel, win, rendered };
+  // Type into the search box: one input event per character, like a keyboard.
+  const type = text => { els.historySearch.value = text; ctx.onHistorySearch(); };
+  return { ctx, els, get, io, sentinel, win, rendered, timers, flush, type };
 }
 
 // The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
-const historyState = () => [...script.matchAll(/^(?:const HISTORY_BATCH|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
+const historyState = () => [...script.matchAll(/^(?:const HISTORY_\w+|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
 const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch',
   'watchHistorySentinel', 'restoreScroll', 'enterHistory', 'save', 'switchTab',
-  'refreshHistory', 'closeModal', 'saveEdit', 'deleteEntry', 'saveRating', 'refreshAfterPull', 'newId', 'handleImport'];
+  'refreshHistory', 'onHistorySearch', 'applyHistorySearch', 'closeModal', 'saveEdit', 'deleteEntry', 'saveRating', 'refreshAfterPull', 'newId', 'handleImport'];
 const EDIT_FIELDS = ['e_beerName', 'e_breweryName', 'e_city', 'e_state', 'e_style', 'e_abv', 'e_venue', 'e_purchase', 'e_date', 'e_notes'];
 
 // Rendered cards, in DOM order, by beer name.
@@ -512,6 +519,98 @@ test('HL7: import → My Beers reopens with one fresh batch at the top', () => {
   assert.match(a.els.historyList.innerHTML, /class="entry-card fade-up"/);
 });
 
+// ── HL8 search ──────────────────────────────────────────────────
+test('HL8: typing is debounced ~150ms; only the last pause renders', () => {
+  const a = scrolledDeep();
+  const builds = a.els.builds;
+  a.type('B'); a.type('Be'); a.type('Bee');
+  assert.equal(a.els.builds, builds, 'nothing renders while typing');
+  assert.deepEqual(a.timers.map(t => t.ms), [150, 150, 150]);
+  assert.equal(a.timers.filter(t => !t.cleared).length, 1);
+  a.flush();
+  assert.equal(a.els.builds, builds + 1);
+});
+
+test('HL8: a query shows its first batch from the top', () => {
+  const a = scrolledDeep();
+  a.type('beer 1');                              // Beer 1, 10–19, 100–199: 111 matches
+  a.flush();
+  const names = cards(a.els.historyList.innerHTML);
+  assert.equal(names.length, 50);
+  assert.equal(a.get('historyFiltered').length, 111);
+  assert.equal(names[0], 'Beer 199');
+  assert.equal(a.win.scrollY, 0);
+  a.io.fire();                                   // matches still load on scroll
+  assert.equal(cards(a.els.historyList.innerHTML).length, 100);
+});
+
+test('HL8: clearing the query restores the pre-search loaded count and scroll', () => {
+  const a = scrolledDeep();
+  a.type('beer 1'); a.flush();
+  a.win.scrollY = 600;
+  a.type('beer 12'); a.flush();                  // a changed query jumps to the top again
+  assert.equal(a.win.scrollY, 0);
+  assert.deepEqual({ ...a.get('historyPreSearch') }, { scroll: 4000, loaded: 150 }, 'first keystroke wins');
+  a.type(''); a.flush();
+  const names = cards(a.els.historyList.innerHTML);
+  assert.equal(names.length, 150);
+  assert.equal(names[0], 'Beer 199');
+  assert.equal(a.win.scrollY, 4000);
+  assert.doesNotMatch(a.els.historyList.innerHTML, /fade-up/);
+  assert.equal(a.get('historyPreSearch'), null);
+});
+
+test('HL8: typing and erasing within one pause lands back where it was', () => {
+  const a = scrolledDeep();
+  a.type('x'); a.type('');
+  a.flush();
+  assert.equal(cards(a.els.historyList.innerHTML).length, 150);
+  assert.equal(a.win.scrollY, 4000);
+});
+
+test('HL8: a pause that lands after leaving the tab does not scroll the other tab', () => {
+  const a = scrolledDeep();
+  a.type('beer 1');
+  a.ctx.switchTab('analytics');
+  a.win.scrollY = 250;
+  a.flush();
+  assert.equal(a.win.scrollY, 250, 'Stats stays put');
+  a.ctx.switchTab('history');
+  assert.equal(a.win.scrollY, 0, 'My Beers opens at the top of the results');
+  assert.equal(cards(a.els.historyList.innerHTML).length, 50);
+});
+
+test('HL8: an edit during a search keeps the results; clearing still restores', () => {
+  const a = scrolledDeep();
+  a.type('beer 1'); a.flush();
+  a.io.fire();                                   // 100 results loaded
+  a.win.scrollY = 1500;
+  openForm(a, 'id-150');
+  a.els.e_notes.value = 'nice';
+  a.ctx.saveEdit();
+  assert.equal(cards(a.els.historyList.innerHTML).length, 100);
+  assert.equal(a.win.scrollY, 1500);
+  a.type(''); a.flush();
+  assert.equal(cards(a.els.historyList.innerHTML).length, 150);
+  assert.equal(a.win.scrollY, 4000);
+});
+
+test('HL7 + HL8: an import mid-search means clearing lands on one batch at the top', () => {
+  const a = scrolledDeep();
+  a.type('beer 1'); a.flush();
+  a.ctx.switchTab('profile');
+  a.ctx.csv = ['beer_name,brewery_name,created_at', 'Imported,Somewhere,2020-01-01 12:00:00'].join('\n');
+  a.ctx.handleImport({ target: { files: [{}], value: 'x' } });
+  a.ctx.switchTab('history');
+  a.type(''); a.flush();
+  assert.equal(cards(a.els.historyList.innerHTML).length, 50);
+  assert.equal(a.win.scrollY, 0);
+});
+
+test('HL8: the search box calls the debounced handler', () => {
+  assert.match(require('./helpers').html, /<input type="text" id="historySearch"[^>]*oninput="onHistorySearch\(\)">/);
+});
+
 // ── Byte-identical preservation against the branch base ─────────
 // Only functions this workplan deliberately touches may differ.
 const HL_ALLOWED = {
@@ -523,7 +622,7 @@ const HL_ALLOWED = {
   deleteEntry: 'HL6 refreshHistory()',
   saveRating: 'HL6 refreshHistory()',
   refreshAfterPull: 'HL6 refreshHistory()',
-  handleImport: 'HL7 reset to one batch at the top',
+  handleImport: 'HL7 reset to one batch at the top (also for a search in progress)',
 };
 
 let baseScript;

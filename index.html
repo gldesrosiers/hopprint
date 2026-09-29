@@ -1078,7 +1078,7 @@ body.first-sync .first-sync-hint { display: block; }
   <div class="first-sync-note"></div>
   <div class="search-wrap field">
     <span class="search-icon" data-icon="search" data-icon-size="17" data-icon-weight="2.2"></span>
-    <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="renderHistory()">
+    <input type="text" id="historySearch" placeholder="Search beers, breweries, venues..." oninput="onHistorySearch()">
   </div>
   <div id="historyList"></div>
 </div>
@@ -2376,6 +2376,9 @@ let historyLoaded = 0;       // cards currently in #historyList
 let historyObserver = null;  // HL3 — watches #historySentinel
 let historyDirty = true;     // HL4 — entries changed since the list was built
 let historyScroll = 0;       // HL5/HL10 — window scroll when My Beers was left (session only)
+let historyPreSearch = null; // HL8 — { scroll, loaded } from before the current search
+let historySearchTimer = null;
+const HISTORY_SEARCH_DELAY = 150;   // HL8 — ms of typing pause before the list updates
 
 // HL9: newest first by created_at, not array order (saveEdit can move a date).
 // Undated entries sort last.
@@ -2455,6 +2458,30 @@ function refreshHistory() {
   const y = window.scrollY;
   renderHistory(historyLoaded, false);
   restoreScroll(y);
+}
+
+// HL8: search box input. The first keystroke of a search saves where the
+// unfiltered list was; the query is applied once typing pauses.
+function onHistorySearch() {
+  if (!historyPreSearch) historyPreSearch = { scroll: window.scrollY, loaded: historyLoaded };
+  clearTimeout(historySearchTimer);
+  historySearchTimer = setTimeout(applyHistorySearch, HISTORY_SEARCH_DELAY);
+}
+
+// HL8: a new query shows its first batch from the top; clearing the query
+// restores the pre-search loaded count and scroll.
+function applyHistorySearch() {
+  let y = 0;
+  if (document.getElementById('historySearch').value) {
+    renderHistory();
+  } else {
+    const pre = historyPreSearch || { scroll: 0, loaded: 0 };
+    historyPreSearch = null;
+    renderHistory(pre.loaded, !pre.loaded);
+    y = pre.scroll;
+  }
+  if (currentTab === 'history') restoreScroll(y);
+  else historyScroll = y;             // typing paused as the user left the tab
 }
 
 // HL3: append the next batch in front of the sentinel. Only the new cards
@@ -4256,6 +4283,7 @@ function handleImport(event) {
       entries = [...entries, ...newOnes].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
       save();
       historyLoaded = 0; historyScroll = 0;   // HL7: My Beers reopens at the top with one fresh batch
+      if (historyPreSearch) historyPreSearch = { scroll: 0, loaded: 0 };   // …and so does clearing a search
       queueSyncMany('check_ins', newOnes.map(e => e.id), 'upsert', true);
       // Record beer/brewery detail from imports for autofill (fill-blank-only),
       // then refresh autocomplete lists in place so imports are searchable now.
