@@ -2364,6 +2364,7 @@ function closeWelcomeModal() {
 
 function save() {
   localStorage.setItem('hopprint_entries', JSON.stringify(entries));
+  historyDirty = true;   // HL4: any persisted write rebuilds My Beers on the next visit
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2373,6 +2374,8 @@ const HISTORY_BATCH = 50;   // HL2 — cards rendered per batch
 let historyFiltered = [];    // sorted, filtered entries the batches slice from
 let historyLoaded = 0;       // cards currently in #historyList
 let historyObserver = null;  // HL3 — watches #historySentinel
+let historyDirty = true;     // HL4 — entries changed since the list was built
+let historyScroll = 0;       // HL5/HL10 — window scroll when My Beers was left (session only)
 
 // HL9: newest first by created_at, not array order (saveEdit can move a date).
 // Undated entries sort last.
@@ -2413,7 +2416,9 @@ function historyCard(e, animate) {
 }
 
 // HL9 + HL2: sort, filter, and render the first `count` cards (min one batch).
-function renderHistory(count = HISTORY_BATCH) {
+// `animate` fades the cards in; re-renders that restore a position pass false.
+function renderHistory(count = HISTORY_BATCH, animate = true) {
+  historyDirty = false;
   const q = (document.getElementById('historySearch').value || '').toLowerCase();
   historyFiltered = entries.filter(e =>
     !q || [e.beer_name, e.brewery_name, e.venue_name, e.beer_type].some(v => v && v.toLowerCase().includes(q))
@@ -2428,8 +2433,18 @@ function renderHistory(count = HISTORY_BATCH) {
     return;
   }
   historyLoaded = Math.min(Math.max(count, HISTORY_BATCH), historyFiltered.length);
-  list.innerHTML = historyFiltered.slice(0, historyLoaded).map(e => historyCard(e, true)).join('') + historySentinel();
+  list.innerHTML = historyFiltered.slice(0, historyLoaded).map(e => historyCard(e, animate)).join('') + historySentinel();
   watchHistorySentinel();
+}
+
+// HL5: window scroll, restored without the page's smooth scroll-behavior.
+function restoreScroll(y) { window.scrollTo({ top: y, behavior: 'instant' }); }
+
+// Entering My Beers: rebuild only if entries changed (HL4), at the count that
+// was loaded (fresh lists fade in), then return to where the user left off (HL5).
+function enterHistory() {
+  if (historyDirty) renderHistory(historyLoaded, !historyLoaded);
+  restoreScroll(historyScroll);
 }
 
 // HL3: append the next batch in front of the sentinel. Only the new cards
@@ -4318,13 +4333,14 @@ function showToast(msg, iconName) {
 // TABS
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
+  if (currentTab === 'history') historyScroll = window.scrollY;   // HL5: before the screen hides
   currentTab = tab;
   document.querySelectorAll('.bn-item').forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
   document.getElementById('tab-'+tab).setAttribute('aria-current', 'page');
   document.getElementById('screen-'+tab).classList.add('active');
-  if (tab === 'history') renderHistory();
+  if (tab === 'history') enterHistory();
   if (tab === 'analytics') renderAnalytics();
   if (tab === 'profile') renderProfile();
   if (tab === 'discover') renderWishlist();

@@ -28,17 +28,35 @@ const SENTINEL = '<div class="history-sentinel" id="historySentinel" aria-hidden
 // a markup string; #historySentinel exists while that string contains it.
 // `io` is a hand-driven IntersectionObserver: io.fire() reports every watched
 // target as intersecting.
+// `win` is the window: scrollY can be set by a test; scrollTo records each
+// call and moves scrollY. Each full write of #historyList bumps els.builds.
+const TABS = ['checkin', 'history', 'analytics', 'profile', 'discover'];
+function fakeEl() {
+  const classes = new Set();
+  return { classList: { add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c) },
+    setAttribute() {}, removeAttribute() {} };
+}
 function app(entries, { query = '', observer = true } = {}) {
+  let markup = '';
   const els = {
+    builds: 0,
     historySearch: { value: query },
-    historyList: { innerHTML: '' },
-  };
-  const sentinel = {
-    insertAdjacentHTML(pos, markup) {
-      assert.equal(pos, 'beforebegin');
-      els.historyList.innerHTML = els.historyList.innerHTML.replace(SENTINEL, () => markup + SENTINEL);
+    historyList: {
+      get innerHTML() { return markup; },
+      set innerHTML(v) { markup = v; els.builds++; },
     },
-    remove() { els.historyList.innerHTML = els.historyList.innerHTML.replace(SENTINEL, ''); },
+  };
+  for (const t of TABS) { els[`tab-${t}`] = fakeEl(); els[`screen-${t}`] = fakeEl(); }
+  els['screen-checkin'].classList.add('active');
+  const win = { scrollY: 0, scrolls: [], readWhileVisible: [],
+    scrollTo(opts) { this.scrolls.push(opts); this.scrollY = opts.top; } };
+  const rendered = [];
+  const sentinel = {   // edits the markup in place — not a full list write
+    insertAdjacentHTML(pos, html) {
+      assert.equal(pos, 'beforebegin');
+      markup = markup.replace(SENTINEL, () => html + SENTINEL);
+    },
+    remove() { markup = markup.replace(SENTINEL, ''); },
   };
   const io = { created: 0, observes: 0, watching: new Set(), options: null, callback: null,
     fire() { this.callback([...this.watching].map(target => ({ target, isIntersecting: true }))); } };
@@ -52,11 +70,21 @@ function app(entries, { query = '', observer = true } = {}) {
     console,
     entries,
     ...(observer && { IntersectionObserver: FakeIntersectionObserver }),
-    document: { getElementById: id => (id === 'historySentinel'
-      ? (els.historyList.innerHTML.includes(SENTINEL) ? sentinel : null)
-      : els[id] || null) },
+    window: {
+      get scrollY() { win.readWhileVisible.push(els['screen-history'].classList.contains('active')); return win.scrollY; },
+      scrollTo: o => win.scrollTo(o),
+    },
+    localStorage: { setItem() {} },
+    renderAnalytics: () => rendered.push('analytics'),
+    renderProfile: () => rendered.push('profile'),
+    renderWishlist: () => rendered.push('discover'),
+    document: {
+      getElementById: id => (id === 'historySentinel' ? (markup.includes(SENTINEL) ? sentinel : null) : els[id] || null),
+      querySelectorAll: sel => (sel === '.bn-item' ? TABS.map(t => els[`tab-${t}`]) : sel === '.screen' ? TABS.map(t => els[`screen-${t}`]) : []),
+    },
   });
   vm.runInContext([
+    script.match(/^let currentTab = [^\n]*;/m)[0],
     constFrom(script, 'ICON_PATHS'),
     constFrom(script, 'OCCASIONS'),
     constFrom(script, 'RATING_BANDS'),
@@ -64,12 +92,13 @@ function app(entries, { query = '', observer = true } = {}) {
     ...['icon', 'idArg', 'esc', ...HISTORY_FNS].map(extractFunction),
   ].join('\n'), ctx);
   const get = name => vm.runInContext(name, ctx);
-  return { ctx, els, get, io, sentinel };
+  return { ctx, els, get, io, sentinel, win, rendered };
 }
 
 // The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
 const historyState = () => [...script.matchAll(/^(?:const HISTORY_BATCH|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
-const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch', 'watchHistorySentinel'];
+const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch',
+  'watchHistorySentinel', 'restoreScroll', 'enterHistory', 'save', 'switchTab'];
 
 // Rendered cards, in DOM order, by beer name.
 const cards = html => [...html.matchAll(/<div class="entry-beer">([^<]*)<\/div>/g)].map(m => m[1]);
@@ -285,11 +314,100 @@ test('HL3: without IntersectionObserver every card renders', () => {
   assert.doesNotMatch(els.historyList.innerHTML, /history-sentinel/);
 });
 
+// ── HL4 / HL5 dirty flag + scroll ───────────────────────────────
+test('HL4: the list starts dirty, so the first visit builds one fading batch', () => {
+  const { ctx, els, get } = app(log(130));
+  assert.equal(get('historyDirty'), true);
+  ctx.switchTab('history');
+  assert.equal(els.builds, 1);
+  assert.equal(cards(els.historyList.innerHTML).length, 50);
+  assert.match(els.historyList.innerHTML, /class="entry-card fade-up"/);
+  assert.equal(get('historyDirty'), false);
+});
+
+test('HL4: switching away and back with no writes reuses the list', () => {
+  const { ctx, els, io } = app(log(130));
+  ctx.switchTab('history');
+  io.fire();                                         // 100 cards loaded
+  const built = els.historyList.innerHTML;
+  ctx.switchTab('analytics');
+  ctx.switchTab('history');
+  assert.equal(els.builds, 1, 'no rebuild');
+  assert.equal(els.historyList.innerHTML, built, 'same cards, same order');
+});
+
+test('HL4: after save(), the next visit rebuilds at the loaded count, without fade', () => {
+  const { ctx, els, get, io } = app(log(200));
+  ctx.switchTab('history');
+  io.fire(); io.fire();                              // 150 cards loaded
+  ctx.switchTab('checkin');
+  ctx.entries.push(entry(500));
+  ctx.save();
+  assert.equal(get('historyDirty'), true);
+  ctx.switchTab('history');
+  assert.equal(els.builds, 2);
+  const names = cards(els.historyList.innerHTML);
+  assert.equal(names.length, 150);
+  assert.equal(names[0], 'Beer 500');
+  assert.doesNotMatch(els.historyList.innerHTML, /fade-up/);
+  assert.equal(get('historyDirty'), false);
+});
+
+test('HL5: scroll is saved while My Beers is still showing and restored on return', () => {
+  const { ctx, win, get } = app(log(130));
+  ctx.switchTab('history');
+  win.scrollY = 1234;
+  ctx.switchTab('profile');
+  assert.equal(get('historyScroll'), 1234);
+  assert.deepEqual(win.readWhileVisible, [true], 'read before the screen is hidden');
+  win.scrollY = 40;                                  // Profile scrolled somewhere else
+  ctx.switchTab('history');
+  assert.deepEqual({ ...win.scrolls.at(-1) }, { top: 1234, behavior: 'instant' });
+  assert.equal(win.scrollY, 1234);
+});
+
+test('HL5: scroll is restored after a dirty rebuild too', () => {
+  const { ctx, win } = app(log(130));
+  ctx.switchTab('history');
+  win.scrollY = 900;
+  ctx.switchTab('checkin');
+  ctx.save();
+  win.scrollY = 0;
+  ctx.switchTab('history');
+  assert.equal(win.scrollY, 900);
+});
+
+test('HL5: tapping My Beers while on it keeps the current position', () => {
+  const { ctx, win } = app(log(130));
+  ctx.switchTab('history');
+  win.scrollY = 700;
+  ctx.switchTab('history');
+  assert.equal(win.scrollY, 700);
+});
+
+test('HL5: leaving another tab does not overwrite the saved My Beers scroll', () => {
+  const { ctx, win, get } = app(log(130));
+  ctx.switchTab('history');
+  win.scrollY = 500;
+  ctx.switchTab('analytics');
+  win.scrollY = 3000;
+  ctx.switchTab('profile');
+  assert.equal(get('historyScroll'), 500);
+});
+
+test('switchTab still renders the other tabs', () => {
+  const { ctx, rendered } = app([]);
+  ['analytics', 'profile', 'discover'].forEach(t => ctx.switchTab(t));
+  assert.deepEqual(rendered, ['analytics', 'profile', 'discover']);
+});
+
 // ── Byte-identical preservation against the branch base ─────────
 // Only functions this workplan deliberately touches may differ.
 const HL_ALLOWED = {
-  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard); HL3 watch sentinel',
+  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard); HL3 watch sentinel; HL4 clears dirty, animate flag',
   esc: 'HL11 escapes &',
+  save: 'HL4 marks the list dirty',
+  switchTab: 'HL5 save scroll on leave; HL4/HL5 enterHistory()',
 };
 
 let baseScript;

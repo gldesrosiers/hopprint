@@ -168,12 +168,12 @@ function navSandbox() {
   const screens = TAB_KEYS.map(k => fakeEl({ id: 'screen-' + k, classes: ['screen'] }));
   const byId = Object.fromEntries([...items, ...screens].map(e => [e.id, e]));
   const ctx = vm.createContext({
-    console, items,
+    console, items, window: { scrollY: 0 },
     document: { getElementById: id => byId[id] || null, querySelectorAll: sel => (sel === '.bn-item' ? items : sel === '.screen' ? screens : []) },
   });
   vm.runInContext([
     'var currentTab = "checkin";',
-    'function renderHistory() {} function renderAnalytics() {} function renderProfile() {} function renderWishlist() {}',
+    'function enterHistory() {} function renderAnalytics() {} function renderProfile() {} function renderWishlist() {}',
     extractFunction('switchTab'),
   ].join('\n'), ctx);
   return ctx;
