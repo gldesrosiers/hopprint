@@ -80,7 +80,7 @@ function app(entries, { query = '', observer = true } = {}) {
     },
     localStorage: { setItem() {} },
     enterAnalytics: () => rendered.push('analytics'),
-    renderProfile: () => rendered.push('profile'),
+    enterProfile: () => rendered.push('profile'), refreshProfile() {},
     renderWishlist: () => rendered.push('discover'),
     queueSync() {}, queueSyncMany() {}, showToast() {}, updateHeaderMeta() {}, buildLiveLists() {},
     upsertBeerDB() {}, upsertBreweryDB() {}, resolveMatrixStyle: () => true,

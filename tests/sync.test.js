@@ -316,7 +316,7 @@ test('handleImport: undated rows are skipped and reported; new rows get uuids an
   const ctx = {
     entries: [], queued,
     historyLoaded: 0, tabScroll: { history: 0 }, historyPreSearch: null,   // My Beers state handleImport resets (HL7)
-    save() {}, upsertBeerDB() {}, upsertBreweryDB() {}, buildLiveLists() {}, updateHeaderMeta() {},
+    save() {}, refreshProfile() {}, upsertBeerDB() {}, upsertBreweryDB() {}, buildLiveLists() {}, updateHeaderMeta() {},
     showToast(msg) { ctx.toast = msg; }, resolveMatrixStyle: () => true,
     queueSyncMany(table, ids, op, isNew) { queued.push({ table, ids, op, isNew }); },
     document: { getElementById: id => (id === 'importDiagnostic' ? diag : null) },

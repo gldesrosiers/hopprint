@@ -20,7 +20,7 @@ const ALLOWED_CHANGES = {
   saveRating: 'SY6 queue; HL6 refreshHistory()',
   saveEdit: 'SY6 queue; HL6 refreshHistory()',
   deleteEntry: 'SY6 queue delete; HL6 refreshHistory()',
-  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue; HL7 reset My Beers position',
+  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue; HL7 reset My Beers position; PT6 refresh Print',
   addWishlistItem: 'SY11 uuid id + SY6 queue',
   removeWish: 'SY11 remove by id + SY6 queue delete',
   // Phase 2 — quoted ids in inline handlers (SY4 build-time catch)
@@ -46,7 +46,7 @@ const ALLOWED_CHANGES = {
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',
   buildAnalyticsInsightCard: 'IN1 insight icon',
-  renderProfile: 'IN1 empty state, ABV trend, trend rows',
+  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date',
   generateRecs: 'IN1/IN18 empty state + CTA',
   renderNextRec: 'IN1/IN18 empty state, Show Another',
   // IT7 — showToast(msg, iconName) (IN8)
@@ -55,12 +55,12 @@ const ALLOWED_CHANGES = {
   exportCSV: 'IN8 toast iconName',
   exportJSON: 'IN8 toast iconName',
   // IT9 — bottom nav (IN16)
-  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll; ST10 enterAnalytics()',
+  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll; ST10 enterAnalytics(); PT2 enterProfile()',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
   buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
   // History perf (HISTORY_PERF_WORKPLAN.md)
   esc: 'HL11 escapes & too; String() so numeric values do not throw',
-  save: 'HL4 marks the My Beers list dirty; ST10 and Stats',
+  save: 'HL4 marks the My Beers list dirty; ST10 and Stats; PT1 and Print',
 };
 
 let baselineScript;

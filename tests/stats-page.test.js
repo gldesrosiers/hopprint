@@ -40,7 +40,7 @@ function app() {
       querySelectorAll: sel => (sel === '.bn-item' ? TABS.map(t => els[`tab-${t}`]) : sel === '.screen' ? TABS.map(t => els[`screen-${t}`]) : []),
     },
     enterHistory: render('history'), enterAnalytics: render('analytics'),
-    renderProfile: render('profile'), renderWishlist: render('discover'),
+    enterProfile: render('profile'), renderWishlist: render('discover'),
   });
   vm.runInContext([
     ...['currentTab', 'tabScroll'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
@@ -82,7 +82,7 @@ test('ST1: the restore runs after the page renders, instantly', () => {
   ctx.switchTab('profile');
   win.scrollY = 900;
   ctx.switchTab('analytics');
-  ctx.switchTab('profile');                        // renderProfile() clamps to 0, then restore
+  ctx.switchTab('profile');                        // enterProfile() clamps to 0, then restore
   assert.equal(renders.at(-1), 'profile');
   assert.deepEqual(win.scrolls.at(-1), { top: 900, behavior: 'instant' });
   assert.equal(win.scrollY, 900);
@@ -153,7 +153,7 @@ function statsApp(src, entries, { year = 'all' } = {}) {
     localStorage: { setItem() {} },
     // What a pull or a tab switch touches outside Stats.
     buildLiveLists: stub('buildLiveLists'), updateHeaderMeta: stub('updateHeaderMeta'),
-    renderWishlist: stub('renderWishlist'), renderProfile: stub('renderProfile'),
+    renderWishlist: stub('renderWishlist'), enterProfile: stub('enterProfile'), refreshProfile: stub('refreshProfile'),
     enterHistory: stub('enterHistory'), refreshHistory: stub('refreshHistory'),
   });
   const code = resolved.get(src) || [];
