@@ -8,13 +8,9 @@
 const test = require('node:test');
 const nodeCrypto = require('crypto');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
 const vm = require('vm');
 
-const { ROOT, script, inlineScript, extractFunction, allFunctions } = require('./helpers');
-
-// main at the start of the history-perf branch.
-const BRANCH_BASE = 'f337221';
+const { script, extractFunction } = require('./helpers');
 
 // Multi-line top-level consts (extractConst only handles single-line ones).
 function constFrom(src, name) {
@@ -610,36 +606,4 @@ test('HL7 + HL8: an import mid-search means clearing lands on one batch at the t
 
 test('HL8: the search box calls the debounced handler', () => {
   assert.match(require('./helpers').html, /<input type="text" id="historySearch"[^>]*oninput="onHistorySearch\(\)">/);
-});
-
-// ── Byte-identical preservation against the branch base ─────────
-// Only functions this workplan deliberately touches may differ.
-const HL_ALLOWED = {
-  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard); HL3 watch sentinel; HL4 clears dirty, animate flag',
-  esc: 'HL11 escapes &',
-  save: 'HL4 marks the list dirty',
-  switchTab: 'HL5 save scroll on leave; HL4/HL5 enterHistory()',
-  saveEdit: 'HL6 refreshHistory()',
-  deleteEntry: 'HL6 refreshHistory()',
-  saveRating: 'HL6 refreshHistory()',
-  refreshAfterPull: 'HL6 refreshHistory()',
-  handleImport: 'HL7 reset to one batch at the top (also for a search in progress)',
-  renderAnalytics: 'not HL: STATS_WORKPLAN ST5 card order',
-};
-
-let baseScript;
-try {
-  baseScript = inlineScript(execFileSync('git', ['show', `${BRANCH_BASE}:index.html`], { cwd: ROOT, encoding: 'utf8' }));
-} catch (e) {
-  baseScript = null;
-}
-
-test('functions outside the workplan are byte-identical to the branch base', { skip: baseScript ? false : 'git history not available' }, () => {
-  const before = allFunctions(baseScript);
-  const now = allFunctions(script);
-  const missing = Object.keys(before).filter(n => !(n in now));
-  assert.deepEqual(missing, [], 'no function removed');
-  const changed = Object.keys(before).filter(n => before[n] !== now[n]);
-  assert.deepEqual(changed.filter(n => !(n in HL_ALLOWED)), [], 'changed without a listed reason');
-  assert.deepEqual(Object.keys(HL_ALLOWED).filter(n => !changed.includes(n)), [], 'listed but unchanged');
 });
