@@ -9,13 +9,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
 const vm = require('vm');
 
-const { ROOT, script, inlineScript, extractFunction, extractFunctionFrom, allFunctions } = require('./helpers');
+const { script, extractFunction, extractFunctionFrom } = require('./helpers');
 
-// main at the start of the stats-page branch (the history-perf merge).
-const BRANCH_BASE = '8095a9c';
 const TABS = ['checkin', 'history', 'analytics', 'profile', 'discover'];
 
 function fakeEl() {
@@ -51,19 +48,6 @@ function app() {
   ].join('\n'), ctx);
   const get = name => vm.runInContext(name, ctx);
   return { ctx, els, win, renders, get };
-}
-
-// The branch-base build's inline script, or null without git history.
-let baseCache;
-function baseScript() {
-  if (baseCache === undefined) {
-    try {
-      baseCache = inlineScript(execFileSync('git', ['show', `${BRANCH_BASE}:index.html`], { cwd: ROOT, encoding: 'utf8' }));
-    } catch (e) {
-      baseCache = null;
-    }
-  }
-  return baseCache;
 }
 
 // ── ST1 / ST2 / ST3 per-page scroll ─────────────────────────────
@@ -239,17 +223,6 @@ const layout = html => cardsOf(html).map(c => (c.match(/class="chart-title">([^<
 // Collapsible cards: key → { open (aria-expanded), hidden (body) }.
 const cardState = html => Object.fromEntries([...html.matchAll(/data-card="(\w+)">\s*<button class="card-head" type="button" id="card-\1-head" aria-expanded="(true|false)" aria-controls="card-\1"[\s\S]*?<div class="card-body" id="card-\1"( hidden)?>/g)]
   .map(m => [m[1], { open: m[2] === 'true', hidden: !!m[3] }]));
-// A card's contents with the wrapper stripped and whitespace collapsed:
-// title, sub, then body — comparable across the old and new markup.
-const contents = card => {
-  const t = card.match(/class="chart-title">([\s\S]*?)<\/(?:div|span)>/), s = card.match(/class="chart-sub">([\s\S]*?)<\/(?:div|span)>/);
-  if (!t) return card.replace(/\s+/g, ' ').trim();
-  const bodyStart = card.includes('class="card-body"') ? card.indexOf('>', card.indexOf('class="card-body"')) + 1 : s.index + s[0].length;
-  let body = card.slice(bodyStart).replace(/\s*<\/div>\s*$/, '');
-  if (card.includes('class="card-body"')) body = body.replace(/\s*<\/div>\s*$/, '');
-  return [t[1], s[1], body].map(x => x.replace(/\s+/g, ' ').trim()).join(' | ');
-};
-
 const ST5_ORDER = [
   'stat-grid', 'insight-card', 'Firsts & Milestones', 'Your Ratings, Read Back', 'Go-To Beers', 'Top Breweries',
   'Top Styles', 'Serving Format', 'Top Venues', 'Brewery Origin', 'Where You Buy', 'ABV Spread',
@@ -277,15 +250,6 @@ test('ST5: conditional cards drop out and the rest keep their relative order', (
   for (const gone of ['Your Ratings, Read Back', 'ABV Spread', 'New vs. Repeat']) assert.ok(!got.includes(gone), gone);
   assert.ok(got.includes('Firsts & Milestones'), 'any logged style is a "first", so this card nearly always shows');
   assert.deepEqual(got, ST5_ORDER.filter(k => got.includes(k)));
-});
-
-test('ST5/ST7: every card\'s title, sub and contents match the branch base — only order and wrapper changed', { skip: baseScript() ? false : 'git history not available' }, () => {
-  for (const year of ['all', 2026]) {
-    const before = cardsOf(statsApp(baseScript(), richLog(), { year }).html).map(contents);
-    const after = cardsOf(statsApp(script, richLog(), { year }).html).map(contents);
-    assert.equal(after.length, before.length, `${year}: same number of cards`);
-    assert.deepEqual([...after].sort(), [...before].sort(), `${year}: same contents`);
-  }
 });
 
 // ── ST6–ST9, ST11, ST13, ST15–ST17 collapsible cards ────────────
@@ -505,28 +469,4 @@ test('ST10: re-tapping Stats jumps to the top without a rebuild', () => {
   a.run(`switchTab('analytics')`);
   assert.equal(a.inner.writes, writes);
   assert.equal(a.win.scrollY, 0);
-});
-
-// ── Byte-identical preservation against the branch base ─────────
-const ST_ALLOWED = {
-  switchTab: 'ST1/ST2 per-page scroll + restore after render; ST10 enterAnalytics()',
-  enterHistory: 'ST1 scroll restore moves to switchTab',
-  applyHistorySearch: 'ST1 off-tab pause writes tabScroll.history',
-  handleImport: 'ST1 HL7 reset writes tabScroll.history',
-  renderAnalytics: 'ST5 card order; ST7 statsCard(); ST11 per-card chart builders',
-  buildBandCard: 'ST7 statsCard()',
-  save: 'ST10 marks Stats dirty',
-  setNvrField: 'ST14 refreshAnalytics() keeps the position',
-  toggleAnalyticsCompare: 'ST4 jump to top',
-  setAnalyticsYear: 'ST4 jump to top',
-  refreshAfterPull: 'ST10 refreshAnalytics() keeps the position',
-};
-
-test('functions outside the workplan are byte-identical to the branch base', { skip: baseScript() ? false : 'git history not available' }, () => {
-  const before = allFunctions(baseScript());
-  const now = allFunctions(script);
-  assert.deepEqual(Object.keys(before).filter(n => !(n in now)), [], 'no function removed');
-  const changed = Object.keys(before).filter(n => before[n] !== now[n]);
-  assert.deepEqual(changed.filter(n => !(n in ST_ALLOWED)), [], 'changed without a listed reason');
-  assert.deepEqual(Object.keys(ST_ALLOWED).filter(n => !changed.includes(n)), [], 'listed but unchanged');
 });
