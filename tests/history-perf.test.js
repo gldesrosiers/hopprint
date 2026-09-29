@@ -99,7 +99,7 @@ function app(entries, { query = '', observer = true } = {}) {
     },
   });
   vm.runInContext([
-    ...['currentTab', 'editingId', 'ratingEntryId', 'editServe'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
+    ...['currentTab', 'tabScroll', 'editingId', 'ratingEntryId', 'editServe'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
     constFrom(script, 'ICON_PATHS'),
     constFrom(script, 'OCCASIONS'),
     constFrom(script, 'RATING_BANDS'),
@@ -377,8 +377,9 @@ test('HL5: scroll is saved while My Beers is still showing and restored on retur
   const { ctx, win, get } = app(log(130));
   ctx.switchTab('history');
   win.scrollY = 1234;
+  win.readWhileVisible.length = 0;
   ctx.switchTab('profile');
-  assert.equal(get('historyScroll'), 1234);
+  assert.equal(get('tabScroll').history, 1234);
   assert.deepEqual(win.readWhileVisible, [true], 'read before the screen is hidden');
   win.scrollY = 40;                                  // Profile scrolled somewhere else
   ctx.switchTab('history');
@@ -418,7 +419,7 @@ test('HL5: leaving another tab does not overwrite the saved My Beers scroll', ()
   ctx.switchTab('analytics');
   win.scrollY = 3000;
   ctx.switchTab('profile');
-  assert.equal(get('historyScroll'), 500);
+  assert.equal(get('tabScroll').history, 500);
 });
 
 test('switchTab still renders the other tabs', () => {
@@ -510,7 +511,7 @@ test('HL7: import → My Beers reopens with one fresh batch at the top', () => {
   a.ctx.switchTab('profile');
   a.ctx.csv = ['beer_name,brewery_name,created_at', 'Imported,Somewhere,2020-01-01 12:00:00'].join('\n');
   a.ctx.handleImport({ target: { files: [{}], value: 'x' } });
-  assert.equal(a.get('historyScroll'), 0);
+  assert.equal(a.get('tabScroll').history, 0);
   a.win.scrollY = 300;                            // wherever Print was scrolled
   a.ctx.switchTab('history');
   assert.equal(cards(a.els.historyList.innerHTML).length, 50);

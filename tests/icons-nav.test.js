@@ -172,8 +172,8 @@ function navSandbox() {
     document: { getElementById: id => byId[id] || null, querySelectorAll: sel => (sel === '.bn-item' ? items : sel === '.screen' ? screens : []) },
   });
   vm.runInContext([
-    'var currentTab = "checkin";',
-    'function enterHistory() {} function renderAnalytics() {} function renderProfile() {} function renderWishlist() {}',
+    'var currentTab = "checkin"; var tabScroll = {};',
+    'function restoreScroll() {} function enterHistory() {} function renderAnalytics() {} function renderProfile() {} function renderWishlist() {}',
     extractFunction('switchTab'),
   ].join('\n'), ctx);
   return ctx;

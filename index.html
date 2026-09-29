@@ -1401,6 +1401,7 @@ const SUPABASE_URL = 'https://sacbsvhdnqcgqvlkdpyx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhY2JzdmhkbnFjZ3F2bGtkcHl4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3Nzk0NDEsImV4cCI6MjA5ODM1NTQ0MX0.blojgrwuCHTjMgtOkP5y6VHKB_6I00yJ5htBGwNptX8';
 const FEEDBACK_CATEGORIES = ['Bug', 'Idea', 'Confusion', 'Other'];
 let currentTab = 'checkin';
+let tabScroll = { checkin: 0, history: 0, analytics: 0, profile: 0, discover: 0 };   // ST1/ST3 — per-page window scroll, session only
 let fbCategory = null;
 
 const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','Side Pull','Taster'];
@@ -2375,7 +2376,6 @@ let historyFiltered = [];    // sorted, filtered entries the batches slice from
 let historyLoaded = 0;       // cards currently in #historyList
 let historyObserver = null;  // HL3 — watches #historySentinel
 let historyDirty = true;     // HL4 — entries changed since the list was built
-let historyScroll = 0;       // HL5/HL10 — window scroll when My Beers was left (session only)
 let historyPreSearch = null; // HL8 — { scroll, loaded } from before the current search
 let historySearchTimer = null;
 const HISTORY_SEARCH_DELAY = 150;   // HL8 — ms of typing pause before the list updates
@@ -2440,14 +2440,13 @@ function renderHistory(count = HISTORY_BATCH, animate = true) {
   watchHistorySentinel();
 }
 
-// HL5: window scroll, restored without the page's smooth scroll-behavior.
+// HL5 / ST1: window scroll, restored without the page's smooth scroll-behavior.
 function restoreScroll(y) { window.scrollTo({ top: y, behavior: 'instant' }); }
 
 // Entering My Beers: rebuild only if entries changed (HL4), at the count that
-// was loaded (fresh lists fade in), then return to where the user left off (HL5).
+// was loaded (fresh lists fade in). switchTab() then restores the scroll (ST1).
 function enterHistory() {
   if (historyDirty) renderHistory(historyLoaded, !historyLoaded);
-  restoreScroll(historyScroll);
 }
 
 // HL6: after an edit, delete, rating, or pull, rebuild up to the loaded count
@@ -2481,7 +2480,7 @@ function applyHistorySearch() {
     y = pre.scroll;
   }
   if (currentTab === 'history') restoreScroll(y);
-  else historyScroll = y;             // typing paused as the user left the tab
+  else tabScroll.history = y;         // typing paused as the user left the tab
 }
 
 // HL3: append the next batch in front of the sentinel. Only the new cards
@@ -4282,7 +4281,7 @@ function handleImport(event) {
       const newOnes = imported.filter(e => !existing.has(`${e.beer_name}|${e.created_at}`));
       entries = [...entries, ...newOnes].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
       save();
-      historyLoaded = 0; historyScroll = 0;   // HL7: My Beers reopens at the top with one fresh batch
+      historyLoaded = 0; tabScroll.history = 0;   // HL7: My Beers reopens at the top with one fresh batch
       if (historyPreSearch) historyPreSearch = { scroll: 0, loaded: 0 };   // …and so does clearing a search
       queueSyncMany('check_ins', newOnes.map(e => e.id), 'upsert', true);
       // Record beer/brewery detail from imports for autofill (fill-blank-only),
@@ -4372,8 +4371,8 @@ function showToast(msg, iconName) {
 // TABS
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
-  // HL5: save My Beers' scroll before the screen hides; re-tapping Beers jumps to the top.
-  if (currentTab === 'history') historyScroll = tab === 'history' ? 0 : window.scrollY;
+  // ST1: save this page's scroll before its screen hides; ST2: re-tapping a page jumps to its top.
+  tabScroll[currentTab] = tab === currentTab ? 0 : window.scrollY;
   currentTab = tab;
   document.querySelectorAll('.bn-item').forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -4384,6 +4383,7 @@ function switchTab(tab) {
   if (tab === 'analytics') renderAnalytics();
   if (tab === 'profile') renderProfile();
   if (tab === 'discover') renderWishlist();
+  restoreScroll(tabScroll[tab]);   // ST1: after the page has rendered
 }
 
 // Hide the bottom nav and feedback FAB while a text-entry field has focus, so

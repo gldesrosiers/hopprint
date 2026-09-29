@@ -51,7 +51,7 @@ const ALLOWED_CHANGES = {
   exportCSV: 'IN8 toast iconName',
   exportJSON: 'IN8 toast iconName',
   // IT9 — bottom nav (IN16)
-  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory()',
+  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
   buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
   // History perf (HISTORY_PERF_WORKPLAN.md)
