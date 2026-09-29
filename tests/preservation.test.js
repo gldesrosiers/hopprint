@@ -37,7 +37,7 @@ const ALLOWED_CHANGES = {
   buildModeGrid: 'IN20 mode icon()',
   // IT4 — milestones keyed by kind (IN19)
   computeMilestones: 'IN19 kind replaces emoji icon',
-  renderAnalytics: 'IN19 milestone icon from kind',
+  renderAnalytics: 'IN19 milestone icon from kind; ST5 card order',
   computeAnalyticsContext: 'IN19 compare on kind',
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',

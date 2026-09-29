@@ -624,6 +624,7 @@ const HL_ALLOWED = {
   saveRating: 'HL6 refreshHistory()',
   refreshAfterPull: 'HL6 refreshHistory()',
   handleImport: 'HL7 reset to one batch at the top (also for a search in progress)',
+  renderAnalytics: 'not HL: STATS_WORKPLAN ST5 card order',
 };
 
 let baseScript;

@@ -3089,6 +3089,78 @@ function renderAnalytics() {
 
   ${buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, analyticsCompare)}
 
+  ${showMilestones ? `
+  <div class="chart-card fade-up">
+    <div class="chart-title">Firsts & Milestones</div>
+    <div class="chart-sub">The moments worth a screenshot</div>
+    ${milestones.length ? `<div class="ms-list">${milestones.map(m => `
+      <div class="ms-row">
+        <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
+        <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
+        <div class="ms-date">${fmtMonthYear(m.date)}</div>
+      </div>`).join('')}</div>` : ''}
+    ${firsts.length ? `<div class="firsts-lead">${analyticsYear === 'all' ? 'Latest new styles' : 'New styles this year'}</div>
+      <div class="firsts-strip">${firsts.map(e => `<span class="first-chip"><b>${esc(e.beer_type)}</b> · ${fmtMonthYear(e.created_at)}</span>`).join('')}</div>` : ''}
+  </div>` : ''}
+
+  ${buildBandCard(es)}
+
+  <div class="chart-card">
+    <div class="chart-title">Go-To Beers</div>
+    <div class="chart-sub">Most repeated check-ins</div>
+    <div class="rank-list">${topBeers.map(([b, c], i) => drillRow(i + 1, b, c, maxBeer, GRAD.beer, 'beer')).join('')}</div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Top Breweries</div>
+    <div class="chart-sub">Tap any row to dig in</div>
+    <div class="rank-list">${topBrews.map(([b, c], i) => drillRow(i + 1, b, c, maxBrew, GRAD.brewery, 'brewery')).join('')}</div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Top Styles</div>
+    <div class="chart-sub">Tap any row to dig in</div>
+    <div class="rank-list">${topStyles.map(([s, c], i) => drillRow(i + 1, s, c, maxStyle, GRAD.style, 'style')).join('')}</div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Serving Format</div>
+    <div class="chart-sub">How your beer arrives</div>
+    <div style="height:200px;position:relative"><canvas id="chartServe"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Top Venues</div>
+    <div class="chart-sub">Where you drink out (excl. home)</div>
+    <div class="rank-list">${topVenues.map(([v, c], i) => drillRow(i + 1, v, c, maxVenue, GRAD.venue, 'venue')).join('')}</div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Brewery Origin</div>
+    <div class="chart-sub">Where your beer comes from</div>
+    <div class="rank-list">${topStates.map(([s, c], i) => drillRow(i + 1, s, c, maxState, GRAD.state, 'state')).join('')}</div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">Where You Buy</div>
+    <div class="chart-sub">Top purchase venues</div>
+    <div class="rank-list">${topPurch.map(([p, c], i) => drillRow(i + 1, p, c, maxPurch, GRAD.purchase, 'purchase')).join('')}</div>
+  </div>
+
+  ${showAbv ? `
+  <div class="chart-card fade-up">
+    <div class="chart-title">ABV Spread</div>
+    <div class="chart-sub">Whether you settle in one lane or roam</div>
+    <div class="abv-chart">${ABV_BINS.map(([, , lbl], i) => `
+      <div class="abv-col">
+        <div class="abv-val">${abvHist[i] || ''}</div>
+        <div class="abv-bar-wrap"><div class="abv-bar ${i === avgBinIdx ? 'peak' : ''}" style="height:${Math.round(abvHist[i] / abvMax * 100)}%"></div></div>
+        <div class="abv-lbl">${lbl}</div>
+      </div>`).join('')}
+    </div>
+    <div class="abv-avg">Average <b>${avgAbv}%</b> — the highlighted bar</div>
+  </div>` : ''}
+
   ${showNvr ? `
   <div class="chart-card fade-up">
     <div class="chart-title">New vs. Repeat</div>
@@ -3104,20 +3176,6 @@ function renderAnalytics() {
       <span class="nvr-legend-item"><span class="nvr-swatch new"></span>First time</span>
       <span class="nvr-legend-item"><span class="nvr-swatch repeat"></span>Repeat</span>
     </div>
-  </div>` : ''}
-
-  ${showMilestones ? `
-  <div class="chart-card fade-up">
-    <div class="chart-title">Firsts & Milestones</div>
-    <div class="chart-sub">The moments worth a screenshot</div>
-    ${milestones.length ? `<div class="ms-list">${milestones.map(m => `
-      <div class="ms-row">
-        <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
-        <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
-        <div class="ms-date">${fmtMonthYear(m.date)}</div>
-      </div>`).join('')}</div>` : ''}
-    ${firsts.length ? `<div class="firsts-lead">${analyticsYear === 'all' ? 'Latest new styles' : 'New styles this year'}</div>
-      <div class="firsts-strip">${firsts.map(e => `<span class="first-chip"><b>${esc(e.beer_type)}</b> · ${fmtMonthYear(e.created_at)}</span>`).join('')}</div>` : ''}
   </div>` : ''}
 
   <div class="chart-card">
@@ -3142,64 +3200,6 @@ function renderAnalytics() {
     <div class="chart-title">Volume Over Time</div>
     <div class="chart-sub">Monthly check-in count</div>
     <div style="height:150px;position:relative"><canvas id="chartTimeline"></canvas></div>
-  </div>
-
-  ${showAbv ? `
-  <div class="chart-card fade-up">
-    <div class="chart-title">ABV Spread</div>
-    <div class="chart-sub">Whether you settle in one lane or roam</div>
-    <div class="abv-chart">${ABV_BINS.map(([, , lbl], i) => `
-      <div class="abv-col">
-        <div class="abv-val">${abvHist[i] || ''}</div>
-        <div class="abv-bar-wrap"><div class="abv-bar ${i === avgBinIdx ? 'peak' : ''}" style="height:${Math.round(abvHist[i] / abvMax * 100)}%"></div></div>
-        <div class="abv-lbl">${lbl}</div>
-      </div>`).join('')}
-    </div>
-    <div class="abv-avg">Average <b>${avgAbv}%</b> — the highlighted bar</div>
-  </div>` : ''}
-
-  ${buildBandCard(es)}
-
-  <div class="chart-card">
-    <div class="chart-title">Top Styles</div>
-    <div class="chart-sub">Tap any row to dig in</div>
-    <div class="rank-list">${topStyles.map(([s, c], i) => drillRow(i + 1, s, c, maxStyle, GRAD.style, 'style')).join('')}</div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Serving Format</div>
-    <div class="chart-sub">How your beer arrives</div>
-    <div style="height:200px;position:relative"><canvas id="chartServe"></canvas></div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Top Venues</div>
-    <div class="chart-sub">Where you drink out (excl. home)</div>
-    <div class="rank-list">${topVenues.map(([v, c], i) => drillRow(i + 1, v, c, maxVenue, GRAD.venue, 'venue')).join('')}</div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Top Breweries</div>
-    <div class="chart-sub">Tap any row to dig in</div>
-    <div class="rank-list">${topBrews.map(([b, c], i) => drillRow(i + 1, b, c, maxBrew, GRAD.brewery, 'brewery')).join('')}</div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Brewery Origin</div>
-    <div class="chart-sub">Where your beer comes from</div>
-    <div class="rank-list">${topStates.map(([s, c], i) => drillRow(i + 1, s, c, maxState, GRAD.state, 'state')).join('')}</div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Go-To Beers</div>
-    <div class="chart-sub">Most repeated check-ins</div>
-    <div class="rank-list">${topBeers.map(([b, c], i) => drillRow(i + 1, b, c, maxBeer, GRAD.beer, 'beer')).join('')}</div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-title">Where You Buy</div>
-    <div class="chart-sub">Top purchase venues</div>
-    <div class="rank-list">${topPurch.map(([p, c], i) => drillRow(i + 1, p, c, maxPurch, GRAD.purchase, 'purchase')).join('')}</div>
   </div>
 
   ${analyticsYear === 'all' ? `
