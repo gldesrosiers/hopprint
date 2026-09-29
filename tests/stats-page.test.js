@@ -135,10 +135,36 @@ test('ST2: the logo is a Check In tap, so on Check In it jumps to the top', () =
 // renderAnalytics() from a given build, with every function/const it touches
 // pulled from that same build (resolved on demand from ReferenceErrors, so the
 // harness never lists — or reimplements — the helpers by hand).
+//
+// Stand-ins: #analyticsInner is a markup string (inner.writes counts full
+// rebuilds); any other id present in that markup resolves to a fake element;
+// Chart records every chart made; requestAnimationFrame queues until flush().
+const resolved = new Map();   // src → [code]; dependency resolution is per build
 function statsApp(src, entries, { year = 'all' } = {}) {
-  const inner = { innerHTML: '' };
-  const code = [];
-  const have = new Set();
+  let markup = '';
+  const inner = { writes: 0, get innerHTML() { return markup; }, set innerHTML(v) { markup = v; inner.writes++; } };
+  const els = new Map();
+  const el = id => {
+    if (!els.has(id)) els.set(id, { id, hidden: markup.includes(`id="${id}" hidden`),
+      attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, classList: { add() {}, remove() {} } });
+    return els.get(id);
+  };
+  const charts = [], frames = [], scrolls = [];
+  function Chart(canvas, config) { this.canvas = canvas; this.config = config; this.destroyed = false; charts.push(this); }
+  Chart.prototype.destroy = function () { this.destroyed = true; };
+  const makeCtx = () => vm.createContext({
+    console, entries, Chart,
+    document: {
+      getElementById: id => (id === 'analyticsInner' ? inner : markup.includes(`id="${id}"`) ? el(id) : null),
+      querySelectorAll: () => [],
+      documentElement: {},
+    },
+    getComputedStyle: () => ({ getPropertyValue: () => '#e97324' }),
+    requestAnimationFrame: fn => frames.push(fn),
+    window: { scrollTo: o => scrolls.push(o) },
+  });
+  const code = resolved.get(src) || [];
+  const have = new Set(code.map(c => c.match(/^(?:async\s+)?(?:function|const|let)\s+(\w+)/)[1]));
   const pull = name => {
     let c = null;
     try { c = extractFunctionFrom(src, name); } catch (e) {
@@ -148,23 +174,33 @@ function statsApp(src, entries, { year = 'all' } = {}) {
     if (!c) throw new Error(`cannot resolve ${name}`);
     have.add(name); code.unshift(c);
   };
-  pull('renderAnalytics');
+  if (!code.length) {
+    pull('renderAnalytics');
+    // Reached only after a render (toggles, the next frame, chart builders),
+    // so the render-time resolution below never sees them.
+    for (const late of ['toggleStatsCard', 'buildStatsChart', 'cssVar', 'rootStyle']) {
+      if (new RegExp(`^(?:function|const|let) ${late}\\b`, 'm').test(src)) pull(late);
+    }
+  }
+  let ctx;
   for (let i = 0; i < 80; i++) {
-    const ctx = vm.createContext({
-      console, entries,
-      document: { getElementById: id => (id === 'analyticsInner' ? inner : null) },
-      requestAnimationFrame: () => {},
-    });
+    ctx = makeCtx();   // fresh each attempt: a failed run leaves its let/const bindings behind
     try {
       vm.runInContext(code.join('\n') + `\nanalyticsYear = ${JSON.stringify(year)};\nrenderAnalytics();`, ctx);
-      return { ctx, html: inner.innerHTML };
+      resolved.set(src, code);
+      break;
     } catch (e) {
       const m = String(e).match(/ReferenceError: (\w+) is not defined/);
       if (!m || have.has(m[1])) throw e;
+      markup = ''; inner.writes = 0; charts.length = 0; frames.length = 0;
       pull(m[1]);
     }
   }
-  throw new Error('dependency resolution did not settle');
+  const flush = () => { while (frames.length) frames.shift()(); };
+  const run = js => vm.runInContext(js, ctx);
+  // A fresh fake per id after each rebuild, as a real innerHTML write replaces the nodes.
+  const render = () => { els.clear(); ctx.renderAnalytics(); };
+  return { ctx, inner, get html() { return markup; }, charts, flush, run, render, el, scrolls };
 }
 
 // A two-year log rich enough that every conditional card qualifies.
@@ -183,17 +219,31 @@ function richLog() {
   return out;
 }
 
-// Top-level pieces of the Stats page, in order.
-const piece = /<div class="(stat-grid|insight-card|chart-card)[^"]*">\s*(?:<div class="chart-title">([^<]*)<\/div>)?/g;
-const layout = html => [...html.matchAll(piece)].map(m => m[2] || m[1]);
-// The page split into its top-level cards, for markup comparison.
+// The page split into its top-level pieces (tiles, insight, cards).
 const cardsOf = html => html.split(/(?=<div class="(?:stat-grid|insight-card|chart-card))/).slice(1).map(c => c.trim());
+// Each piece's name: a card's title, or the piece's class.
+const layout = html => cardsOf(html).map(c => (c.match(/class="chart-title">([^<]*)</) || [])[1] || c.match(/^<div class="([\w-]+)/)[1]);
+// Collapsible cards: key → { open (aria-expanded), hidden (body) }.
+const cardState = html => Object.fromEntries([...html.matchAll(/data-card="(\w+)">\s*<button class="card-head" type="button" id="card-\1-head" aria-expanded="(true|false)" aria-controls="card-\1"[\s\S]*?<div class="card-body" id="card-\1"( hidden)?>/g)]
+  .map(m => [m[1], { open: m[2] === 'true', hidden: !!m[3] }]));
+// A card's contents with the wrapper stripped and whitespace collapsed:
+// title, sub, then body — comparable across the old and new markup.
+const contents = card => {
+  const t = card.match(/class="chart-title">([\s\S]*?)<\/(?:div|span)>/), s = card.match(/class="chart-sub">([\s\S]*?)<\/(?:div|span)>/);
+  if (!t) return card.replace(/\s+/g, ' ').trim();
+  const bodyStart = card.includes('class="card-body"') ? card.indexOf('>', card.indexOf('class="card-body"')) + 1 : s.index + s[0].length;
+  let body = card.slice(bodyStart).replace(/\s*<\/div>\s*$/, '');
+  if (card.includes('class="card-body"')) body = body.replace(/\s*<\/div>\s*$/, '');
+  return [t[1], s[1], body].map(x => x.replace(/\s+/g, ' ').trim()).join(' | ');
+};
 
 const ST5_ORDER = [
   'stat-grid', 'insight-card', 'Firsts & Milestones', 'Your Ratings, Read Back', 'Go-To Beers', 'Top Breweries',
   'Top Styles', 'Serving Format', 'Top Venues', 'Brewery Origin', 'Where You Buy', 'ABV Spread',
   'New vs. Repeat', 'By Day of Week', 'Monthly Pattern', 'Volume Over Time', 'Year Over Year', 'Volume by Year',
 ];
+const COLLAPSIBLE = ['milestones', 'ratings', 'gotobeers', 'breweries', 'styles', 'serving', 'venues', 'origin', 'buy',
+  'abv', 'nvr', 'dow', 'monthly', 'volume', 'yoy', 'byyear'];
 
 // ── ST5 order ───────────────────────────────────────────────────
 test('ST5: All Time shows every card in the new order (no insight card on All Time)', () => {
@@ -216,14 +266,130 @@ test('ST5: conditional cards drop out and the rest keep their relative order', (
   assert.deepEqual(got, ST5_ORDER.filter(k => got.includes(k)));
 });
 
-test('ST5: every card\'s markup is unchanged — only the order moved', { skip: baseScript() ? false : 'git history not available' }, () => {
+test('ST5/ST7: every card\'s title, sub and contents match the branch base — only order and wrapper changed', { skip: baseScript() ? false : 'git history not available' }, () => {
   for (const year of ['all', 2026]) {
-    const before = cardsOf(statsApp(baseScript(), richLog(), { year }).html);
-    const after = cardsOf(statsApp(script, richLog(), { year }).html);
+    const before = cardsOf(statsApp(baseScript(), richLog(), { year }).html).map(contents);
+    const after = cardsOf(statsApp(script, richLog(), { year }).html).map(contents);
     assert.equal(after.length, before.length, `${year}: same number of cards`);
-    assert.deepEqual([...after].sort(), [...before].sort(), `${year}: same cards`);
-    assert.notDeepEqual(after, before, `${year}: order changed`);
+    assert.deepEqual([...after].sort(), [...before].sort(), `${year}: same contents`);
   }
+});
+
+// ── ST6–ST9, ST11, ST13, ST15–ST17 collapsible cards ────────────
+test('ST15: icon("chevron") is a 20-grid line icon at the requested size and weight', () => {
+  const { run } = statsApp(script, richLog());
+  const svg = run(`icon('chevron', 18, 2.2)`);
+  assert.match(svg, /^<svg class="ico" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"[^>]*><path d="M5\.5 8 10 12\.5 14\.5 8"><\/path><\/svg>$/);
+});
+
+test('ST6/ST13/ST17: 16 collapsible cards; only Milestones and Ratings start open; items 1–3 have no toggle', () => {
+  const { html } = statsApp(script, richLog(), { year: 2026 });
+  const all = statsApp(script, richLog()).html;
+  assert.deepEqual(Object.keys(cardState(all)).sort(), [...COLLAPSIBLE].sort());
+  for (const [key, st] of Object.entries(cardState(all))) {
+    const open = key === 'milestones' || key === 'ratings';
+    assert.deepEqual(st, { open, hidden: !open }, key);
+  }
+  for (const piece of cardsOf(html).filter(c => /^<div class="(stat-grid|insight-card)/.test(c))) {
+    assert.doesNotMatch(piece, /card-head|aria-expanded/);
+  }
+  assert.match(html, /<div class="year-row">(?:(?!card-head)[\s\S])*?<div class="stat-grid">/, 'year row has no toggle');
+});
+
+test('ST17: each header is one button holding title, sub and chevron, wired to its body', () => {
+  const { html } = statsApp(script, richLog());
+  const head = html.match(/<button class="card-head" type="button" id="card-styles-head" aria-expanded="false" aria-controls="card-styles" onclick="toggleStatsCard\('styles'\)">([\s\S]*?)<\/button>/);
+  assert.ok(head, 'styles header');
+  assert.match(head[1], /<span class="chart-title">Top Styles<\/span><span class="chart-sub">Tap any row to dig in<\/span>/);
+  assert.match(head[1], /<span class="card-chevron"><svg [^>]*><path d="M5\.5 8 10 12\.5 14\.5 8"><\/path><\/svg><\/span>/);
+});
+
+test('ST8/ST16: toggling opens and closes in place — no rebuild, no scroll', () => {
+  const a = statsApp(script, richLog());
+  const writes = a.inner.writes;
+  a.run(`toggleStatsCard('styles')`);
+  assert.equal(a.el('card-styles-head').attrs['aria-expanded'], 'true');
+  assert.equal(a.el('card-styles').hidden, false);
+  a.run(`toggleStatsCard('breweries')`);           // several open at once (ST8)
+  assert.equal(a.el('card-breweries').hidden, false);
+  assert.equal(a.el('card-styles').hidden, false);
+  a.run(`toggleStatsCard('styles')`);
+  assert.equal(a.el('card-styles-head').attrs['aria-expanded'], 'false');
+  assert.equal(a.el('card-styles').hidden, true);
+  a.run(`toggleStatsCard('milestones')`);          // default-open cards close too (ST13)
+  assert.equal(a.el('card-milestones').hidden, true);
+  assert.equal(a.inner.writes, writes, 'no rebuild');
+  assert.deepEqual(a.scrolls, [], 'no scroll');
+  assert.deepEqual([...a.run('statsOpen')].sort(), ['breweries', 'ratings']);
+});
+
+test('ST11: no chart is built for a closed card; opening builds exactly one, once', () => {
+  const a = statsApp(script, richLog());
+  a.flush();
+  assert.equal(a.charts.length, 0, 'every chart card starts closed');
+  a.run(`toggleStatsCard('monthly')`);
+  assert.deepEqual(a.charts.map(c => c.canvas.id), ['chartMonth']);
+  a.run(`toggleStatsCard('monthly')`); a.run(`toggleStatsCard('monthly')`);
+  a.flush();
+  assert.equal(a.charts.length, 1, 'reopening does not build a second');
+  for (const [key, canvas] of [['volume', 'chartTimeline'], ['nvr', 'chartNvr'], ['serving', 'chartServe'], ['byyear', 'chartYoY']]) {
+    a.run(`toggleStatsCard('${key}')`);
+    assert.equal(a.charts.at(-1).canvas.id, canvas, key);
+  }
+  assert.equal(a.charts.length, 5);
+  a.run(`toggleStatsCard('styles')`);               // a card with no chart
+  assert.equal(a.charts.length, 5);
+});
+
+test('ST11: a rebuild destroys the charts; open cards rebuild theirs on the next frame, closed ones wait', () => {
+  const a = statsApp(script, richLog());
+  a.run(`toggleStatsCard('monthly')`);
+  a.run(`toggleStatsCard('serving')`);
+  a.run(`toggleStatsCard('serving')`);               // built, then closed
+  a.render();
+  assert.ok(a.charts.slice(0, 2).every(c => c.destroyed), 'old charts destroyed');
+  assert.equal(a.charts.length, 2, 'nothing built before the frame');
+  a.flush();
+  assert.deepEqual(a.charts.slice(2).map(c => c.canvas.id), ['chartMonth'], 'only the open chart card');
+  a.run(`toggleStatsCard('serving')`);
+  assert.deepEqual(a.charts.slice(2).map(c => c.canvas.id), ['chartMonth', 'chartServe']);
+});
+
+test('ST11: opening a card before the first frame builds its chart once, not twice', () => {
+  const a = statsApp(script, richLog());
+  a.run(`toggleStatsCard('volume')`);
+  a.flush();
+  assert.deepEqual(a.charts.map(c => c.canvas.id), ['chartTimeline']);
+});
+
+test('ST9: open state survives a rebuild and a year change, and a fresh app starts at the defaults', () => {
+  const a = statsApp(script, richLog());
+  a.run(`toggleStatsCard('dow')`);
+  a.run(`toggleStatsCard('ratings')`);
+  a.render();
+  let st = cardState(a.html);
+  assert.equal(st.dow.open, true);
+  assert.equal(st.ratings.open, false);
+  a.run(`analyticsYear = 2026`);
+  a.render();
+  st = cardState(a.html);
+  assert.equal(st.dow.open, true);
+  assert.equal(st.milestones.open, true);
+  const fresh = cardState(statsApp(script, richLog()).html);
+  assert.deepEqual(Object.keys(fresh).filter(k => fresh[k].open).sort(), ['milestones', 'ratings']);
+});
+
+test('ST9: open state lives in memory only', () => {
+  for (const fn of ['statsCard', 'toggleStatsCard', 'buildStatsChart', 'renderAnalytics']) {
+    assert.doesNotMatch(extractFunction(fn), /localStorage|sessionStorage/, fn);
+  }
+});
+
+test('ST7: header styles — whole-card tap target, rotating chevron, hidden bodies take no space', () => {
+  const { style } = require('./helpers');
+  assert.match(style, /\.card-head \{[^}]*width: calc\(100% \+ 32px\); margin: -16px; padding: 16px;/);
+  assert.match(style, /\.card-head\[aria-expanded="true"\] \.card-chevron \{ transform: rotate\(180deg\); \}/);
+  assert.match(style, /\.card-body\[hidden\] \{ display: none; \}/);
 });
 
 // ── Byte-identical preservation against the branch base ─────────
@@ -232,7 +398,8 @@ const ST_ALLOWED = {
   enterHistory: 'ST1 scroll restore moves to switchTab',
   applyHistorySearch: 'ST1 off-tab pause writes tabScroll.history',
   handleImport: 'ST1 HL7 reset writes tabScroll.history',
-  renderAnalytics: 'ST5 card order',
+  renderAnalytics: 'ST5 card order; ST7 statsCard(); ST11 per-card chart builders',
+  buildBandCard: 'ST7 statsCard()',
 };
 
 test('functions outside the workplan are byte-identical to the branch base', { skip: baseScript() ? false : 'git history not available' }, () => {

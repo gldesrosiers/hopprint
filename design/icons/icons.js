@@ -13,6 +13,7 @@ const ICON_PATHS = {
   'wishlist': '<path d="M4 5.5h12v9l-4-2.4-4 2.4Z"></path>',
   'sort': '<path d="M3 5.5h14M5.5 10h9M8 14.5h4"></path>',
   'search': '<circle cx="9" cy="9" r="5.5"></circle><path d="M13.2 13.2 17 17"></path>',
+  'chevron': '<path d="M5.5 8 10 12.5 14.5 8"></path>',
   'share': '<path d="M10 13V4M6.5 7.5 10 4l3.5 3.5"></path><path d="M4 16.5h12"></path>',
   'rating-never': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.8 13.8Q10 10.9 13.2 13.8"></path>',
   'rating-maybe': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M7.1 12.8 12.9 12.5"></path>',

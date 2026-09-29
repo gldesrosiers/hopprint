@@ -514,6 +514,20 @@ body.input-focused .fab-feedback { display: none; }
 }
 .chart-title { font-family: var(--font-display); font-size: 15px; font-weight: 700; margin-bottom: 3px; }
 .chart-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; font-weight: 300; }
+/* ST7/ST17: collapsible Stats cards. The header button spans the card's padding
+   so the whole top of the card is the tap target. */
+.card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: calc(100% + 32px); margin: -16px; padding: 16px;
+  background: none; border: 0; border-radius: var(--radius); color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.card-head .chart-title, .card-head .chart-sub { display: block; }
+.card-head .chart-sub { margin-bottom: 0; }
+.card-chevron { color: var(--text-muted); transition: transform 0.18s; }
+.card-head[aria-expanded="true"] .card-chevron { transform: rotate(180deg); }
+.card-body { margin-top: 14px; }   /* the gap the old .chart-sub margin gave */
+.card-body[hidden] { display: none; }
 
 .insight-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 9px; }
 .insight-card {
@@ -1277,6 +1291,7 @@ const ICON_PATHS = {
   'wishlist': '<path d="M4 5.5h12v9l-4-2.4-4 2.4Z"></path>',
   'sort': '<path d="M3 5.5h14M5.5 10h9M8 14.5h4"></path>',
   'search': '<circle cx="9" cy="9" r="5.5"></circle><path d="M13.2 13.2 17 17"></path>',
+  'chevron': '<path d="M5.5 8 10 12.5 14.5 8"></path>',
   'share': '<path d="M10 13V4M6.5 7.5 10 4l3.5 3.5"></path><path d="M4 16.5h12"></path>',
   'rating-never': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.8 13.8Q10 10.9 13.2 13.8"></path>',
   'rating-maybe': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M7.1 12.8 12.9 12.5"></path>',
@@ -2916,11 +2931,8 @@ function buildBandCard(list) {
   }
 
   if (!parts.length) return '';
-  return `<div class="chart-card fade-up">
-    <div class="chart-title">Your Ratings, Read Back</div>
-    <div class="chart-sub">What the Definitelys and Maybes add up to</div>
-    ${parts.join('')}
-  </div>`;
+  return statsCard('ratings', `Your Ratings, Read Back`, `What the Definitelys and Maybes add up to`, `
+    ${parts.join('')}`, ' fade-up');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2933,6 +2945,45 @@ function setNvrField(field) { nvrField = field; renderAnalytics(); }
 function toggleAnalyticsCompare() { analyticsCompare = !analyticsCompare; renderAnalytics(); }
 
 const NVR_LABELS = { brewery_name: 'breweries', beer_type: 'styles', beer_name: 'beers' };
+
+// ST6/ST9: open Stats cards (session only). Items 1–3 are not collapsible.
+const STATS_OPEN_DEFAULT = ['milestones', 'ratings'];
+let statsOpen = new Set(STATS_OPEN_DEFAULT);
+let statsChartBuilders = {};   // ST11: card key → builds that card's chart, until it has run
+
+// ST7/ST17: a collapsible Stats card. The header is one button; the body is
+// hidden unless the card is open. Title and sub keep their classes.
+function statsCard(key, title, sub, body, cls = '') {
+  const open = statsOpen.has(key);
+  return `<div class="chart-card${cls}" data-card="${key}">
+    <button class="card-head" type="button" id="card-${key}-head" aria-expanded="${open}" aria-controls="card-${key}" onclick="toggleStatsCard('${key}')">
+      <span><span class="chart-title">${title}</span><span class="chart-sub">${sub}</span></span>
+      <span class="card-chevron">${icon('chevron', 18, 2.2)}</span>
+    </button>
+    <div class="card-body" id="card-${key}"${open ? '' : ' hidden'}>${body}
+    </div>
+  </div>`;
+}
+
+// ST8/ST16: open or close one card in place — no rebuild, no scroll.
+function toggleStatsCard(key) {
+  const head = document.getElementById(`card-${key}-head`);
+  const body = document.getElementById(`card-${key}`);
+  if (!head || !body) return;
+  const open = !statsOpen.has(key);
+  if (open) statsOpen.add(key); else statsOpen.delete(key);
+  head.setAttribute('aria-expanded', String(open));
+  body.hidden = !open;
+  if (open) buildStatsChart(key);
+}
+
+// ST11: build a card's chart once, the first time it is open after a render.
+function buildStatsChart(key) {
+  const build = statsChartBuilders[key];
+  if (!build) return;
+  delete statsChartBuilders[key];
+  build();
+}
 
 function renderAnalytics() {
   const inner = document.getElementById('analyticsInner');
@@ -3090,9 +3141,7 @@ function renderAnalytics() {
   ${buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, analyticsCompare)}
 
   ${showMilestones ? `
-  <div class="chart-card fade-up">
-    <div class="chart-title">Firsts & Milestones</div>
-    <div class="chart-sub">The moments worth a screenshot</div>
+  ${statsCard('milestones', `Firsts & Milestones`, `The moments worth a screenshot`, `
     ${milestones.length ? `<div class="ms-list">${milestones.map(m => `
       <div class="ms-row">
         <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
@@ -3100,57 +3149,33 @@ function renderAnalytics() {
         <div class="ms-date">${fmtMonthYear(m.date)}</div>
       </div>`).join('')}</div>` : ''}
     ${firsts.length ? `<div class="firsts-lead">${analyticsYear === 'all' ? 'Latest new styles' : 'New styles this year'}</div>
-      <div class="firsts-strip">${firsts.map(e => `<span class="first-chip"><b>${esc(e.beer_type)}</b> · ${fmtMonthYear(e.created_at)}</span>`).join('')}</div>` : ''}
-  </div>` : ''}
+      <div class="firsts-strip">${firsts.map(e => `<span class="first-chip"><b>${esc(e.beer_type)}</b> · ${fmtMonthYear(e.created_at)}</span>`).join('')}</div>` : ''}`, ' fade-up')}` : ''}
 
   ${buildBandCard(es)}
 
-  <div class="chart-card">
-    <div class="chart-title">Go-To Beers</div>
-    <div class="chart-sub">Most repeated check-ins</div>
-    <div class="rank-list">${topBeers.map(([b, c], i) => drillRow(i + 1, b, c, maxBeer, GRAD.beer, 'beer')).join('')}</div>
-  </div>
+  ${statsCard('gotobeers', `Go-To Beers`, `Most repeated check-ins`, `
+    <div class="rank-list">${topBeers.map(([b, c], i) => drillRow(i + 1, b, c, maxBeer, GRAD.beer, 'beer')).join('')}</div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Top Breweries</div>
-    <div class="chart-sub">Tap any row to dig in</div>
-    <div class="rank-list">${topBrews.map(([b, c], i) => drillRow(i + 1, b, c, maxBrew, GRAD.brewery, 'brewery')).join('')}</div>
-  </div>
+  ${statsCard('breweries', `Top Breweries`, `Tap any row to dig in`, `
+    <div class="rank-list">${topBrews.map(([b, c], i) => drillRow(i + 1, b, c, maxBrew, GRAD.brewery, 'brewery')).join('')}</div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Top Styles</div>
-    <div class="chart-sub">Tap any row to dig in</div>
-    <div class="rank-list">${topStyles.map(([s, c], i) => drillRow(i + 1, s, c, maxStyle, GRAD.style, 'style')).join('')}</div>
-  </div>
+  ${statsCard('styles', `Top Styles`, `Tap any row to dig in`, `
+    <div class="rank-list">${topStyles.map(([s, c], i) => drillRow(i + 1, s, c, maxStyle, GRAD.style, 'style')).join('')}</div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Serving Format</div>
-    <div class="chart-sub">How your beer arrives</div>
-    <div style="height:200px;position:relative"><canvas id="chartServe"></canvas></div>
-  </div>
+  ${statsCard('serving', `Serving Format`, `How your beer arrives`, `
+    <div style="height:200px;position:relative"><canvas id="chartServe"></canvas></div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Top Venues</div>
-    <div class="chart-sub">Where you drink out (excl. home)</div>
-    <div class="rank-list">${topVenues.map(([v, c], i) => drillRow(i + 1, v, c, maxVenue, GRAD.venue, 'venue')).join('')}</div>
-  </div>
+  ${statsCard('venues', `Top Venues`, `Where you drink out (excl. home)`, `
+    <div class="rank-list">${topVenues.map(([v, c], i) => drillRow(i + 1, v, c, maxVenue, GRAD.venue, 'venue')).join('')}</div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Brewery Origin</div>
-    <div class="chart-sub">Where your beer comes from</div>
-    <div class="rank-list">${topStates.map(([s, c], i) => drillRow(i + 1, s, c, maxState, GRAD.state, 'state')).join('')}</div>
-  </div>
+  ${statsCard('origin', `Brewery Origin`, `Where your beer comes from`, `
+    <div class="rank-list">${topStates.map(([s, c], i) => drillRow(i + 1, s, c, maxState, GRAD.state, 'state')).join('')}</div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Where You Buy</div>
-    <div class="chart-sub">Top purchase venues</div>
-    <div class="rank-list">${topPurch.map(([p, c], i) => drillRow(i + 1, p, c, maxPurch, GRAD.purchase, 'purchase')).join('')}</div>
-  </div>
+  ${statsCard('buy', `Where You Buy`, `Top purchase venues`, `
+    <div class="rank-list">${topPurch.map(([p, c], i) => drillRow(i + 1, p, c, maxPurch, GRAD.purchase, 'purchase')).join('')}</div>`)}
 
   ${showAbv ? `
-  <div class="chart-card fade-up">
-    <div class="chart-title">ABV Spread</div>
-    <div class="chart-sub">Whether you settle in one lane or roam</div>
+  ${statsCard('abv', `ABV Spread`, `Whether you settle in one lane or roam`, `
     <div class="abv-chart">${ABV_BINS.map(([, , lbl], i) => `
       <div class="abv-col">
         <div class="abv-val">${abvHist[i] || ''}</div>
@@ -3158,13 +3183,10 @@ function renderAnalytics() {
         <div class="abv-lbl">${lbl}</div>
       </div>`).join('')}
     </div>
-    <div class="abv-avg">Average <b>${avgAbv}%</b> — the highlighted bar</div>
-  </div>` : ''}
+    <div class="abv-avg">Average <b>${avgAbv}%</b> — the highlighted bar</div>`, ' fade-up')}` : ''}
 
   ${showNvr ? `
-  <div class="chart-card fade-up">
-    <div class="chart-title">New vs. Repeat</div>
-    <div class="chart-sub">How much of your logging is fresh ground</div>
+  ${statsCard('nvr', `New vs. Repeat`, `How much of your logging is fresh ground`, `
     <div class="seg-toggle">
       <div class="seg-btn ${nvrField === 'brewery_name' ? 'active' : ''}" onclick="setNvrField('brewery_name')">Breweries</div>
       <div class="seg-btn ${nvrField === 'beer_type' ? 'active' : ''}" onclick="setNvrField('beer_type')">Styles</div>
@@ -3175,37 +3197,25 @@ function renderAnalytics() {
     <div class="nvr-legend">
       <span class="nvr-legend-item"><span class="nvr-swatch new"></span>First time</span>
       <span class="nvr-legend-item"><span class="nvr-swatch repeat"></span>Repeat</span>
-    </div>
-  </div>` : ''}
+    </div>`, ' fade-up')}` : ''}
 
-  <div class="chart-card">
-    <div class="chart-title">By Day of Week</div>
-    <div class="chart-sub">When you're most likely to open one</div>
+  ${statsCard('dow', `By Day of Week`, `When you're most likely to open one`, `
     <div class="dow-chart">${dowCounts.map((c, i) => `
       <div class="dow-col">
         <div class="dow-bar-wrap"><div class="dow-bar" style="height:${Math.round(c / maxDow * 100)}%;background:${topDowSet.has(i) ? 'var(--orange)' : 'var(--neutral)'};opacity:${topDowSet.has(i) ? 1 : 0.6}"></div></div>
         <div class="dow-lbl">${dowLabels[i]}</div>
         <div class="dow-val">${c}</div>
       </div>`).join('')}
-    </div>
-  </div>
+    </div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Monthly Pattern</div>
-    <div class="chart-sub">${analyticsCompare ? `${analyticsYear} vs ${prevYear}` : 'Seasonal drinking rhythm'}</div>
-    <div style="height:140px;position:relative"><canvas id="chartMonth"></canvas></div>
-  </div>
+  ${statsCard('monthly', `Monthly Pattern`, `${analyticsCompare ? `${analyticsYear} vs ${prevYear}` : 'Seasonal drinking rhythm'}`, `
+    <div style="height:140px;position:relative"><canvas id="chartMonth"></canvas></div>`)}
 
-  <div class="chart-card">
-    <div class="chart-title">Volume Over Time</div>
-    <div class="chart-sub">Monthly check-in count</div>
-    <div style="height:150px;position:relative"><canvas id="chartTimeline"></canvas></div>
-  </div>
+  ${statsCard('volume', `Volume Over Time`, `Monthly check-in count`, `
+    <div style="height:150px;position:relative"><canvas id="chartTimeline"></canvas></div>`)}
 
   ${analyticsYear === 'all' ? `
-  <div class="chart-card">
-    <div class="chart-title">Year Over Year</div>
-    <div class="chart-sub">How your habits have evolved</div>
+  ${statsCard('yoy', `Year Over Year`, `How your habits have evolved`, `
     <div style="overflow-x:auto">
     <table class="data-table">
       <thead><tr><th>Year</th><th>Check-ins</th><th>Styles</th><th>Breweries</th><th>Avg ABV</th></tr></thead>
@@ -3215,77 +3225,85 @@ function renderAnalytics() {
         return `<tr><td style="color:var(--orange);font-weight:700">${y}</td><td>${d.total}</td><td>${d.styles.size}</td><td>${d.breweries.size}</td><td>${abv}</td></tr>`;
       }).join('')}</tbody>
     </table>
-    </div>
-  </div>
-  <div class="chart-card">
-    <div class="chart-title">Volume by Year</div>
-    <div class="chart-sub">Total check-ins per year</div>
-    <div style="height:160px;position:relative"><canvas id="chartYoY"></canvas></div>
-  </div>` : ''}
+    </div>`)}
+  ${statsCard('byyear', `Volume by Year`, `Total check-ins per year`, `
+    <div style="height:160px;position:relative"><canvas id="chartYoY"></canvas></div>`)}` : ''}
   `;
 
-  // ── Draw charts ──
-  requestAnimationFrame(() => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const g = 'rgba(255,255,255,0.04)';
+  // ── Draw charts ── ST11: open cards now; closed cards the first time they open.
+  // Each builder runs at most once per render (buildStatsChart).
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const g = 'rgba(255,255,255,0.04)';
 
-    if (document.getElementById('chartMonth')) {
-      const monthDatasets = analyticsCompare
-        ? [
-            { label: String(analyticsYear), data: monthCounts, backgroundColor: 'rgba(233,115,36,0.85)', borderRadius: 3 },
-            { label: String(prevYear), data: prevMonthCounts, backgroundColor: 'rgba(143,198,64,0.5)', borderRadius: 3 },
-          ]
-        : [{ data: monthCounts, backgroundColor: months.map((_, i) => `rgba(233,115,36,${0.25 + monthCounts[i] / Math.max(...monthCounts, 1) * 0.6})`), borderRadius: 3 }];
-      analyticsCharts.month = new Chart(document.getElementById('chartMonth'), {
-        type: 'bar',
-        data: { labels: months, datasets: monthDatasets },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: analyticsCompare, labels: { font: { size: 10 }, boxWidth: 10 } } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { grid: { color: g }, ticks: { font: { size: 10 } } } } }
-      });
-    }
-    if (document.getElementById('chartTimeline') && tlKeys.length) {
-      analyticsCharts.tl = new Chart(document.getElementById('chartTimeline'), {
-        type: 'line',
-        data: { labels: tlKeys, datasets: [{ data: tlKeys.map(k => timelineMap[k]), borderColor: '#e97324', backgroundColor: 'rgba(233,115,36,0.07)', fill: true, tension: 0.4, pointRadius: 1.5 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 10 } } }, y: { grid: { color: g }, ticks: { font: { size: 10 } } } } }
-      });
-    }
-    if (document.getElementById('chartNvr')) {
-      analyticsCharts.nvr = new Chart(document.getElementById('chartNvr'), {
-        type: 'bar',
-        data: { labels: nvrKeys, datasets: [
-          { label: 'First time', data: nvrNewArr, backgroundColor: '#e97324', borderRadius: 2 },
-          { label: 'Repeat', data: nvrRepeatArr, backgroundColor: 'rgba(90,84,80,0.6)', borderRadius: 2 },
-        ] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 9 } } }, y: { stacked: true, grid: { color: g }, ticks: { font: { size: 10 } } } } }
-      });
-    }
-    if (document.getElementById('chartServe')) {
-      const serveEntries = Object.entries(serveCounts).sort((a, b) => b[1] - a[1]);
-      const topServe = serveEntries.slice(0, 4);
-      const otherCount = serveEntries.slice(4).reduce((sum, [, c]) => sum + c, 0);
-      const topColors = [cssVar('--orange'), cssVar('--lime'), cssVar('--yellow'), cssVar('--creamsicle')];
-      const sl = topServe.map(([label]) => label);
-      const svData = topServe.map(([, c]) => c);
-      const clrs = topServe.map((_, i) => topColors[i]);
-      if (otherCount > 0) {
-        sl.push('Other');
-        svData.push(otherCount);
-        clrs.push(cssVar('--neutral'));
+  statsChartBuilders = {
+    monthly: () => {
+      if (document.getElementById('chartMonth')) {
+        const monthDatasets = analyticsCompare
+          ? [
+              { label: String(analyticsYear), data: monthCounts, backgroundColor: 'rgba(233,115,36,0.85)', borderRadius: 3 },
+              { label: String(prevYear), data: prevMonthCounts, backgroundColor: 'rgba(143,198,64,0.5)', borderRadius: 3 },
+            ]
+          : [{ data: monthCounts, backgroundColor: months.map((_, i) => `rgba(233,115,36,${0.25 + monthCounts[i] / Math.max(...monthCounts, 1) * 0.6})`), borderRadius: 3 }];
+        analyticsCharts.month = new Chart(document.getElementById('chartMonth'), {
+          type: 'bar',
+          data: { labels: months, datasets: monthDatasets },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: analyticsCompare, labels: { font: { size: 10 }, boxWidth: 10 } } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { grid: { color: g }, ticks: { font: { size: 10 } } } } }
+        });
       }
-      analyticsCharts.serve = new Chart(document.getElementById('chartServe'), {
-        type: 'doughnut',
-        data: { labels: sl, datasets: [{ data: svData, backgroundColor: clrs, borderWidth: 0, hoverOffset: 5 }] },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: true, position: 'right', labels: { font: { size: 11 }, padding: 10, boxWidth: 10 } } } }
-      });
-    }
-    if (document.getElementById('chartYoY')) {
-      analyticsCharts.yoy = new Chart(document.getElementById('chartYoY'), {
-        type: 'bar',
-        data: { labels: yoyYears, datasets: [{ data: yoyYears.map(y => byYear[y].total), backgroundColor: 'rgba(233,115,36,0.7)', borderRadius: 5 }] },
-        options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: g } } } }
-      });
-    }
-  });
+    },
+    volume: () => {
+      if (document.getElementById('chartTimeline') && tlKeys.length) {
+        analyticsCharts.tl = new Chart(document.getElementById('chartTimeline'), {
+          type: 'line',
+          data: { labels: tlKeys, datasets: [{ data: tlKeys.map(k => timelineMap[k]), borderColor: '#e97324', backgroundColor: 'rgba(233,115,36,0.07)', fill: true, tension: 0.4, pointRadius: 1.5 }] },
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 10 } } }, y: { grid: { color: g }, ticks: { font: { size: 10 } } } } }
+        });
+      }
+    },
+    nvr: () => {
+      if (document.getElementById('chartNvr')) {
+        analyticsCharts.nvr = new Chart(document.getElementById('chartNvr'), {
+          type: 'bar',
+          data: { labels: nvrKeys, datasets: [
+            { label: 'First time', data: nvrNewArr, backgroundColor: '#e97324', borderRadius: 2 },
+            { label: 'Repeat', data: nvrRepeatArr, backgroundColor: 'rgba(90,84,80,0.6)', borderRadius: 2 },
+          ] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 9 } } }, y: { stacked: true, grid: { color: g }, ticks: { font: { size: 10 } } } } }
+        });
+      }
+    },
+    serving: () => {
+      if (document.getElementById('chartServe')) {
+        const serveEntries = Object.entries(serveCounts).sort((a, b) => b[1] - a[1]);
+        const topServe = serveEntries.slice(0, 4);
+        const otherCount = serveEntries.slice(4).reduce((sum, [, c]) => sum + c, 0);
+        const topColors = [cssVar('--orange'), cssVar('--lime'), cssVar('--yellow'), cssVar('--creamsicle')];
+        const sl = topServe.map(([label]) => label);
+        const svData = topServe.map(([, c]) => c);
+        const clrs = topServe.map((_, i) => topColors[i]);
+        if (otherCount > 0) {
+          sl.push('Other');
+          svData.push(otherCount);
+          clrs.push(cssVar('--neutral'));
+        }
+        analyticsCharts.serve = new Chart(document.getElementById('chartServe'), {
+          type: 'doughnut',
+          data: { labels: sl, datasets: [{ data: svData, backgroundColor: clrs, borderWidth: 0, hoverOffset: 5 }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: true, position: 'right', labels: { font: { size: 11 }, padding: 10, boxWidth: 10 } } } }
+        });
+      }
+    },
+    byyear: () => {
+      if (document.getElementById('chartYoY')) {
+        analyticsCharts.yoy = new Chart(document.getElementById('chartYoY'), {
+          type: 'bar',
+          data: { labels: yoyYears, datasets: [{ data: yoyYears.map(y => byYear[y].total), backgroundColor: 'rgba(233,115,36,0.7)', borderRadius: 5 }] },
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: g } } } }
+        });
+      }
+    },
+  };
+  requestAnimationFrame(() => [...statsOpen].forEach(buildStatsChart));
 }
 
 function setAnalyticsYear(year, btn) {
