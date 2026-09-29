@@ -377,12 +377,18 @@ test('HL5: scroll is restored after a dirty rebuild too', () => {
   assert.equal(win.scrollY, 900);
 });
 
-test('HL5: tapping My Beers while on it keeps the current position', () => {
-  const { ctx, win } = app(log(130));
+test('HL5: tapping Beers while on My Beers jumps to the top without a rebuild', () => {
+  const { ctx, els, win, io } = app(log(130));
   ctx.switchTab('history');
+  io.fire();                                         // 100 cards loaded
   win.scrollY = 700;
   ctx.switchTab('history');
-  assert.equal(win.scrollY, 700);
+  assert.equal(win.scrollY, 0);
+  assert.equal(els.builds, 1);
+  assert.equal(cards(els.historyList.innerHTML).length, 100);
+  ctx.switchTab('analytics');                        // and the top is what is saved
+  ctx.switchTab('history');
+  assert.equal(win.scrollY, 0);
 });
 
 test('HL5: leaving another tab does not overwrite the saved My Beers scroll', () => {

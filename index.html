@@ -4333,7 +4333,8 @@ function showToast(msg, iconName) {
 // TABS
 // ═══════════════════════════════════════════════════════════════
 function switchTab(tab) {
-  if (currentTab === 'history') historyScroll = window.scrollY;   // HL5: before the screen hides
+  // HL5: save My Beers' scroll before the screen hides; re-tapping Beers jumps to the top.
+  if (currentTab === 'history') historyScroll = tab === 'history' ? 0 : window.scrollY;
   currentTab = tab;
   document.querySelectorAll('.bn-item').forEach(t => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
