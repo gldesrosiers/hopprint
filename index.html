@@ -299,6 +299,7 @@ body.input-focused .fab-feedback { display: none; }
   transition: border-color 0.18s;
 }
 .entry-card:hover { border-color: rgba(233,115,36,0.25); }
+.history-sentinel { height: 1px; }
 .entry-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .entry-beer { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-height: 1.2; }
 .entry-brewery { font-size: 13px; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
@@ -2368,45 +2369,64 @@ function save() {
 // ═══════════════════════════════════════════════════════════════
 // HISTORY
 // ═══════════════════════════════════════════════════════════════
-function renderHistory() {
+const HISTORY_BATCH = 50;   // HL2 — cards rendered per batch
+let historyFiltered = [];    // sorted, filtered entries the batches slice from
+let historyLoaded = 0;       // cards currently in #historyList
+
+// HL9: newest first by created_at, not array order (saveEdit can move a date).
+// Undated entries sort last.
+function historyTime(e) { return Date.parse(e.created_at) || 0; }
+
+// Invisible marker after the last card; present only while more remain (HL3).
+function historySentinel() {
+  return historyLoaded < historyFiltered.length ? '<div class="history-sentinel" id="historySentinel" aria-hidden="true"></div>' : '';
+}
+
+// The one card template (HL6: no second path). `animate` adds fade-up.
+function historyCard(e, animate) {
+  const date = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+  const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
+  const occ = OCCASIONS.find(o => o.id === e.occasion);
+  const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
+  return `<div class="entry-card${animate ? ' fade-up' : ''}" onclick="openEdit(${idArg(e.id)})">
+    <div class="entry-top">
+      <div>
+        <div class="entry-beer">${esc(e.beer_name)}</div>
+        <div class="entry-brewery">${esc(e.brewery_name)}${loc ? ` · ${esc(loc)}` : ''}</div>
+      </div>
+    </div>
+    <div class="entry-tags">
+      ${e.beer_type ? `<span class="etag style">${esc(e.beer_type)}</span>` : ''}
+      ${e.serving_type ? `<span class="etag serve">${esc(e.serving_type)}</span>` : ''}
+      ${e.beer_abv ? `<span class="etag">${esc(e.beer_abv)}% ABV</span>` : ''}
+      ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${esc(e.venue_name)}</span>` : ''}
+      ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
+    </div>
+    ${e.comment ? `<div class="entry-notes-preview">"${esc(e.comment.slice(0,120))}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
+    <div class="entry-foot">
+      <div class="entry-date">${date}${e.purchase_venue ? ` · ${esc(e.purchase_venue)}` : ''}</div>
+      <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
+    </div>
+    ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
+  </div>`;
+}
+
+// HL9 + HL2: sort, filter, and render the first `count` cards (min one batch).
+function renderHistory(count = HISTORY_BATCH) {
   const q = (document.getElementById('historySearch').value || '').toLowerCase();
-  const filtered = entries.filter(e =>
+  historyFiltered = entries.filter(e =>
     !q || [e.beer_name, e.brewery_name, e.venue_name, e.beer_type].some(v => v && v.toLowerCase().includes(q))
-  );
+  ).sort((a, b) => historyTime(b) - historyTime(a));
   const list = document.getElementById('historyList');
-  if (!filtered.length) {
+  if (!historyFiltered.length) {
+    historyLoaded = 0;
     list.innerHTML = entries.length
       ? `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>No matches found.</p></div>`
       : `<div class="empty"><div class="empty-icon">${icon('beers', 44, 2.2)}</div><p>Your beer log starts here.\nNothing to see yet — go check something in.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log Your First Beer</button></div>`;
     return;
   }
-  list.innerHTML = filtered.map(e => {
-    const date = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
-    const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
-    const occ = OCCASIONS.find(o => o.id === e.occasion);
-    const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
-    return `<div class="entry-card fade-up" onclick="openEdit(${idArg(e.id)})">
-      <div class="entry-top">
-        <div>
-          <div class="entry-beer">${esc(e.beer_name)}</div>
-          <div class="entry-brewery">${esc(e.brewery_name)}${loc ? ` · ${esc(loc)}` : ''}</div>
-        </div>
-      </div>
-      <div class="entry-tags">
-        ${e.beer_type ? `<span class="etag style">${esc(e.beer_type)}</span>` : ''}
-        ${e.serving_type ? `<span class="etag serve">${esc(e.serving_type)}</span>` : ''}
-        ${e.beer_abv ? `<span class="etag">${esc(e.beer_abv)}% ABV</span>` : ''}
-        ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${esc(e.venue_name)}</span>` : ''}
-        ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
-      </div>
-      ${e.comment ? `<div class="entry-notes-preview">"${esc(e.comment.slice(0,120))}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
-      <div class="entry-foot">
-        <div class="entry-date">${date}${e.purchase_venue ? ` · ${esc(e.purchase_venue)}` : ''}</div>
-        <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
-      </div>
-      ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
-    </div>`;
-  }).join('');
+  historyLoaded = Math.min(Math.max(count, HISTORY_BATCH), historyFiltered.length);
+  list.innerHTML = historyFiltered.slice(0, historyLoaded).map(e => historyCard(e, true)).join('') + historySentinel();
 }
 
 // ═══════════════════════════════════════════════════════════════

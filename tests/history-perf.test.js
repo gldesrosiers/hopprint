@@ -37,10 +37,21 @@ function app(entries, { query = '' } = {}) {
     constFrom(script, 'ICON_PATHS'),
     constFrom(script, 'OCCASIONS'),
     constFrom(script, 'RATING_BANDS'),
-    ...['icon', 'idArg', 'esc', 'renderHistory'].map(extractFunction),
+    ...historyState(),
+    ...['icon', 'idArg', 'esc', ...HISTORY_FNS].map(extractFunction),
   ].join('\n'), ctx);
-  return { ctx, els };
+  const get = name => vm.runInContext(name, ctx);
+  return { ctx, els, get };
 }
+
+// The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
+const historyState = () => [...script.matchAll(/^(?:const HISTORY_BATCH|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
+const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory'];
+
+// Rendered cards, in DOM order, by beer name.
+const cards = html => [...html.matchAll(/<div class="entry-beer">([^<]*)<\/div>/g)].map(m => m[1]);
+// n entries, stored oldest first so array order is the opposite of display order.
+const log = n => Array.from({ length: n }, (_, i) => entry(i));
 
 const entry = (i, extra = {}) => ({
   id: `id-${i}`, beer_name: `Beer ${i}`, brewery_name: `Brewery ${i}`,
@@ -89,10 +100,93 @@ test('HL11: esc() handles & first, falsy → empty, numbers → text', () => {
   assert.equal(ctx.esc(6.5), '6.5');
 });
 
+// ── HL2 / HL9 batching and sort ─────────────────────────────────
+test('HL2: initial render shows exactly one batch of 50, newest first, with a sentinel', () => {
+  const { ctx, els, get } = app(log(130));
+  ctx.renderHistory();
+  const names = cards(els.historyList.innerHTML);
+  assert.equal(get('HISTORY_BATCH'), 50);
+  assert.equal(names.length, 50);
+  assert.deepEqual(names.slice(0, 3), ['Beer 129', 'Beer 128', 'Beer 127']);
+  assert.equal(names[49], 'Beer 80');
+  assert.equal(get('historyLoaded'), 50);
+  assert.equal(get('historyFiltered').length, 130);
+  assert.match(els.historyList.innerHTML, /<div class="history-sentinel" id="historySentinel" aria-hidden="true"><\/div>$/);
+});
+
+test('HL2: a log smaller than a batch renders every card and no sentinel', () => {
+  const { ctx, els, get } = app(log(12));
+  ctx.renderHistory();
+  assert.equal(cards(els.historyList.innerHTML).length, 12);
+  assert.equal(get('historyLoaded'), 12);
+  assert.doesNotMatch(els.historyList.innerHTML, /history-sentinel/);
+});
+
+test('HL2: exactly one batch renders all 50 with no sentinel', () => {
+  const { ctx, els } = app(log(50));
+  ctx.renderHistory();
+  assert.equal(cards(els.historyList.innerHTML).length, 50);
+  assert.doesNotMatch(els.historyList.innerHTML, /history-sentinel/);
+});
+
+test('HL2: renderHistory(count) renders up to count, never less than a batch', () => {
+  const { ctx, els, get } = app(log(200));
+  ctx.renderHistory(150);
+  assert.equal(cards(els.historyList.innerHTML).length, 150);
+  ctx.renderHistory(10);
+  assert.equal(get('historyLoaded'), 50);
+  ctx.renderHistory(999);
+  assert.equal(get('historyLoaded'), 200);
+  assert.doesNotMatch(els.historyList.innerHTML, /history-sentinel/);
+});
+
+test('HL2: first-render cards fade up', () => {
+  const { ctx, els } = app(log(3));
+  ctx.renderHistory();
+  assert.equal((els.historyList.innerHTML.match(/class="entry-card fade-up"/g) || []).length, 3);
+});
+
+test('empty log and no-match states are unchanged', () => {
+  const empty = app([]);
+  empty.ctx.renderHistory();
+  assert.match(empty.els.historyList.innerHTML, /Your beer log starts here/);
+  assert.match(empty.els.historyList.innerHTML, /Log Your First Beer/);
+  assert.equal(empty.get('historyLoaded'), 0);
+  const none = app(log(5), { query: 'zzz' });
+  none.ctx.renderHistory();
+  assert.match(none.els.historyList.innerHTML, /No matches found\./);
+  assert.doesNotMatch(none.els.historyList.innerHTML, /history-sentinel/);
+});
+
+test('search filters the full log, then batches the matches', () => {
+  const entries = log(300);
+  entries[3].venue_name = 'Taproom';          // old enough to be far past the first batch
+  const { ctx, els, get } = app(entries, { query: 'tAPROOM' });
+  ctx.renderHistory();
+  assert.deepEqual(cards(els.historyList.innerHTML), ['Beer 3']);
+  assert.equal(get('historyFiltered').length, 1);
+});
+
+test('HL9: an entry whose date was edited to be the newest sorts to the top', () => {
+  const entries = log(80).reverse();           // newest first, as stored after a pull
+  entries[70].created_at = '2027-03-01T18:30'; // saveEdit writes datetime-local, no re-sort
+  const { ctx, els } = app(entries);
+  ctx.renderHistory();
+  assert.equal(cards(els.historyList.innerHTML)[0], 'Beer 9');
+});
+
+test('HL9: undated entries sort last', () => {
+  const entries = log(3);
+  entries[2].created_at = '';
+  const { ctx, get } = app(entries);
+  ctx.renderHistory();
+  assert.deepEqual(get('historyFiltered').map(e => e.beer_name), ['Beer 1', 'Beer 0', 'Beer 2']);
+});
+
 // ── Byte-identical preservation against the branch base ─────────
 // Only functions this workplan deliberately touches may differ.
 const HL_ALLOWED = {
-  renderHistory: 'HL11 esc() on user text',
+  renderHistory: 'HL11 esc() on user text; HL9 sort + HL2 first batch (card markup moved to historyCard)',
   esc: 'HL11 escapes &',
 };
 
