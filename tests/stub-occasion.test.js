@@ -400,3 +400,79 @@ test('TK7: heading uses the headline font with an under-fill stroke; count is or
   assert.match(rule('.history-title'), /font-family: var\(--font-headline\).*text-transform: uppercase.*-webkit-text-stroke: 5px [^;]+; paint-order: stroke fill/);
   assert.match(rule('.history-count'), /font-family: var\(--font-headline\).*color: var\(--orange\)/);
 });
+
+// ── OC-T1 occasion pills ─────────────────────────────────────
+
+test('OC-T1: occasions wrap as inline pills', () => {
+  assert.match(rule('.occasion-grid'), /display: flex; flex-wrap: wrap; gap: 7px;/);
+  const pill = rule('.occ-pill');
+  for (const d of ['display: inline-flex', 'align-items: center', 'gap: 6px', 'padding: 7px 10px', 'border-radius: 999px',
+                   'white-space: nowrap', 'font-size: 13px', 'background: var(--charcoal2)', 'border: 1px solid var(--border)',
+                   'color: var(--text-muted)']) {
+    assert.ok(pill.includes(d), d);
+  }
+  assert.doesNotMatch(rule('.occ-pill .occ-icon'), /height|margin/);
+});
+
+test('OC2 / IC4: selected and unselected pills share weight 500', () => {
+  assert.match(rule('.occ-pill'), /font-weight: 500;/);
+  const weightRules = [...style.matchAll(/(^|\n)([^{}\n]*occ-pill[^{}\n]*)\{([^}]*)\}/g)].filter(m => /font-weight/.test(m[3])).map(m => m[2].trim());
+  assert.deepEqual(weightRules, ['.occ-pill'], 'no state rule overrides the weight');
+});
+
+test('OC-T1: buildOccasionGrid markup is unchanged: icon span at 15px / 2.2, then the label', () => {
+  assert.match(extractFunction('buildOccasionGrid'), /<span class="occ-icon">\$\{icon\(o\.iconName, 15, 2\.2\)\}<\/span>\$\{o\.label\}/);
+});
+
+// ── OC-T2 context tags removed ───────────────────────────────
+
+// submitCheckin + resetForm against a filled-in form; side effects stubbed.
+function checkinApp() {
+  const form = { beerName: 'Pils', breweryName: 'Brewery', breweryCity: '', breweryState: '', beerStyle: '', abv: '',
+    venueWhere: '', purchaseVenue: '', checkinDate: '2026-09-30T18:00', notes: '' };
+  const els = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, { value: v, focus() {} }]));
+  const queried = [];
+  const ctx = vm.createContext({
+    entries: [], selectedServe: 'Draft', selectedOccasion: 'bar-taproom', currentPromptIdx: 0, NOTE_PROMPTS: ['a', 'b'],
+    document: { getElementById: id => els[id] || null, querySelectorAll: sel => { queried.push(sel); return []; } },
+    newId: () => 'new-id', save() {}, queueSync() {}, upsertBeerDB() {}, upsertBreweryDB() {}, buildLiveLists() {},
+    showToast() {}, updateHeaderMeta() {}, openRatingModal() {}, setDefaultDate() {}, setPrompt() {},
+  });
+  vm.runInContext(['submitCheckin', 'resetForm'].map(extractFunction).join('\n'), ctx);
+  return { ctx, queried };
+}
+
+test('OC1: a new check-in writes occasion_ctx: [] and keeps its occasion', () => {
+  const { ctx } = checkinApp();
+  ctx.submitCheckin();
+  const e = ctx.entries[0];
+  assert.deepEqual([...e.occasion_ctx], []);
+  assert.equal(e.occasion, 'bar-taproom');
+  assert.ok(Object.keys(e).indexOf('occasion_ctx') === Object.keys(e).indexOf('occasion') + 1, 'record shape unchanged');
+});
+
+test('OC1: resetForm clears serve and occasion, and touches no context pills', () => {
+  const { ctx, queried } = checkinApp();
+  ctx.submitCheckin();
+  assert.equal(vm.runInContext('selectedServe + "|" + selectedOccasion', ctx), '|');
+  assert.deepEqual(queried, ['.serve-pill', '#occasionGrid .occ-pill']);
+});
+
+test('OC1: the form, CSS, and script carry no context-tag code', () => {
+  for (const name of ['CTX_TAGS', 'selectedCtx', 'buildCtxPills', 'toggleCtx', 'ctxPills', 'ctx-pill']) {
+    assert.ok(!html.includes(name), `${name} gone`);
+  }
+});
+
+test('OC1: the edit modal still shows legacy occasion_ctx values', () => {
+  const body = { innerHTML: '' };
+  const ctx = vm.createContext({
+    entries: [{ id: 'a', beer_name: 'Pils', occasion: 'bar-taproom', occasion_ctx: ['With friends', 'Weekend'] }],
+    editingId: null, editServe: '',
+    document: { getElementById: id => (id === 'editModalBody' ? body : { classList: { add() {} } }) },
+  });
+  vm.runInContext([constFrom('ICON_PATHS'), constFrom('OCCASIONS'), 'const SERVE_TYPES = [];',
+    ...['icon', 'idArg', 'esc', 'openEdit'].map(extractFunction)].join('\n'), ctx);
+  ctx.openEdit('a');
+  assert.match(shown(body.innerHTML), /Bar \/ Taproom · With friends, Weekend/);
+});

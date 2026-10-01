@@ -196,33 +196,24 @@ body.input-focused .fab-feedback { display: none; }
 .ac-drop::-webkit-scrollbar-thumb { background: var(--text-dim); border-radius: 3px; }
 
 /* ── OCCASION PILLS ─────────────────────────────────────────── */
-.occasion-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+/* OC2: one weight in both states, so selecting never widens a pill and
+   reflows the wrapped row; selection is color and border only. */
+.occasion-grid { display: flex; flex-wrap: wrap; gap: 7px; }
 .occ-pill {
-  padding: 9px 10px 8px;
-  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   font-family: var(--font-body);
-  font-size: 13px; font-weight: 500; letter-spacing: 0.3px;
+  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap;
   color: var(--text-muted);
-  cursor: pointer; text-align: center;
+  cursor: pointer;
   transition: all 0.15s;
   background: var(--charcoal2);
 }
 .occ-pill:hover { border-color: var(--orange-dim); color: var(--text); }
 .occ-pill.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
-.occ-pill .occ-icon { display: flex; align-items: center; justify-content: center; height: 26px; margin-bottom: 2px; }
-
-.ctx-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.ctx-pill {
-  padding: 5px 11px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  font-size: 12px; font-weight: 500; letter-spacing: 0.3px;
-  color: var(--text-dim); cursor: pointer;
-  background: var(--charcoal2);
-  transition: all 0.15s;
-}
-.ctx-pill.sel { background: rgba(143,198,64,0.1); border-color: rgba(143,198,64,0.4); color: var(--lime); }
+.occ-pill .occ-icon { display: flex; }
 
 /* ── SERVE PILLS ────────────────────────────────────────────── */
 .serve-pills { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -1100,7 +1091,6 @@ body.first-sync .first-sync-hint { display: block; }
 
   <div class="sec-label">Occasion</div>
   <div class="occasion-grid" id="occasionGrid"></div>
-  <div class="ctx-pills" id="ctxPills"></div>
 
   <div class="sec-label">Serving Format</div>
   <div class="serve-pills" id="servePills"></div>
@@ -1411,7 +1401,6 @@ if (wishlist.some(w => !w.id)) {
 }
 let selectedServe = '';
 let selectedOccasion = '';
-let selectedCtx = [];
 let discoverMode = '';
 // One card on screen at a time — the rest of a generated batch sits here as
 // a queue so dismissing a pick can pull the next-best one instantly instead
@@ -1444,8 +1433,6 @@ const OCCASIONS = [
   { id:'dining', iconName:'occasion-dining', label:'Dining Out' },
   { id:'traveling', iconName:'occasion-traveling', label:'Traveling' },
 ];
-
-const CTX_TAGS = ['With food','With friends','Outdoors','Celebrating','Trying something new','Winding down','Working through a pack','Post-work','Weekend'];
 
 // ═══════════════════════════════════════════════════════════════
 // FEEDBACK (Supabase)
@@ -2045,7 +2032,6 @@ function upsertBreweryDB(name, details) { upsertDetail(BREWERY_DB, name, details
 function init() {
   setDefaultDate();
   buildOccasionGrid('occasionGrid', OCCASIONS, v => { selectedOccasion = v; }, () => selectedOccasion);
-  buildCtxPills();
   buildServePills();
   buildModeGrid();
   setPrompt();
@@ -2097,18 +2083,6 @@ function selectOccasion(containerId, id, e) {
   const newVal = current === id ? '' : id;
   el._setter(newVal);
   pills.forEach(p => p.classList.toggle('sel', p.id === `occ-${containerId}-${id}` && newVal === id));
-}
-
-function buildCtxPills() {
-  const el = document.getElementById('ctxPills');
-  el.innerHTML = CTX_TAGS.map(t => `
-    <div class="ctx-pill" onclick="toggleCtx(this,'${t}')">${t}</div>`).join('');
-}
-
-function toggleCtx(el, tag) {
-  const idx = selectedCtx.indexOf(tag);
-  if (idx >= 0) { selectedCtx.splice(idx, 1); el.classList.remove('sel'); }
-  else { selectedCtx.push(tag); el.classList.add('sel'); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2234,7 +2208,7 @@ function submitCheckin() {
     created_at: document.getElementById('checkinDate').value,
     serving_type: selectedServe,
     occasion: selectedOccasion,
-    occasion_ctx: [...selectedCtx],
+    occasion_ctx: [],   // OC1: context tags left the form; the field stays in the record
     comment: document.getElementById('notes').value.trim(),
     rating: null,
     rating_mode: null,
@@ -2266,10 +2240,8 @@ function resetForm() {
   setDefaultDate();
   selectedServe = '';
   selectedOccasion = '';
-  selectedCtx = [];
   document.querySelectorAll('.serve-pill').forEach(p => p.classList.remove('sel'));
   document.querySelectorAll('#occasionGrid .occ-pill').forEach(p => p.classList.remove('sel'));
-  document.querySelectorAll('.ctx-pill').forEach(p => p.classList.remove('sel'));
   currentPromptIdx = (currentPromptIdx + 1) % NOTE_PROMPTS.length;
   setPrompt();
 }

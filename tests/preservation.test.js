@@ -16,7 +16,7 @@ const BASELINE = 'eb1a746';
 
 const ALLOWED_CHANGES = {
   // Phase 2 — write sites queue uploads (SY6), client uuids (SY4), import skips undated rows (SY7d)
-  submitCheckin: 'SY4 uuid id + SY6 queue',
+  submitCheckin: 'SY4 uuid id + SY6 queue; OC1 occasion_ctx: []',
   saveRating: 'SY6 queue; HL6 refreshHistory()',
   saveEdit: 'SY6 queue; HL6 refreshHistory()',
   deleteEntry: 'SY6 queue delete; HL6 refreshHistory()',
@@ -61,6 +61,15 @@ const ALLOWED_CHANGES = {
   // History perf (HISTORY_PERF_WORKPLAN.md)
   esc: 'HL11 escapes & too; String() so numeric values do not throw',
   save: 'HL4 marks the My Beers list dirty; ST10 and Stats; PT1 and Print',
+  // Stub + occasion (STUB_OCCASION_WORKPLAN.md) — OC1 context tags leave the form
+  init: 'OC1 drops the buildCtxPills() call (see the init() test below)',
+  resetForm: 'OC1 drops the two context-tag reset lines',
+};
+
+// Original functions deliberately deleted, each with the decision that removed it.
+const ALLOWED_REMOVALS = {
+  buildCtxPills: 'OC1 context tags removed from the check-in form',
+  toggleCtx: 'OC1 context tags removed from the check-in form',
 };
 
 let baselineScript;
@@ -77,22 +86,22 @@ test('baseline build is available', { skip: baselineScript ? false : 'git histor
 test('every original function still exists', { skip: !baselineScript }, () => {
   const now = allFunctions(script);
   const missing = Object.keys(allFunctions(baselineScript)).filter(n => !(n in now));
-  assert.deepEqual(missing, []);
+  assert.deepEqual(missing, Object.keys(ALLOWED_REMOVALS));
 });
 
 test('original functions are byte-identical except the listed, justified ones', { skip: !baselineScript }, () => {
   const before = allFunctions(baselineScript);
   const now = allFunctions(script);
   const changed = Object.keys(before).filter(n => before[n] !== now[n]);
-  const unexpected = changed.filter(n => !(n in ALLOWED_CHANGES));
+  const unexpected = changed.filter(n => !(n in ALLOWED_CHANGES) && !(n in ALLOWED_REMOVALS));
   assert.deepEqual(unexpected, [], `changed without a listed reason: ${unexpected.join(', ')}`);
   // Keep the list honest: an entry that no longer differs should be removed.
   const stale = Object.keys(ALLOWED_CHANGES).filter(n => !changed.includes(n));
   assert.deepEqual(stale, [], `listed but unchanged: ${stale.join(', ')}`);
 });
 
-test('init() is untouched — the gate calls it, it does not call the gate', { skip: !baselineScript }, () => {
-  assert.equal(allFunctions(script).init, allFunctions(baselineScript).init);
+test('init() is untouched but for OC1 — the gate calls it, it does not call the gate', { skip: !baselineScript }, () => {
+  assert.equal(allFunctions(script).init, allFunctions(baselineScript).init.replace('  buildCtxPills();\n', ''));
   assert.match(script, /\nauthBoot\(\);\n/);
   assert.doesNotMatch(script, /\ninit\(\);\n/);
 });
