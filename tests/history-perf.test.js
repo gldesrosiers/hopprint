@@ -38,6 +38,7 @@ function app(entries, { query = '', observer = true } = {}) {
   const els = {
     builds: 0,
     historySearch: { value: query },
+    historyCount: { textContent: '' },
     historyList: {
       get innerHTML() { return markup; },
       // A write to the visible list can clamp the page's scroll; model the
@@ -110,7 +111,7 @@ function app(entries, { query = '', observer = true } = {}) {
 
 // The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
 const historyState = () => [...script.matchAll(/^(?:const HISTORY_\w+|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
-const HISTORY_FNS = ['historyTime', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch',
+const HISTORY_FNS = ['historyTime', 'stubBeerKey', 'buildStubMeta', 'stubDate', 'isRepeatMilestone', 'ordinalLabel', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch',
   'watchHistorySentinel', 'restoreScroll', 'enterHistory', 'save', 'switchTab',
   'refreshHistory', 'onHistorySearch', 'applyHistorySearch', 'closeModal', 'saveEdit', 'deleteEntry', 'saveRating', 'refreshAfterPull', 'newId', 'handleImport'];
 const EDIT_FIELDS = ['e_beerName', 'e_breweryName', 'e_city', 'e_state', 'e_style', 'e_abv', 'e_venue', 'e_purchase', 'e_date', 'e_notes'];
@@ -140,22 +141,23 @@ test('HL11: user text with " \' < & renders as literal text on a card', () => {
   ctx.renderHistory();
   const html = els.historyList.innerHTML;
   assert.doesNotMatch(html, /<b>Hops<\/b>/, 'no raw user markup reaches the DOM');
-  for (const cls of ['entry-beer', 'entry-brewery', 'etag style', 'etag serve', 'entry-notes-preview']) {
+  for (const cls of ['entry-beer', 'stub-sub', 'stub-notes']) {
     const m = html.match(new RegExp(`<(?:div|span) class="${cls}">([\\s\\S]*?)</(?:div|span)>`));
     assert.ok(m, `${cls} present`);
     assert.ok(shown(m[1]).includes(nasty), `${cls} shows the literal text`);
   }
-  assert.ok(shown(html).includes(`${nasty}, ST`), 'city/state');
-  assert.ok(shown(html).includes(`· ${nasty}`), 'purchase venue');
-  assert.match(html, /6\.5% ABV/);
+  assert.equal(shown(html.match(/<div class="stub-sub">([\s\S]*?)<\/div>/)[1]), `${nasty} · ${nasty}`, 'brewery · style');
+  const chips = [...html.matchAll(/<span class="stub-chip">([\s\S]*?)<\/span>/g)].map(m => shown(m[1]));
+  assert.deepEqual(chips, ['6.5%', nasty, nasty, nasty], 'ABV, serve, venue, purchase venue');
+  assert.ok(!shown(html).includes(', ST'), 'city/state leave the card (TK5)');
 });
 
 test('HL11: comment is escaped after truncation, so an entity is never split', () => {
   const comment = 'x'.repeat(118) + '&&&&';
   const { ctx, els } = app([entry(1, { comment })]);
   ctx.renderHistory();
-  const preview = els.historyList.innerHTML.match(/<div class="entry-notes-preview">([\s\S]*?)<\/div>/)[1];
-  assert.equal(shown(preview), `"${'x'.repeat(118)}&&…"`);
+  const preview = els.historyList.innerHTML.match(/<div class="stub-notes">([\s\S]*?)<\/div>/)[1];
+  assert.equal(shown(preview), `${'x'.repeat(118)}&&…`);
   assert.doesNotMatch(preview, /&(?!amp;|quot;|lt;)/, 'every & is a whole entity');
 });
 
@@ -471,7 +473,7 @@ test('HL6: rating a card from My Beers keeps the loaded count and scroll', () =>
   vm.runInContext('ratingEntryId = "id-100"', a.ctx);
   a.ctx.saveRating(90, 'live_button');
   assert.equal(cards(a.els.historyList.innerHTML).length, 150);
-  assert.match(a.els.historyList.innerHTML, /onclick="openEdit\('id-100'\)">[\s\S]*?etag rated/);
+  assert.equal(a.els.historyList.innerHTML.match(/onclick="openEdit\('id-100'\)">[\s\S]*?class="stub-rating (\w+)"/)[1], 'definitely');
   assert.equal(a.win.scrollY, 4000);
 });
 
