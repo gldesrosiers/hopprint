@@ -196,33 +196,24 @@ body.input-focused .fab-feedback { display: none; }
 .ac-drop::-webkit-scrollbar-thumb { background: var(--text-dim); border-radius: 3px; }
 
 /* ── OCCASION PILLS ─────────────────────────────────────────── */
-.occasion-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+/* OC2: one weight in both states, so selecting never widens a pill and
+   reflows the wrapped row; selection is color and border only. */
+.occasion-grid { display: flex; flex-wrap: wrap; gap: 7px; }
 .occ-pill {
-  padding: 9px 10px 8px;
-  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   font-family: var(--font-body);
-  font-size: 13px; font-weight: 500; letter-spacing: 0.3px;
+  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap;
   color: var(--text-muted);
-  cursor: pointer; text-align: center;
+  cursor: pointer;
   transition: all 0.15s;
   background: var(--charcoal2);
 }
 .occ-pill:hover { border-color: var(--orange-dim); color: var(--text); }
 .occ-pill.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
-.occ-pill .occ-icon { display: flex; align-items: center; justify-content: center; height: 26px; margin-bottom: 2px; }
-
-.ctx-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.ctx-pill {
-  padding: 5px 11px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  font-size: 12px; font-weight: 500; letter-spacing: 0.3px;
-  color: var(--text-dim); cursor: pointer;
-  background: var(--charcoal2);
-  transition: all 0.15s;
-}
-.ctx-pill.sel { background: rgba(143,198,64,0.1); border-color: rgba(143,198,64,0.4); color: var(--lime); }
+.occ-pill .occ-icon { display: flex; }
 
 /* ── SERVE PILLS ────────────────────────────────────────────── */
 .serve-pills { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -286,36 +277,72 @@ body.input-focused .fab-feedback { display: none; }
 .toast.show { transform: translateX(-50%) translateY(0); }
 
 /* ── HISTORY ────────────────────────────────────────────────── */
+/* TK7: heading + total count. The stroke paints under the fill (paint-order),
+   a near-black outline matching the mockup on --charcoal. */
+.history-heading { display: flex; align-items: flex-end; gap: 9px; margin-bottom: 14px; }
+.history-title {
+  font-family: var(--font-headline); font-size: 40px; font-weight: 800; line-height: 0.86;
+  color: var(--text); text-transform: uppercase; white-space: nowrap;
+  -webkit-text-stroke: 5px rgba(0,0,0,0.47); paint-order: stroke fill;
+}
+.history-count { font-family: var(--font-headline); font-size: 22px; font-weight: 800; line-height: 1; color: var(--orange); padding-bottom: 3px; }
 .search-wrap { position: relative; margin-bottom: 14px; }
 .search-wrap input { padding-left: 38px; }
 .search-wrap .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
 
+/* TK: ticket-stub cards. The notches are page-colored circles clipped by the
+   card, so they assume stubs sit on --charcoal. */
 .entry-card {
   background: var(--charcoal2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 15px; margin-bottom: 9px;
+  overflow: hidden; margin-bottom: 9px;
   cursor: pointer;
   transition: border-color 0.18s;
 }
 .entry-card:hover { border-color: rgba(233,115,36,0.25); }
 .history-sentinel { height: 1px; }
-.entry-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.entry-beer { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-height: 1.2; }
-.entry-brewery { font-size: 13px; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
-.entry-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.stub-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 8px 14px; background: var(--charcoal3);
+  border-bottom: 1px dashed rgba(245,240,232,0.22);
+  font-family: var(--font-body); font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap;
+}
+.stub-date { color: var(--text-muted); letter-spacing: 1.8px; text-transform: uppercase; }
+.stub-no { color: var(--text-dim); letter-spacing: 1.5px; }
+.stub-body { position: relative; padding: 13px 14px 14px; }
+.stub-notch { position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--charcoal); }
+.stub-notch.left { left: -9px; }
+.stub-notch.right { right: -9px; }
+.stub-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.stub-title { min-width: 0; }
+.entry-beer { font-family: var(--font-display); font-size: 17px; line-height: 1.15; color: var(--text); }
+.stub-sub { font-size: 12px; font-weight: 300; line-height: 1.4; color: var(--text-muted); margin-top: 3px; }
+.stub-rating {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; cursor: pointer;
+  font-size: 8.5px; font-weight: 700; line-height: 1; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+}
+.stub-rating.definitely { color: var(--lime); }
+.stub-rating.maybe { color: var(--creamsicle); }
+.stub-rating.never, .stub-rating.unrated { color: var(--text-dim); }
+.stub-rating.unrated span { color: var(--orange); }
+.stub-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
+.stub-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  padding: 5px 8px; border-radius: 999px; border: 1px solid transparent;
+  background: var(--charcoal3); color: var(--text-muted);
+  font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 1px;
+}
+.stub-chip.first { background: rgba(143,198,64,0.15); border-color: rgba(143,198,64,0.3); color: var(--lime); }
+.stub-chip.milestone { background: var(--orange-glow); border-color: var(--border-orange); color: var(--orange); }
+.stub-notes { font-size: 13px; font-weight: 300; line-height: 1.45; color: var(--text-muted); margin-top: 10px; }
+/* Style tag on Discover's random-beer card. */
 .etag {
   font-size: 11px; padding: 2px 8px; border-radius: 4px;
   background: var(--charcoal3); color: var(--text-muted);
   border: 1px solid var(--border); letter-spacing: 0.3px;
 }
 .etag.style { color: var(--lime); border-color: rgba(143,198,64,0.2); background: rgba(143,198,64,0.06); }
-.etag.venue { display: inline-flex; align-items: center; gap: 5px; }
-.etag.serve { color: var(--orange); border-color: var(--orange-glow); background: var(--orange-glow2); }
-.entry-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
-.entry-date { font-size: 11px; color: var(--text-dim); font-weight: 300; }
-.entry-occ { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
-.entry-notes-preview { font-size: 12px; color: var(--text-muted); margin-top: 8px; font-style: italic; border-top: 1px solid var(--border); padding-top: 7px; font-weight: 300; line-height: 1.4; }
 
 /* ── EDIT MODAL ─────────────────────────────────────────────── */
 .modal-backdrop {
@@ -388,7 +415,6 @@ body.input-focused .fab-feedback { display: none; }
   padding: 3px 9px; border-radius: 20px; cursor: pointer;
 }
 .rate-badge:hover { background: var(--orange-glow); }
-.etag.rated { display: inline-flex; align-items: center; gap: 5px; color: var(--lime); border-color: rgba(143,198,64,0.25); background: rgba(143,198,64,0.07); }
 
 /* ── EMPTY STATE CTA ────────────────────────────────────────── */
 .empty-cta {
@@ -1065,7 +1091,6 @@ body.first-sync .first-sync-hint { display: block; }
 
   <div class="sec-label">Occasion</div>
   <div class="occasion-grid" id="occasionGrid"></div>
-  <div class="ctx-pills" id="ctxPills"></div>
 
   <div class="sec-label">Serving Format</div>
   <div class="serve-pills" id="servePills"></div>
@@ -1089,6 +1114,7 @@ body.first-sync .first-sync-hint { display: block; }
 <!-- ══════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-history">
 <div class="screen-inner">
+  <div class="history-heading"><div class="history-title">My Beers</div><div class="history-count" id="historyCount">0</div></div>
   <div class="first-sync-note"></div>
   <div class="search-wrap field">
     <span class="search-icon" data-icon="search" data-icon-size="17" data-icon-weight="2.2"></span>
@@ -1288,6 +1314,7 @@ const ICON_PATHS = {
   'discover': '<circle cx="10" cy="10" r="7"></circle><circle cx="10" cy="10" r="2.6"></circle>',
   'calendar': '<rect x="3" y="4.5" width="14" height="13" rx="3"></rect><path d="M3 8.5h14M7 3v3M13 3v3"></path>',
   'venue': '<path d="M10 17.5s5.5-5 5.5-9a5.5 5.5 0 0 0-11 0c0 4 5.5 9 5.5 9Z"></path><circle cx="10" cy="8.4" r="1.9"></circle>',
+  'purchase': '<path d="M4.5 7h11l-.8 9a1.5 1.5 0 0 1-1.5 1.4H6.8a1.5 1.5 0 0 1-1.5-1.4Z"></path><path d="M7 9.5V6.5a3 3 0 0 1 6 0v3"></path>',
   'wishlist': '<path d="M4 5.5h12v9l-4-2.4-4 2.4Z"></path>',
   'sort': '<path d="M3 5.5h14M5.5 10h9M8 14.5h4"></path>',
   'search': '<circle cx="9" cy="9" r="5.5"></circle><path d="M13.2 13.2 17 17"></path>',
@@ -1296,6 +1323,7 @@ const ICON_PATHS = {
   'rating-never': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.8 13.8Q10 10.9 13.2 13.8"></path>',
   'rating-maybe': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M7.1 12.8 12.9 12.5"></path>',
   'rating-definitely': '<circle cx="10" cy="10" r="7.2"></circle><circle cx="7.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><circle cx="12.5" cy="8.2" r="1.05" fill="currentColor" stroke="none"></circle><path d="M6.8 11.5Q10 14.8 13.2 11.5"></path>',
+  'rating-unrated': '<circle cx="10" cy="10" r="7.2"></circle>',
   'occasion-home-solo': '<path d="M3 9.5 10 4l7 5.5V16a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16Z"></path>',
   'occasion-home-social': '<path d="M3 9.5 10 4l7 5.5V16a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16Z"></path><circle cx="10" cy="12" r="1.6"></circle>',
   'occasion-bar': '<path d="M6 3h8l-1 12.5A1.6 1.6 0 0 1 11.4 17H8.6A1.6 1.6 0 0 1 7 15.5Z"></path><path d="M6.4 8h7.2"></path>',
@@ -1373,7 +1401,6 @@ if (wishlist.some(w => !w.id)) {
 }
 let selectedServe = '';
 let selectedOccasion = '';
-let selectedCtx = [];
 let discoverMode = '';
 // One card on screen at a time — the rest of a generated batch sits here as
 // a queue so dismissing a pick can pull the next-best one instantly instead
@@ -1406,8 +1433,6 @@ const OCCASIONS = [
   { id:'dining', iconName:'occasion-dining', label:'Dining Out' },
   { id:'traveling', iconName:'occasion-traveling', label:'Traveling' },
 ];
-
-const CTX_TAGS = ['With food','With friends','Outdoors','Celebrating','Trying something new','Winding down','Working through a pack','Post-work','Weekend'];
 
 // ═══════════════════════════════════════════════════════════════
 // FEEDBACK (Supabase)
@@ -2007,7 +2032,6 @@ function upsertBreweryDB(name, details) { upsertDetail(BREWERY_DB, name, details
 function init() {
   setDefaultDate();
   buildOccasionGrid('occasionGrid', OCCASIONS, v => { selectedOccasion = v; }, () => selectedOccasion);
-  buildCtxPills();
   buildServePills();
   buildModeGrid();
   setPrompt();
@@ -2059,18 +2083,6 @@ function selectOccasion(containerId, id, e) {
   const newVal = current === id ? '' : id;
   el._setter(newVal);
   pills.forEach(p => p.classList.toggle('sel', p.id === `occ-${containerId}-${id}` && newVal === id));
-}
-
-function buildCtxPills() {
-  const el = document.getElementById('ctxPills');
-  el.innerHTML = CTX_TAGS.map(t => `
-    <div class="ctx-pill" onclick="toggleCtx(this,'${t}')">${t}</div>`).join('');
-}
-
-function toggleCtx(el, tag) {
-  const idx = selectedCtx.indexOf(tag);
-  if (idx >= 0) { selectedCtx.splice(idx, 1); el.classList.remove('sel'); }
-  else { selectedCtx.push(tag); el.classList.add('sel'); }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2196,7 +2208,7 @@ function submitCheckin() {
     created_at: document.getElementById('checkinDate').value,
     serving_type: selectedServe,
     occasion: selectedOccasion,
-    occasion_ctx: [...selectedCtx],
+    occasion_ctx: [],   // OC1: context tags left the form; the field stays in the record
     comment: document.getElementById('notes').value.trim(),
     rating: null,
     rating_mode: null,
@@ -2228,10 +2240,8 @@ function resetForm() {
   setDefaultDate();
   selectedServe = '';
   selectedOccasion = '';
-  selectedCtx = [];
   document.querySelectorAll('.serve-pill').forEach(p => p.classList.remove('sel'));
   document.querySelectorAll('#occasionGrid .occ-pill').forEach(p => p.classList.remove('sel'));
-  document.querySelectorAll('.ctx-pill').forEach(p => p.classList.remove('sel'));
   currentPromptIdx = (currentPromptIdx + 1) % NOTE_PROMPTS.length;
   setPrompt();
 }
@@ -2396,10 +2406,55 @@ let historyDirty = true;     // HL4 — entries changed since the list was built
 let historyPreSearch = null; // HL8 — { scroll, loaded } from before the current search
 let historySearchTimer = null;
 const HISTORY_SEARCH_DELAY = 150;   // HL8 — ms of typing pause before the list updates
+let historyStubMeta = new Map();  // TK1/TK3 — id → { no, ordinal }, rebuilt when entries change
 
 // HL9: newest first by created_at, not array order (saveEdit can move a date).
 // Undated entries sort last.
 function historyTime(e) { return Date.parse(e.created_at) || 0; }
+
+// TK3: same beer = beer + brewery, trimmed, lowercased, inner spaces collapsed.
+function stubBeerKey(e) {
+  const norm = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return norm(e.beer_name) + '|' + norm(e.brewery_name);
+}
+
+// TK1 + TK3: number every dated entry 1..N oldest first across all entries
+// (search never renumbers), and count each beer's check-ins in the same order.
+// IC5: equal times break by id. IC2: undated entries get no number or ordinal.
+function buildStubMeta() {
+  const byId = (a, b) => { const x = String(a.id), y = String(b.id); return x < y ? -1 : x > y ? 1 : 0; };
+  const dated = entries.filter(e => historyTime(e)).sort((a, b) => historyTime(a) - historyTime(b) || byId(a, b));
+  const seen = new Map();
+  historyStubMeta = new Map();
+  dated.forEach((e, i) => {
+    const key = stubBeerKey(e);
+    const ordinal = (seen.get(key) || 0) + 1;
+    seen.set(key, ordinal);
+    historyStubMeta.set(e.id, { no: i + 1, ordinal });
+  });
+}
+
+// TK2: "Sep 2 · 8:42 PM", with the year only outside the current year; the
+// time always shows. IC2: entries without a usable date read "Undated".
+function stubDate(e, now = new Date()) {
+  const t = historyTime(e);
+  if (!t) return 'Undated';
+  const d = new Date(t);
+  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(d.getFullYear() !== now.getFullYear() && { year: 'numeric' }) });
+  return `${day} · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+// TK3: chips past the first visit land on the 5th, 10th, 25th, 50th, 100th,
+// then every 100th check-in of the same beer.
+function isRepeatMilestone(n) { return [5, 10, 25, 50, 100].includes(n) || (n > 100 && n % 100 === 0); }
+
+// TK3: the repeat chip's text, or null when this check-in gets no chip.
+function ordinalLabel(n) {
+  if (n === 1) return 'First time';
+  if (!isRepeatMilestone(n)) return null;
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th';
+  return `${n}${suffix} time`;
+}
 
 // Invisible marker after the last card; present only while more remain (HL3).
 function historySentinel() {
@@ -2407,38 +2462,47 @@ function historySentinel() {
 }
 
 // The one card template (HL6: no second path). `animate` adds fade-up.
+// TK: a ticket stub. Header strip (date, number), then name, subline, the
+// rating slot (TK4), chips (TK5), and notes (TK6).
 function historyCard(e, animate) {
-  const date = e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
-  const loc = [e.brewery_city, e.brewery_state].filter(Boolean).join(', ');
-  const occ = OCCASIONS.find(o => o.id === e.occasion);
+  const meta = historyStubMeta.get(e.id);
   const band = typeof e.rating === 'number' ? RATING_BANDS.find(b => e.rating >= b.min && e.rating <= b.max) : null;
+  const repeat = meta && ordinalLabel(meta.ordinal);
+  const chips = [
+    e.beer_abv ? `<span class="stub-chip">${esc(e.beer_abv)}%</span>` : '',
+    e.serving_type ? `<span class="stub-chip">${esc(e.serving_type)}</span>` : '',
+    e.venue_name ? `<span class="stub-chip">${icon('venue', 12, 2.2)}${esc(e.venue_name)}</span>` : '',
+    e.purchase_venue ? `<span class="stub-chip">${icon('purchase', 12, 2.2)}${esc(e.purchase_venue)}</span>` : '',
+    repeat ? `<span class="stub-chip ${meta.ordinal === 1 ? 'first' : 'milestone'}">${repeat}</span>` : '',
+  ].join('');
   return `<div class="entry-card${animate ? ' fade-up' : ''}" onclick="openEdit(${idArg(e.id)})">
-    <div class="entry-top">
-      <div>
-        <div class="entry-beer">${esc(e.beer_name)}</div>
-        <div class="entry-brewery">${esc(e.brewery_name)}${loc ? ` · ${esc(loc)}` : ''}</div>
+    <div class="stub-head">
+      <span class="stub-date">${stubDate(e)}</span>
+      <span class="stub-no">${meta ? `No. ${meta.no.toLocaleString('en-US')}` : ''}</span>
+    </div>
+    <div class="stub-body">
+      <span class="stub-notch left"></span><span class="stub-notch right"></span>
+      <div class="stub-top">
+        <div class="stub-title">
+          <div class="entry-beer">${esc(e.beer_name)}</div>
+          <div class="stub-sub">${[e.brewery_name, e.beer_type].filter(Boolean).map(esc).join(' · ')}</div>
+        </div>
+        <div class="stub-rating ${band ? band.id : 'unrated'}" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">
+          ${icon(band ? band.iconName : 'rating-unrated', 18, 2.4)}<span>${band ? (band.id === 'definitely' ? 'Def.' : band.label) : 'Rate it'}</span>
+        </div>
       </div>
+      ${chips ? `<div class="stub-chips">${chips}</div>` : ''}
+      ${e.comment ? `<div class="stub-notes">${esc(e.comment.slice(0,120))}${e.comment.length > 120 ? '…' : ''}</div>` : ''}
     </div>
-    <div class="entry-tags">
-      ${e.beer_type ? `<span class="etag style">${esc(e.beer_type)}</span>` : ''}
-      ${e.serving_type ? `<span class="etag serve">${esc(e.serving_type)}</span>` : ''}
-      ${e.beer_abv ? `<span class="etag">${esc(e.beer_abv)}% ABV</span>` : ''}
-      ${e.venue_name ? `<span class="etag venue">${icon('venue', 13, 2.2)}${esc(e.venue_name)}</span>` : ''}
-      ${band ? `<span class="etag rated">${icon(band.iconName, 18, 2.4)}${band.label}</span>` : ''}
-    </div>
-    ${e.comment ? `<div class="entry-notes-preview">"${esc(e.comment.slice(0,120))}${e.comment.length > 120 ? '…' : ''}"</div>` : ''}
-    <div class="entry-foot">
-      <div class="entry-date">${date}${e.purchase_venue ? ` · ${esc(e.purchase_venue)}` : ''}</div>
-      <div class="entry-occ">${occ ? icon(occ.iconName, 13, 2.2) + occ.label : ''}</div>
-    </div>
-    ${band ? '' : `<div class="rate-badge" onclick="event.stopPropagation(); openRatingModal(${idArg(e.id)})">Rate it →</div>`}
   </div>`;
 }
 
 // HL9 + HL2: sort, filter, and render the first `count` cards (min one batch).
 // `animate` fades the cards in; re-renders that restore a position pass false.
 function renderHistory(count = HISTORY_BATCH, animate = true) {
+  if (historyDirty) buildStubMeta();   // search keystrokes reuse the last map
   historyDirty = false;
+  document.getElementById('historyCount').textContent = entries.length.toLocaleString('en-US');   // IC3: the whole log, not the search
   const q = (document.getElementById('historySearch').value || '').toLowerCase();
   historyFiltered = entries.filter(e =>
     !q || [e.beer_name, e.brewery_name, e.venue_name, e.beer_type].some(v => v && v.toLowerCase().includes(q))
