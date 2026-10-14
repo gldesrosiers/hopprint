@@ -18,11 +18,11 @@ const FUNCTIONS = [
   'isNetworkError', 'isUuid', 'pendingKey', 'chunk', 'nextPendingOp', 'shapeCheckInRow', 'shapeWishlistRow',
   'isStopError', 'currentUserId', 'syncPaused', 'queueSync', 'queueSyncMany', 'myPendingCount',
   'flushPending', 'flushTable', 'savePendingOps', 'loadPendingOps', 'updateSyncPill',
-  'loadSyncState', 'saveSyncState', 'localDateKey', 'checkInFromRow', 'wishFromRow', 'mergePulled',
+  'loadSyncState', 'saveSyncState', 'localDateKey', 'normalizeVenue', 'checkInFromRow', 'wishFromRow', 'mergePulled',
   'pruneMissing', 'pullTable', 'fetchServerIds', 'takeOverCache', 'pullChanges', 'syncNow',
 ];
 const CONSTS = ['PROFILE_OK_KEY', 'PENDING_KEY', 'CACHE_OWNER_KEY', 'UPSERT_CHUNK', 'DELETE_CHUNK',
-  'FLUSH_DEBOUNCE_MS', 'SYNC_STATE_KEY', 'PULL_PAGE'];
+  'FLUSH_DEBOUNCE_MS', 'SYNC_STATE_KEY', 'PULL_PAGE', 'HOME_VENUE', 'UNTAPPD_HOME'];
 
 // ── In-memory PostgREST stand-in ────────────────────────────────
 // Understands exactly the filters the app sends. Rows are the server truth;

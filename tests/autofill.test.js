@@ -11,7 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('vm');
 
-const { extractFunction } = require('./helpers');
+const { script, extractFunction, extractConst } = require('./helpers');
 
 const FIELDS = ['beerName', 'breweryName', 'beerStyle', 'abv', 'breweryCity', 'breweryState'];
 
@@ -25,9 +25,14 @@ function reopen(entries, { beerDb = {}, breweryDb = {}, seedBeers = [], seedBrew
     entries,
     BEER_DB: beerDb, BREWERY_DB: breweryDb,
     SEED: { beers: [...seedBeers], breweries: [...seedBreweries], styles: [], venues: [], purchase: [] },
+    renderAllRecallChips() {},   // chip DOM is covered by tests/venue-recall.test.js
   });
-  vm.runInContext(['acNormKey', 'acClean', 'mergeInPlace', 'upsertDetail', 'upsertBeerDB', 'upsertBreweryDB',
-    'buildLiveLists', 'onBeerSelect', 'onBrewerySelect'].map(extractFunction).join('\n'), ctx);
+  vm.runInContext([
+    ...['HOME_VENUE', 'HALF_LIFE_DAYS'].map(extractConst),
+    ...['venueScores', 'purchaseScores'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
+    ...['acNormKey', 'acClean', 'mergeInPlace', 'upsertDetail', 'upsertBeerDB', 'upsertBreweryDB',
+      'computePlaceScores', 'buildLiveLists', 'onBeerSelect', 'onBrewerySelect'].map(extractFunction),
+  ].join('\n'), ctx);
   ctx.buildLiveLists();
   const values = () => Object.fromEntries(FIELDS.map(id => [id, String(form[id].value)]));
   const clear = () => FIELDS.forEach(id => { form[id].value = ''; });
