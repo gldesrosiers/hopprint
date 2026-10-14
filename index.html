@@ -228,6 +228,22 @@ body.input-focused .fab-feedback { display: none; }
 }
 .serve-pill.sel { background: var(--orange-glow); border-color: var(--orange); color: var(--orange); }
 
+/* ── RECALL CHIPS (VR15–VR21) ───────────────────────────────── */
+/* One row of serve-pill chips under the venue/purchase box. Scrolls sideways
+   instead of wrapping; hidden while the box has text or has no chips. */
+.recall-chips {
+  display: flex; gap: 7px; margin-top: 7px;
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.recall-chips::-webkit-scrollbar { display: none; }
+.recall-chips:empty, .recall-chips.hide { display: none; }
+.recall-chips .serve-pill {
+  flex: 0 0 auto; max-width: 190px; min-height: 36px;
+  display: inline-flex; align-items: center;
+}
+.recall-chips .serve-pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recall-chips .serve-pill:hover, .recall-chips .serve-pill:active { border-color: var(--orange); color: var(--orange); }
+
 /* ── NOTE PROMPT ────────────────────────────────────────────── */
 .note-prompt-bar {
   display: flex; align-items: center; justify-content: space-between;
@@ -1080,11 +1096,13 @@ body.first-sync .first-sync-hint { display: block; }
   <div class="field ac-wrap">
     <input id="venueWhere" type="text" placeholder="Where you're drinking it" autocomplete="off">
     <div class="ac-drop" id="drop-venueWhere"></div>
+    <div class="recall-chips" id="chips-venueWhere"></div>
   </div>
 
   <div class="field ac-wrap">
     <input id="purchaseVenue" type="text" placeholder="Where you bought it" autocomplete="off">
     <div class="ac-drop" id="drop-purchaseVenue"></div>
+    <div class="recall-chips" id="chips-purchaseVenue"></div>
   </div>
 
   <div class="field">
@@ -1993,6 +2011,29 @@ function mergeInPlace(seedArr, liveVals) {
   for (const v of merged) seedArr.push(v);
 }
 
+// VR10–VR14: frecency for venue and purchase recall. Derived from `entries`
+// on every rebuild — no stored recents — so it follows check-ins across
+// devices once sync runs. Keyed by acNormKey; each use adds 0.5^(age/half-life).
+const HALF_LIFE_DAYS = 60;
+let venueScores = new Map();
+let purchaseScores = new Map();
+
+function computePlaceScores(field) {
+  const now = Date.now();
+  const scores = new Map();
+  entries.forEach(e => {
+    const v = e && e[field];
+    if (!v) return;
+    const k = acNormKey(v);
+    if (!k) return;
+    const t = Date.parse(e.created_at);
+    if (isNaN(t)) return;                                  // VR11: unparseable date → no score
+    const ageDays = Math.max(0, (now - t) / 86400000);     // a future date counts as today
+    scores.set(k, (scores.get(k) || 0) + Math.pow(0.5, ageDays / HALF_LIFE_DAYS));
+  });
+  return scores;
+}
+
 function buildLiveLists() {
   const pick = f => entries.map(e => e && e[f]).filter(Boolean);
   mergeInPlace(SEED.beers,     pick('beer_name'));
@@ -2000,6 +2041,9 @@ function buildLiveLists() {
   mergeInPlace(SEED.styles,    pick('beer_type'));
   mergeInPlace(SEED.venues,    pick('venue_name'));
   mergeInPlace(SEED.purchase,  pick('purchase_venue'));
+  venueScores = computePlaceScores('venue_name');   // VR14: Home is scored (typed ranking) but has its own chip
+  purchaseScores = computePlaceScores('purchase_venue');
+  renderAllRecallChips();
 
   // Autofill details come from every check-in, not only the ones logged this
   // session, so a beer or brewery logged before the app was last opened still
@@ -2048,8 +2092,9 @@ function init() {
   setupAC('beerName', SEED.beers, onBeerSelect);
   setupAC('breweryName', SEED.breweries, onBrewerySelect);
   setupAC('beerStyle', SEED.styles);
-  setupAC('venueWhere', SEED.venues);
-  setupAC('purchaseVenue', SEED.purchase);
+  setupAC('venueWhere', SEED.venues, null, placeRanker(() => venueScores));
+  setupAC('purchaseVenue', SEED.purchase, null, placeRanker(() => purchaseScores));
+  RECALL_FIELDS.forEach(setupRecallChips);
   setupAC('wishBeerName', SEED.beers);
   setupAC('wishBreweryName', SEED.breweries);
   setupAC('wishStyle', SEED.styles);
@@ -2121,12 +2166,12 @@ function shufflePrompt() {
 // ═══════════════════════════════════════════════════════════════
 // AUTOCOMPLETE
 // ═══════════════════════════════════════════════════════════════
-function setupAC(fieldId, list, onSelect) {
+function setupAC(fieldId, list, onSelect, rank) {
   const input = document.getElementById(fieldId);
   const drop = document.getElementById('drop-' + fieldId);
   if (!input || !drop) return;
-  input.addEventListener('input', () => showDrop(input, drop, list, onSelect));
-  input.addEventListener('focus', () => { if (input.value.length > 0) showDrop(input, drop, list, onSelect); });
+  input.addEventListener('input', () => showDrop(input, drop, list, onSelect, rank));
+  input.addEventListener('focus', () => { if (input.value.length > 0) showDrop(input, drop, list, onSelect, rank); });
   input.addEventListener('keydown', e => {
     const items = [...drop.querySelectorAll('.ac-item')];
     const hi = drop.querySelector('.hi');
@@ -2140,10 +2185,12 @@ function setupAC(fieldId, list, onSelect) {
   });
 }
 
-function showDrop(input, drop, list, onSelect) {
+function showDrop(input, drop, list, onSelect, rank) {
   const q = input.value.toLowerCase().trim();
   if (!q) { drop.classList.remove('open'); return; }
-  const matches = list.filter(item => item.toLowerCase().includes(q)).slice(0, 8);
+  let matches = list.filter(item => item.toLowerCase().includes(q));
+  if (rank) matches = rank(matches, q);   // VR18: order before the cap
+  matches = matches.slice(0, 8);
   if (!matches.length) { drop.classList.remove('open'); return; }
   drop.innerHTML = matches.map(m => {
     const hi = m.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'), '<mark>$1</mark>');
@@ -2162,6 +2209,77 @@ function showDrop(input, drop, list, onSelect) {
     });
   });
   drop.classList.add('open');
+}
+
+// VR18: typed ranking for the venue and purchase boxes. Word-start matches
+// (the whole value or any word in it starts with the query) come before
+// mid-string ones, then higher frecency score, then alphabetical.
+// getScores is a function because buildLiveLists() replaces the score maps.
+function placeRanker(getScores) {
+  return (matches, q) => {
+    const scores = getScores();
+    const wordStart = m => {
+      const l = m.toLowerCase();
+      return l.startsWith(q) || l.split(/[^\p{L}\p{N}']+/u).some(w => w.startsWith(q));
+    };
+    return matches
+      .map(m => ({ m, tier: wordStart(m) ? 0 : 1, score: scores.get(acNormKey(m)) || 0 }))
+      .sort((a, b) => a.tier - b.tier || b.score - a.score || a.m.toLowerCase().localeCompare(b.m.toLowerCase()))
+      .map(x => x.m);
+  };
+}
+
+// VR15–VR19: one-tap recall chips under the venue and purchase boxes.
+const RECALL_CHIPS = 5;
+const RECALL_FIELDS = ['venueWhere', 'purchaseVenue'];
+
+// Top n scored places, spelled as the dropdown shows them (VR13), minus
+// excludeKey (VR14: Home has its own fixed chip).
+function topPlaces(scores, list, n, excludeKey) {
+  const shown = new Map(list.map(v => [acNormKey(v), v]));
+  return [...scores]
+    .filter(([k]) => k !== excludeKey)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([k]) => shown.get(k))
+    .filter(Boolean)
+    .slice(0, n);
+}
+
+// VR16: the row shows only while its box is empty.
+function toggleRecallChips(fieldId) {
+  const row = document.getElementById('chips-' + fieldId);
+  const input = document.getElementById(fieldId);
+  if (row && input) row.classList.toggle('hide', input.value.trim() !== '');
+}
+
+function renderRecallChips(fieldId, values) {
+  const row = document.getElementById('chips-' + fieldId);
+  if (!row) return;
+  // VR19: no chips → empty row, which CSS hides; no placeholder text.
+  row.innerHTML = values.map(v =>
+    `<div class="serve-pill" data-val="${esc(v)}"><span>${v === HOME_VENUE ? '🏠 ' : ''}${esc(v)}</span></div>`).join('');
+  toggleRecallChips(fieldId);
+}
+
+// Called from buildLiveLists(), so every rebuild refreshes the chips.
+function renderAllRecallChips() {
+  renderRecallChips('venueWhere', [HOME_VENUE, ...topPlaces(venueScores, SEED.venues, RECALL_CHIPS, acNormKey(HOME_VENUE))]);   // VR15: Home first
+  renderRecallChips('purchaseVenue', topPlaces(purchaseScores, SEED.purchase, RECALL_CHIPS));
+}
+
+// VR16/VR17: a tap fills the box (never pre-filled, never submits) and hides
+// the row. No input event, so the dropdown stays closed.
+function setupRecallChips(fieldId) {
+  const row = document.getElementById('chips-' + fieldId);
+  const input = document.getElementById(fieldId);
+  if (!row || !input) return;
+  row.addEventListener('click', e => {
+    const chip = e.target.closest('[data-val]');
+    if (!chip) return;
+    input.value = chip.dataset.val;
+    toggleRecallChips(fieldId);
+  });
+  input.addEventListener('input', () => toggleRecallChips(fieldId));
 }
 
 function closeAllDrops() {
@@ -2248,6 +2366,7 @@ function resetForm() {
   selectedOccasion = '';
   document.querySelectorAll('.serve-pill').forEach(p => p.classList.remove('sel'));
   document.querySelectorAll('#occasionGrid .occ-pill').forEach(p => p.classList.remove('sel'));
+  RECALL_FIELDS.forEach(toggleRecallChips);   // fields were cleared without an input event
   currentPromptIdx = (currentPromptIdx + 1) % NOTE_PROMPTS.length;
   setPrompt();
 }

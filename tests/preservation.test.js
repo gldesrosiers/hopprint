@@ -59,13 +59,15 @@ const ALLOWED_CHANGES = {
   // IT9 — bottom nav (IN16)
   switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll; ST10 enterAnalytics(); PT2 enterProfile()',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
-  buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild',
+  buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild; VR12 venue/purchase frecency scores',
   // History perf (HISTORY_PERF_WORKPLAN.md)
   esc: 'HL11 escapes & too; String() so numeric values do not throw',
   save: 'HL4 marks the My Beers list dirty; ST10 and Stats; PT1 and Print',
   // Stub + occasion (STUB_OCCASION_WORKPLAN.md) — OC1 context tags leave the form
-  init: 'OC1 drops the buildCtxPills() call; VR4 calls migrateHomeVenue() (see the init() test below)',
-  resetForm: 'OC1 drops the two context-tag reset lines',
+  init: 'OC1 drops the buildCtxPills() call; VR4 calls migrateHomeVenue(); VR18 venue/purchase rankers (see the init() test below)',
+  setupAC: 'VR18 optional rank argument, passed through to showDrop',
+  showDrop: 'VR18 optional rank sorts matches before the cap of 8',
+  resetForm: 'OC1 drops the two context-tag reset lines; VR16 re-shows the recall chips',
 };
 
 // Original functions deliberately deleted, each with the decision that removed it.
@@ -102,8 +104,12 @@ test('original functions are byte-identical except the listed, justified ones', 
   assert.deepEqual(stale, [], `listed but unchanged: ${stale.join(', ')}`);
 });
 
-test('init() is untouched but for OC1 and VR4 — the gate calls it, it does not call the gate', { skip: !baselineScript }, () => {
-  assert.equal(allFunctions(script).init.replace('  migrateHomeVenue();\n\n', ''), allFunctions(baselineScript).init.replace('  buildCtxPills();\n', ''));
+test('init() is untouched but for OC1, VR4 and VR18 — the gate calls it, it does not call the gate', { skip: !baselineScript }, () => {
+  const vrInit = allFunctions(script).init
+    .replace('  migrateHomeVenue();\n\n', '')
+    .replace("setupAC('venueWhere', SEED.venues, null, placeRanker(() => venueScores));", "setupAC('venueWhere', SEED.venues);")
+    .replace("setupAC('purchaseVenue', SEED.purchase, null, placeRanker(() => purchaseScores));\n  RECALL_FIELDS.forEach(setupRecallChips);", "setupAC('purchaseVenue', SEED.purchase);");
+  assert.equal(vrInit, allFunctions(baselineScript).init.replace('  buildCtxPills();\n', ''));
   assert.match(script, /\nauthBoot\(\);\n/);
   assert.doesNotMatch(script, /\ninit\(\);\n/);
 });

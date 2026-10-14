@@ -438,7 +438,7 @@ function checkinApp() {
     newId: () => 'new-id', save() {}, queueSync() {}, upsertBeerDB() {}, upsertBreweryDB() {}, buildLiveLists() {},
     showToast() {}, updateHeaderMeta() {}, openRatingModal() {}, setDefaultDate() {}, setPrompt() {},
   });
-  vm.runInContext([extractConst('HOME_VENUE'), extractConst('UNTAPPD_HOME'), ...['normalizeVenue', 'submitCheckin', 'resetForm'].map(extractFunction)].join('\n'), ctx);
+  vm.runInContext([...['HOME_VENUE', 'UNTAPPD_HOME', 'RECALL_FIELDS'].map(extractConst), ...['normalizeVenue', 'toggleRecallChips', 'submitCheckin', 'resetForm'].map(extractFunction)].join('\n'), ctx);
   return { ctx, queried };
 }
 
