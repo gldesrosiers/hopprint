@@ -235,7 +235,7 @@ test('VR13/VR15: topPlaces returns the top n by score, spelled as the list shows
   assert.deepEqual([...ctx.topPlaces(scores, list, 5)], ['Tree House', 'Trillium', 'A', 'B', 'C']);
 });
 
-test('VR14/VR15: venue row is 🏠 Home then the top 5 others (Home not repeated); purchase row is the top 5 with no Home', () => {
+test('VR14/VR15: venue row is Home then the top 5 others (Home not repeated); purchase row is the top 5 with no Home', () => {
   const venueScores = [['home', 99], ['v1', 6], ['v2', 5], ['v3', 4], ['v4', 3], ['v5', 2], ['v6', 1]];
   const { ctx, chips } = chipApp({
     venueScores, venues: ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'Home'],
@@ -243,7 +243,7 @@ test('VR14/VR15: venue row is 🏠 Home then the top 5 others (Home not repeated
   });
   ctx.renderAllRecallChips();
   assert.deepEqual(chips('venueWhere'), [
-    { val: 'Home', label: '🏠 Home' },
+    { val: 'Home', label: 'Home' },   // plain label, no emoji
     ...['V1', 'V2', 'V3', 'V4', 'V5'].map(v => ({ val: v, label: v })),
   ]);
   assert.deepEqual(chips('purchaseVenue').map(c => c.val), ['Shop', 'Store']);

@@ -2257,7 +2257,7 @@ function renderRecallChips(fieldId, values) {
   if (!row) return;
   // VR19: no chips → empty row, which CSS hides; no placeholder text.
   row.innerHTML = values.map(v =>
-    `<div class="serve-pill" data-val="${esc(v)}"><span>${v === HOME_VENUE ? '🏠 ' : ''}${esc(v)}</span></div>`).join('');
+    `<div class="serve-pill" data-val="${esc(v)}"><span>${esc(v)}</span></div>`).join('');
   toggleRecallChips(fieldId);
 }
 
