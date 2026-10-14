@@ -381,6 +381,8 @@ body.input-focused .fab-feedback { display: none; }
 /* ── RATING MODAL ───────────────────────────────────────────── */
 .rating-beer { font-family: var(--font-display); font-size: 19px; font-weight: 700; margin-bottom: 2px; }
 .rating-brewery { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
+.rating-saved { display: none; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--lime); margin-bottom: 6px; }
+.rating-saved.show { display: flex; }
 .rating-prompt { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
 .rating-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .rb-btn {
@@ -1190,6 +1192,7 @@ body.first-sync .first-sync-hint { display: block; }
 <!-- RATING MODAL -->
 <div class="modal-backdrop" id="ratingModal">
   <div class="modal">
+    <div class="rating-saved" id="ratingSaved"></div>
     <div class="modal-header">
       <div class="modal-title">Would you drink this beer again?</div>
       <div class="modal-close" onclick="skipRating()">✕</div>
@@ -2226,10 +2229,11 @@ function submitCheckin() {
     upsertBreweryDB(entry.brewery_name, { c: entry.brewery_city, s: entry.brewery_state });
   }
   buildLiveLists();
-  showToast('Checked in!', 'checkin');
+  // "Checked in!" toast is deferred until the rating modal closes, so it
+  // doesn't cover the rating controls. The modal shows a quiet "Saved" line.
   resetForm();
   updateHeaderMeta();
-  openRatingModal(entry.id);
+  openRatingModal(entry.id, { fromCheckIn: true });
 }
 
 function resetForm() {
@@ -2257,11 +2261,16 @@ const RATING_BANDS = [
 let ratingEntryId = null;
 let ratingBand = null;
 let ratingTouchedSlider = false;
+let ratingFromCheckIn = false; // true only for the post-check-in prompt (not "Rate it →" / "Change")
 
-function openRatingModal(id) {
+function openRatingModal(id, opts = {}) {
   const e = entries.find(x => x.id === id);
   if (!e) return;
   ratingEntryId = id;
+  ratingFromCheckIn = !!opts.fromCheckIn;
+  const savedEl = document.getElementById('ratingSaved');
+  savedEl.innerHTML = icon('success', 13, 2.6) + '<span>Saved</span>';
+  savedEl.classList.toggle('show', ratingFromCheckIn);
   ratingBand = null;
   ratingTouchedSlider = false;
   document.getElementById('ratingBeerName').textContent = e.beer_name;
@@ -2311,15 +2320,18 @@ function saveRating(value, mode) {
   refreshHistory();
 }
 
-function submitRating() {
+function closeRatingModal() {
   document.getElementById('ratingModal').classList.remove('open');
   ratingEntryId = null;
+  if (ratingFromCheckIn) {
+    // Let the sheet slide away before the toast rises into the same space.
+    setTimeout(() => showToast('Checked in!', 'checkin'), 250);
+  }
+  ratingFromCheckIn = false;
 }
 
-function skipRating() {
-  document.getElementById('ratingModal').classList.remove('open');
-  ratingEntryId = null;
-}
+function submitRating() { closeRatingModal(); }
+function skipRating()   { closeRatingModal(); }
 
 // ═══════════════════════════════════════════════════════════════
 // FEEDBACK
