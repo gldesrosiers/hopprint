@@ -100,6 +100,8 @@ function app(entries, { query = '', observer = true } = {}) {
     constFrom(script, 'ICON_PATHS'),
     constFrom(script, 'OCCASIONS'),
     constFrom(script, 'RATING_BANDS'),
+    constFrom(script, 'HOME_VENUE'),
+    constFrom(script, 'UNTAPPD_HOME'),
     ...historyState(),
     ...['icon', 'idArg', 'esc', ...HISTORY_FNS].map(extractFunction),
   ].join('\n'), ctx);
@@ -113,7 +115,7 @@ function app(entries, { query = '', observer = true } = {}) {
 const historyState = () => [...script.matchAll(/^(?:const HISTORY_\w+|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
 const HISTORY_FNS = ['historyTime', 'stubBeerKey', 'buildStubMeta', 'stubDate', 'isRepeatMilestone', 'ordinalLabel', 'historySentinel', 'historyCard', 'renderHistory', 'appendHistoryBatch',
   'watchHistorySentinel', 'restoreScroll', 'enterHistory', 'save', 'switchTab',
-  'refreshHistory', 'onHistorySearch', 'applyHistorySearch', 'closeModal', 'saveEdit', 'deleteEntry', 'saveRating', 'refreshAfterPull', 'newId', 'handleImport'];
+  'refreshHistory', 'onHistorySearch', 'applyHistorySearch', 'closeModal', 'saveEdit', 'deleteEntry', 'saveRating', 'refreshAfterPull', 'newId', 'handleImport', 'normalizeVenue'];
 const EDIT_FIELDS = ['e_beerName', 'e_breweryName', 'e_city', 'e_state', 'e_style', 'e_abv', 'e_venue', 'e_purchase', 'e_date', 'e_notes'];
 
 // Rendered cards, in DOM order, by beer name.

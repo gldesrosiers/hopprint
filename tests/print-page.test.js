@@ -22,7 +22,7 @@ const STYLE_MATRIX_JS = fs.readFileSync(path.join(ROOT, 'style_matrix.js'), 'utf
 
 // Reached only after the first render (tab switches, pulls, imports), so the
 // render-time resolution never sees them.
-const LATE = ['enterProfile', 'refreshProfile', 'switchTab', 'save', 'refreshAfterPull', 'handleImport', 'newId',
+const LATE = ['enterProfile', 'refreshProfile', 'switchTab', 'save', 'refreshAfterPull', 'handleImport', 'normalizeVenue', 'UNTAPPD_HOME', 'newId',
   'restoreScroll', 'localDateKey', 'currentTab', 'tabScroll', 'historyDirty', 'statsDirty', 'historyLoaded', 'historyPreSearch'];
 
 let resolved = null;

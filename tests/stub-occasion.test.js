@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('vm');
 
-const { html, script, style, extractFunction } = require('./helpers');
+const { html, script, style, extractFunction, extractConst } = require('./helpers');
 
 // The My Beers module state (HISTORY_BATCH + the history* lets), verbatim.
 const historyState = () => [...script.matchAll(/^(?:const HISTORY_\w+|let history\w+) = [^\n]*;/gm)].map(m => m[0]);
@@ -438,7 +438,7 @@ function checkinApp() {
     newId: () => 'new-id', save() {}, queueSync() {}, upsertBeerDB() {}, upsertBreweryDB() {}, buildLiveLists() {},
     showToast() {}, updateHeaderMeta() {}, openRatingModal() {}, setDefaultDate() {}, setPrompt() {},
   });
-  vm.runInContext(['submitCheckin', 'resetForm'].map(extractFunction).join('\n'), ctx);
+  vm.runInContext([extractConst('HOME_VENUE'), extractConst('UNTAPPD_HOME'), ...['normalizeVenue', 'submitCheckin', 'resetForm'].map(extractFunction)].join('\n'), ctx);
   return { ctx, queried };
 }
 

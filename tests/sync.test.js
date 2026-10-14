@@ -324,7 +324,7 @@ test('handleImport: undated rows are skipped and reported; new rows get uuids an
     crypto: nodeCrypto.webcrypto,
   };
   vm.createContext(ctx);
-  vm.runInContext([extractFunction('newId'), extractFunction('handleImport')].join('\n'), ctx);
+  vm.runInContext([extractConst('HOME_VENUE'), extractConst('UNTAPPD_HOME'), extractFunction('normalizeVenue'), extractFunction('newId'), extractFunction('handleImport')].join('\n'), ctx);
   ctx.csv = [
     'beer_name,brewery_name,created_at,beer_abv,rating_score',
     'Heady Topper,The Alchemist,2024-05-01 20:15:00,8,4.5',
