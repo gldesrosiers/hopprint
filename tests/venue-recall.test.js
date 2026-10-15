@@ -100,11 +100,13 @@ test('VR12: edit and delete rebuild the live lists', () => {
 // ── Part 2: frecency ───────────────────────────────────────────
 
 test('VR11: each use adds 0.5^(age / half-life), keyed by the normalized name', () => {
+  // Ages are in half-lives, so tuning HALF_LIFE_DAYS doesn't break the expected scores.
+  const H = Number(extractConst('HALF_LIFE_DAYS').match(/= (\d+);/)[1]);
   const { ctx } = app([
     { venue_name: 'Trillium', created_at: ago(0) },
-    { venue_name: ' trillium ', created_at: ago(60) },
-    { venue_name: 'Tree House', created_at: ago(120) },
-    { venue_name: 'Tree House', created_at: ago(120).replace('T', ' ') },   // CSV-style space
+    { venue_name: ' trillium ', created_at: ago(H) },
+    { venue_name: 'Tree House', created_at: ago(2 * H) },
+    { venue_name: 'Tree House', created_at: ago(2 * H).replace('T', ' ') },   // CSV-style space
   ]);
   const s = ctx.computePlaceScores('venue_name');
   assert.ok(Math.abs(s.get('trillium') - 1.5) < 0.01);
