@@ -2014,7 +2014,7 @@ function mergeInPlace(seedArr, liveVals) {
 // VR10–VR14: frecency for venue and purchase recall. Derived from `entries`
 // on every rebuild — no stored recents — so it follows check-ins across
 // devices once sync runs. Keyed by acNormKey; each use adds 0.5^(age/half-life).
-const HALF_LIFE_DAYS = 60;
+const HALF_LIFE_DAYS = 30;
 let venueScores = new Map();
 let purchaseScores = new Map();
 
