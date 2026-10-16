@@ -82,6 +82,9 @@ function analyticsSandbox(src) {
   vm.runInContext([
     ...['MS_CHECKIN_STEPS', 'MS_BREWERY_STEPS', 'MS_STYLE_STEPS', 'RATING_BANDS'].map(n => constFrom(src, n)),
     ...['computeMilestones', 'computeAnalyticsContext', 'firstOccurrenceIds', 'computeBandAnalytics', 'bandOf'].map(n => extractFunctionFrom(src, n)),
+    // Phase E (a) extracted the year filter + ranking into a shared helper;
+    // the pre-change build has it inline, so load it only where it exists.
+    ...(/^function milestonesCrossedIn\(/m.test(src) ? [extractFunctionFrom(src, 'milestonesCrossedIn')] : []),
     'var entries = [];',
   ].join('\n'), ctx);
   return ctx;

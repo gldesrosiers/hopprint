@@ -44,11 +44,11 @@ const ALLOWED_CHANGES = {
   setNvrField: 'ST14 keep position on rebuild',
   toggleAnalyticsCompare: 'ST4 jump to top',
   setAnalyticsYear: 'ST4 jump to top',
-  computeAnalyticsContext: 'IN19 compare on kind',
+  computeAnalyticsContext: 'IN19 compare on kind; Phase E (a) milestone ranking moved to milestonesCrossedIn()',
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',
   buildAnalyticsInsightCard: 'IN1 insight icon',
-  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date',
+  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years',
   generateRecs: 'IN1/IN18 empty state + CTA',
   renderNextRec: 'IN1/IN18 empty state, Show Another',
   // IT7 — showToast(msg, iconName) (IN8)

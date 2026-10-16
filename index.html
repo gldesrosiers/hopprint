@@ -677,6 +677,30 @@ body.input-focused .fab-feedback { display: none; }
 .ws-num { font-size: 22px; font-weight: 700; color: var(--orange); font-family: var(--font-headline); }
 .ws-label { font-size: 11px; color: var(--text-muted); font-weight: 300; }
 
+/* Wrapped panel (Phase E) — composes from the drill, profile and stats
+   patterns; the only new pieces are the headline size and stat grid. */
+.wr-headline { font-family: var(--font-headline); font-size: 30px; font-weight: 800; line-height: 1.05; }
+.wr-headline b { color: var(--orange); font-weight: 800; }
+.wr-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.wr-stats .pstat { padding: 11px 6px; }
+.wr-stats .pstat-num { font-size: 22px; }
+.wr-count { color: var(--text-dim); font-weight: 300; font-size: 12px; margin-left: 4px; }
+.wr-note { font-size: 13px; color: var(--text-dim); font-weight: 300; text-align: center; }
+/* Wrapped entry points on Print (DE-Q4): the latest year's card, then the
+   Earlier years accordion in the Stats collapsible-card shape. */
+.wr-entry { display: block; width: 100%; text-align: left; color: var(--text); font-family: var(--font-body); cursor: pointer; }
+.wr-entry .wrapped-headline { margin-bottom: 4px; }
+.wr-entry-go { color: var(--orange); }
+.wr-year-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 11px 2px; background: none; border: none; border-bottom: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-body); font-size: 13px; text-align: left; cursor: pointer;
+}
+.wr-year-row:last-child { border-bottom: none; }
+.wr-year-row:hover { background: var(--orange-glow2); }
+.wr-year { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--orange); }
+.wr-year-count { flex: 1; color: var(--text-muted); font-weight: 300; }
+
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .trend-row:last-child { border-bottom: none; }
 .trend-icon { display: flex; align-items: center; height: 28px; flex-shrink: 0; }
@@ -1238,6 +1262,16 @@ body.first-sync .first-sync-hint { display: block; }
       <div class="modal-close" onclick="closeDrill()">✕</div>
     </div>
     <div id="drillBody"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="wrappedModal" onclick="if(event.target===this)closeWrapped()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Wrapped</div>
+      <div class="modal-close" onclick="closeWrapped()">✕</div>
+    </div>
+    <div id="wrappedBody"></div>
   </div>
 </div>
 
@@ -3060,6 +3094,16 @@ function computeMilestones() {
   return out.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+// Milestones crossed inside one calendar year (DD-Q2, retrospective), ranked
+// for copy: check-ins > breweries > styles, then most recent first. Shared by
+// the Stats insight card and Wrapped so both read the same crossings.
+function milestonesCrossedIn(year) {
+  const msWeight = m => (m.kind === 'checkins' ? 3 : m.kind === 'breweries' ? 2 : 1);
+  return computeMilestones()
+    .filter(m => new Date(m.date).getFullYear() === year)
+    .sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date));
+}
+
 function recentStyleFirsts(limit) {
   const seen = new Set(); const firsts = [];
   [...entries]
@@ -4003,12 +4047,10 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
     else if (firstHalfLive >= secondHalfLive * 1.5 && firstHalfLive - secondHalfLive >= 4) paceDirection = 'cooling';
   }
 
-  // ── milestone: retrospective crossings inside this year (DD-Q2). Reuses the
-  //    Phase C thresholds via computeMilestones(). Rank check-ins > breweries >
-  //    styles, biggest first; derive the round number + noun from the label.
-  const yearMilestones = computeMilestones().filter(m => new Date(m.date).getFullYear() === analyticsYear);
-  const msWeight = m => (m.kind === 'checkins' ? 3 : m.kind === 'breweries' ? 2 : 1);
-  const topMs = yearMilestones.slice().sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date))[0] || null;
+  // ── milestone: retrospective crossings inside this year (DD-Q2), ranked by
+  //    the shared milestonesCrossedIn(); derive the round number + noun from
+  //    the top crossing's label.
+  const topMs = milestonesCrossedIn(analyticsYear)[0] || null;
   let milestone = null;
   if (topMs) {
     const n = parseInt(String(topMs.label).replace(/[^0-9]/g, ''), 10);
@@ -4128,6 +4170,309 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
     <div class="insight-icon">${icon('checkin', 22, 2.2)}</div>
     <div class="insight-body"><div class="insight-text">${sentences}</div></div>
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WRAPPED (Phase E) — full annual summary for completed years
+// ═══════════════════════════════════════════════════════════════
+const WRAPPED_MIN = 20; // DE2: a completed year needs this many check-ins
+
+// Completed years (before the current one) that clear the DE2 gate, newest
+// first, as { year, count }. The first is the entry card's year; the rest
+// fill the Earlier years accordion (DE-Q4, rev. Oct 16).
+function wrappedYears() {
+  const curYear = new Date().getFullYear();
+  const counts = {};
+  entries.forEach(e => {
+    const y = new Date(e.created_at).getFullYear();
+    if (!isNaN(y) && y < curYear) counts[y] = (counts[y] || 0) + 1;
+  });
+  return Object.keys(counts).map(Number)
+    .filter(y => counts[y] >= WRAPPED_MIN)
+    .sort((a, b) => b - a)
+    .map(year => ({ year, count: counts[year] }));
+}
+
+// Superlative winner from a { name: count } map: highest count, A–Z on ties
+// so the same year always crowns the same name. A "top" that happened once
+// isn't a superlative, so the winner needs at least 2 check-ins (D6 gating).
+function wrappedTop(counts) {
+  const best = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  return best && best[1] >= 2 ? { name: best[0], count: best[1] } : null;
+}
+
+// Everything the Wrapped panel and WRAPPED_COPY read for one completed year.
+// Descriptive claims, so imports count (Import assumption, §3.2). Names are
+// raw — renderers esc() them. First-time breweries/styles and milestones are
+// judged against full history, matching Stats (Phase C / DD-Q2).
+function computeWrappedContext(yearEntries, prevYearEntries, year) {
+  const es = yearEntries, total = es.length, prevTotal = prevYearEntries.length;
+  const deltaVolumePct = prevTotal > 0 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
+  const tally = (list, pick) => {
+    const out = {};
+    list.forEach(e => { const k = pick(e); if (k) out[k] = (out[k] || 0) + 1; });
+    return out;
+  };
+
+  // ── stat block ──
+  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
+  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
+  const notes = es.filter(e => e.comment).length;
+  const firstBrewIds = firstOccurrenceIds('brewery_name');
+  const firstStyleIds = firstOccurrenceIds('beer_type');
+  const newBreweryCount = es.filter(e => firstBrewIds.has(e.id)).length;
+  const newStyleCount = es.filter(e => firstStyleIds.has(e.id)).length;
+  const newBreweryPct = total ? Math.round(newBreweryCount / total * 100) : 0;
+  const newStylePct = total ? Math.round(newStyleCount / total * 100) : 0;
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthCounts = Array(12).fill(0);
+  es.forEach(e => { const d = new Date(e.created_at); if (!isNaN(d)) monthCounts[d.getMonth()]++; });
+  const busiestMonthCount = Math.max(...monthCounts, 0);
+  const busiestMonthName = busiestMonthCount >= 2 ? MONTHS[monthCounts.indexOf(busiestMonthCount)] : '';
+  const activeMonths = monthCounts.filter(c => c > 0).length;
+
+  // ── superlatives: Home is left out of the venue race and reported as its
+  //    own share instead (DE-Q4 rev. Oct 16) ──
+  const topBrewery = wrappedTop(tally(es, e => e.brewery_name));
+  const topStyle = wrappedTop(tally(es, e => e.beer_type));
+  const topVenue = wrappedTop(tally(es.filter(e => !isHomeEntry(e)), e => e.venue_name));
+  const homeCount = es.filter(isHomeEntry).length;
+  const homePct = total ? Math.round(homeCount / total * 100) : 0;
+
+  // ── YoY hopprint (DE-Q5): the year alone vs the prior year alone, with the
+  //    Your Hopprint screen's honesty gates ──
+  const hp = computeHopprint(es);
+  const prevHp = computeHopprint(prevYearEntries);
+  const showRadar = hp.matchedStyles >= 4;
+  const showPrior = showRadar && prevHp.matchedStyles >= 3 && prevHp.count >= 5;
+
+  // ── bands (D1: band language only, never the 0–100 scores) ──
+  const bands = computeBandAnalytics(es);
+  const ratedTotal = es.filter(e => bandOf(e.rating)).length;
+
+  return {
+    year, prevYear: year - 1, total, prevTotal, deltaVolumePct,
+    breweries, styles, notes, newBreweryCount, newStyleCount, newBreweryPct, newStylePct,
+    busiestMonthName, busiestMonthCount, activeMonths,
+    topBrewery, topStyle, topVenue, homeCount, homePct,
+    hpVector: hp.vector, hpMatchedStyles: hp.matchedStyles, showRadar,
+    prevHpVector: showPrior ? prevHp.vector : null, showPrior,
+    milestones: milestonesCrossedIn(year),
+    ratedTotal,
+    mostLogged: bands.mostLogged ? bands.mostLogged[0] : '',
+    wheelhouse: bands.wheelhouse ? bands.wheelhouse[0] : '',
+    lovedBeer: bands.loved.length ? bands.loved[0][0] : '',
+    unfinishedStyle: bands.unfinished.length ? bands.unfinished[0][0] : '',
+  };
+}
+
+// ── Wrapped consumer (third selectCopy consumer, §3.4) ─────────
+// Same contract as the Profile and Analytics pools: friend-voice, no trailing
+// period, every entity through esc(), no fragment starts with markup, band
+// language only (D1). Past tense throughout — Wrapped only covers completed
+// years. The panel already lists the stats and superlatives, so these lines
+// add color rather than repeat a number on its own. `shareSlot: true` marks a
+// line eligible for the share card's copy slot (DE10 length budget, session
+// c); venue-flavored lines stay off cards (DE3). Ordered within each zone
+// highest-priority first so registry order and priority agree.
+const WRAPPED_ZONE_ORDER = ['headline', 'exploration', 'band', 'superlative'];
+const WRAPPED_MAX_EARNED = 2;
+
+const WRAPPED_COPY = [
+  // ── headline flavor: the shape of the year ──────────────────────
+  { id: 'wr_bigger', zone: 'headline', priority: 25, shareSlot: true,
+    condition: c => c.prevTotal >= WRAPPED_MIN && c.deltaVolumePct !== null && c.deltaVolumePct >= 25,
+    render: c => `a bigger year than ${c.prevYear} — <b>${c.deltaVolumePct}%</b> more check-ins` },
+  { id: 'wr_quieter', zone: 'headline', priority: 20, shareSlot: false,
+    condition: c => c.prevTotal >= WRAPPED_MIN && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,
+    render: c => `a quieter year than ${c.prevYear} — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins` },
+  { id: 'wr_every_month', zone: 'headline', priority: 15, shareSlot: true,
+    condition: c => c.activeMonths === 12,
+    render: () => `you logged a beer in every month of the year` },
+  { id: 'wr_big_month', zone: 'headline', priority: 12, shareSlot: true,
+    condition: c => c.busiestMonthName && c.busiestMonthCount >= 8 && c.activeMonths > 0 && c.busiestMonthCount >= (c.total / c.activeMonths) * 2,
+    render: c => `${esc(c.busiestMonthName)} was your big month — <b>${c.busiestMonthCount}</b> check-ins` },
+
+  // ── exploration (first-time judged against full history) ────────
+  { id: 'wr_new_ground', zone: 'exploration', priority: 20, shareSlot: true,
+    condition: c => c.total >= WRAPPED_MIN && c.newBreweryPct >= 40,
+    render: c => `new ground all year — <b>${c.newBreweryPct}%</b> of your check-ins were a brewery you'd never logged` },
+  { id: 'wr_new_styles', zone: 'exploration', priority: 15, shareSlot: true,
+    condition: c => c.newStyleCount >= 5,
+    render: c => `you tried <b>${c.newStyleCount}</b> styles for the first time` },
+  { id: 'wr_familiar', zone: 'exploration', priority: 10, shareSlot: true,
+    condition: c => c.total >= WRAPPED_MIN && c.newBreweryPct <= 12,
+    render: () => `you mostly stuck with breweries you already knew` },
+
+  // ── band (the year's rating signals; band names only) ───────────
+  { id: 'wr_band_divergence', zone: 'band', priority: 25, shareSlot: true,
+    condition: c => c.ratedTotal >= 6 && c.mostLogged && c.wheelhouse && c.mostLogged !== c.wheelhouse,
+    render: c => `you poured <b>${esc(c.mostLogged)}</b> most, but <b>${esc(c.wheelhouse)}</b> earned the Definitelys` },
+  { id: 'wr_band_loved', zone: 'band', priority: 20, shareSlot: true,
+    condition: c => c.ratedTotal >= 6 && !!c.lovedBeer,
+    render: c => `one beer you never turned down all year: <b>${esc(c.lovedBeer)}</b>` },
+  { id: 'wr_band_unfinished', zone: 'band', priority: 12, shareSlot: true,
+    condition: c => c.ratedTotal >= 6 && !!c.unfinishedStyle,
+    render: c => `the jury was still out on <b>${esc(c.unfinishedStyle)}</b>` },
+
+  // ── superlative color: how much the winners owned the year ──────
+  { id: 'wr_brewery_hold', zone: 'superlative', priority: 20, shareSlot: true,
+    condition: c => c.topBrewery && c.total >= WRAPPED_MIN && c.topBrewery.count / c.total >= 0.25,
+    render: c => `${esc(c.topBrewery.name)} had your number — <b>${Math.round(c.topBrewery.count / c.total * 100)}%</b> of the year's check-ins` },
+  { id: 'wr_style_backbone', zone: 'superlative', priority: 15, shareSlot: true,
+    condition: c => c.topStyle && c.total >= WRAPPED_MIN && c.topStyle.count / c.total >= 0.3,
+    render: c => `${esc(c.topStyle.name)} was the backbone of your year — <b>${Math.round(c.topStyle.count / c.total * 100)}%</b> of pours` },
+  { id: 'wr_venue_regular', zone: 'superlative', priority: 12, shareSlot: false,
+    condition: c => c.topVenue && c.topVenue.count >= 5,
+    render: c => `you were a regular at <b>${esc(c.topVenue.name)}</b> — <b>${c.topVenue.count}</b> visits` },
+  { id: 'wr_homebody', zone: 'superlative', priority: 10, shareSlot: false,
+    condition: c => c.homePct >= 60,
+    render: c => `home was your favorite bar — <b>${c.homePct}%</b> of the year's pours` },
+];
+
+// The earned closing lines for one year: up to WRAPPED_MAX_EARNED picks, no
+// required zone. Returns selectCopy's picks; wrappedSentences() assembles them.
+function buildWrappedCopy(ctx) {
+  return selectCopy(WRAPPED_COPY, ctx, WRAPPED_ZONE_ORDER, { maxEarned: WRAPPED_MAX_EARNED });
+}
+
+// Picks → one paragraph, capitalized and punctuated like the Stats insight
+// card. '' when nothing is earned, so the section can drop out (D6).
+function wrappedSentences(picked) {
+  if (!picked.length) return '';
+  return picked.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.';
+}
+
+// The Wrapped panel body for one completed year (§3.3). Every section gates
+// itself (D6): a thin year renders a shorter, honest panel. The YoY radar
+// reuses buildHopprintSVG unmodified — solid orange is the year, dashed lime
+// the prior year (DE-Q5).
+function buildWrappedPanel(c) {
+  const n = v => Number(v).toLocaleString();
+  let html = '';
+
+  // 1 · headline
+  let vsPrev = '';
+  if (c.prevTotal > 0) {
+    vsPrev = c.total > c.prevTotal ? `More than ${c.prevYear}'s ${n(c.prevTotal)}`
+      : c.total < c.prevTotal ? `Fewer than ${c.prevYear}'s ${n(c.prevTotal)}`
+      : `Same as ${c.prevYear}`;
+  }
+  html += `<div class="drill-head">
+    <div class="drill-kicker">${c.year} Wrapped</div>
+    <div class="wr-headline"><b>${n(c.total)}</b> beers logged in ${c.year}</div>
+    ${vsPrev ? `<div class="drill-summary">${vsPrev}</div>` : ''}
+  </div>`;
+
+  // 2 · stat block — a tile only when it has something to say
+  const tiles = [
+    [n(c.breweries), 'Breweries', c.breweries > 0],
+    [n(c.styles), 'Styles', c.styles > 0],
+    [n(c.newBreweryCount), 'New breweries', c.newBreweryCount > 0],
+    [n(c.newStyleCount), 'New styles', c.newStyleCount > 0],
+    [n(c.notes), 'With notes', c.notes > 0],
+    [c.busiestMonthName.slice(0, 3), 'Busiest month', !!c.busiestMonthName],
+  ].filter(t => t[2]);
+  if (tiles.length) {
+    html += `<div class="drill-section"><div class="wr-stats">${tiles.map(([v, l]) =>
+      `<div class="pstat"><div class="pstat-num">${v}</div><div class="pstat-label">${l}</div></div>`).join('')}</div></div>`;
+  }
+
+  // 3 · superlatives — top away venue, with home as its own share
+  const sup = [];
+  const row = (ic, label, val, count) => `<div class="trend-row"><div class="trend-icon">${icon(ic, 18, 2.2)}</div><div class="trend-label">${label}${count ? `<span class="wr-count">${count}</span>` : ''}</div><div class="trend-val" title="${esc(val)}">${esc(val)}</div></div>`;
+  if (c.topBrewery) sup.push(row('trend-loyal', 'Top brewery', c.topBrewery.name, `${n(c.topBrewery.count)}×`));
+  if (c.topStyle) sup.push(row('beers', 'Top style', c.topStyle.name, `${n(c.topStyle.count)}×`));
+  if (c.topVenue) sup.push(row('venue', 'Top venue', c.topVenue.name, `${n(c.topVenue.count)}×`));
+  if (c.homeCount > 0) sup.push(row('occasion-home-solo', 'At home', `${c.homePct}%`, ''));
+  if (sup.length) {
+    html += `<div class="drill-section"><div class="drill-section-title">The year's favorites</div>${sup.join('')}</div>`;
+  }
+
+  // 4 · YoY hopprint, with the screen's honesty gates
+  if (c.showRadar) {
+    const legend = `<span class="hp-key"><span class="hp-swatch hp-solid"></span>${c.year}</span>`
+      + (c.showPrior ? `<span class="hp-key"><span class="hp-swatch hp-dashed"></span>${c.prevYear}</span>` : '');
+    html += `<div class="drill-section"><div class="drill-section-title">Your ${c.year} hopprint</div>
+      <div class="hopprint-radar">${buildHopprintSVG(c.hpVector, c.showPrior ? c.prevHpVector : null)}</div>
+      <div class="hopprint-legend">${legend}</div></div>`;
+  } else if (c.hpMatchedStyles > 0) {
+    html += `<div class="drill-section"><div class="drill-section-title">Your ${c.year} hopprint</div>
+      <div class="wr-note">A hopprint takes shape at 4 styles — ${c.year} had ${c.hpMatchedStyles}.</div></div>`;
+  }
+
+  // 5 · milestones crossed, in the order they happened
+  if (c.milestones.length) {
+    const ms = [...c.milestones].sort((a, b) => new Date(a.date) - new Date(b.date));
+    html += `<div class="drill-section"><div class="drill-section-title">Milestones</div><div class="ms-list">${ms.map(m => `
+      <div class="ms-row">
+        <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
+        <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
+        <div class="ms-date">${fmtMonthYear(m.date)}</div>
+      </div>`).join('')}</div></div>`;
+  }
+
+  // 6 · earned closing lines (WRAPPED_COPY)
+  const closing = wrappedSentences(buildWrappedCopy(c));
+  if (closing) {
+    html += `<div class="drill-section"><div class="insight-text">${closing}</div></div>`;
+  }
+  return html;
+}
+
+function openWrapped(year) {
+  const inYear = y => entries.filter(e => new Date(e.created_at).getFullYear() === y);
+  const ctx = computeWrappedContext(inYear(year), inYear(year - 1), year);
+  document.getElementById('wrappedBody').innerHTML = buildWrappedPanel(ctx);
+  const modal = document.getElementById('wrappedModal');
+  modal.classList.add('open');
+  modal.querySelector('.modal').scrollTop = 0;
+}
+function closeWrapped() {
+  document.getElementById('wrappedModal').classList.remove('open');
+}
+
+// Print's Wrapped entry points (DE-Q4 rev. Oct 16): a card for the most
+// recent completed year when it clears the gate, then an Earlier years
+// accordion of plain link rows for every older qualifying year. Both open the
+// same panel. '' when no year qualifies. The accordion starts closed on every
+// render.
+function buildWrappedEntry() {
+  const ys = wrappedYears();
+  if (!ys.length) return '';
+  const latest = ys[0].year === new Date().getFullYear() - 1 ? ys[0] : null;
+  const earlier = latest ? ys.slice(1) : ys;
+  let html = '';
+  if (latest) {
+    html += `<button class="wrapped-card wr-entry fade-up" type="button" onclick="openWrapped(${latest.year})">
+      <div class="wrapped-year">${latest.year} Wrapped</div>
+      <div class="wrapped-headline">Your ${latest.year}, wrapped <span class="wr-entry-go">→</span></div>
+      <div class="ws-label">${latest.count.toLocaleString()} check-ins</div>
+    </button>`;
+  }
+  if (earlier.length) {
+    html += `<div class="chart-card fade-up">
+      <button class="card-head" type="button" id="wrEarlier-head" aria-expanded="false" aria-controls="wrEarlier" onclick="toggleWrappedEarlier()">
+        <span><span class="chart-title">Earlier years</span><span class="chart-sub">Every year you logged ${WRAPPED_MIN}+ beers</span></span>
+        <span class="card-chevron">${icon('chevron', 18, 2.2)}</span>
+      </button>
+      <div class="card-body" id="wrEarlier" hidden>${earlier.map(y => `
+        <button class="wr-year-row" type="button" onclick="openWrapped(${y.year})"><span class="wr-year">${y.year}</span><span class="wr-year-count">${y.count.toLocaleString()} check-ins</span><span class="wr-entry-go">→</span></button>`).join('')}
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function toggleWrappedEarlier() {
+  const head = document.getElementById('wrEarlier-head');
+  const body = document.getElementById('wrEarlier');
+  if (!head || !body) return;
+  const open = body.hidden;
+  head.setAttribute('aria-expanded', String(open));
+  body.hidden = !open;
 }
 
 let profileDirty = true;   // PT1 — entries changed since Print was built
@@ -4293,6 +4638,8 @@ function renderProfile() {
       <div class="trend-row"><div class="trend-icon">${icon('calendar', 18, 2.2)}</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
     </div>
   </div>
+
+  ${buildWrappedEntry()}
   `;
 }
 
