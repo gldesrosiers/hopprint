@@ -9,8 +9,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('vm');
 
-const { extractFunction, extractConst } = require('./helpers');
+const { script, extractFunction } = require('./helpers');
 const STYLE_MATRIX = require('../style_matrix.js');
+
+// A top-level const, single- or multi-line, with an optional trailing comment.
+function constFrom(name) {
+  const m = script.match(new RegExp(`^const ${name} = [\\s\\S]*?;(?: *//[^\\n]*)?\\n`, 'm'));
+  if (!m) throw new Error(`const ${name} not found`);
+  return m[0];
+}
 
 const DAY = 86400000;
 
@@ -23,10 +30,12 @@ function sandbox() {
   }
   const ctx = vm.createContext({ console, Math, JSON, Date: ClockDate, STYLE_MATRIX });
   vm.runInContext([
-    ...['MS_CHECKIN_STEPS', 'MS_BREWERY_STEPS', 'MS_STYLE_STEPS', 'HOPPRINT_DIMS', 'WRAPPED_MIN'].map(extractConst),
+    ...['MS_CHECKIN_STEPS', 'MS_BREWERY_STEPS', 'MS_STYLE_STEPS', 'HOPPRINT_DIMS', 'WRAPPED_MIN',
+      'RATING_BANDS', 'HOME_VENUE'].map(constFrom),
     'let STYLE_KEY_INDEX = null;',
     ...['normalizeStyleKey', 'resolveMatrixStyle', 'computeHopprint', 'computeMilestones',
-      'milestonesCrossedIn', 'wrappedYears'].map(extractFunction),
+      'milestonesCrossedIn', 'wrappedYears', 'firstOccurrenceIds', 'computeBandAnalytics', 'bandOf',
+      'isHomeEntry', 'wrappedTop', 'computeWrappedContext'].map(extractFunction),
     'var entries = [];',
   ].join('\n'), ctx);
   ctx.clock = clock;
@@ -115,4 +124,122 @@ test('WR6: wrappedYears rolls over with the clock — the old current year becom
   assert.equal(ctx.wrappedYears().length, 0);
   ctx.clock.t = new Date(2027, 0, 1, 0, 5).getTime();
   assert.equal(JSON.stringify(ctx.wrappedYears()), JSON.stringify([{ year: 2026, count: 25 }]));
+});
+
+// ── Task 2: computeWrappedContext ───────────────────────────────
+
+const J = v => JSON.stringify(v);
+let seq = 0;
+const ck = (year, o = {}) => ({ id: 'w' + (seq++), beer_name: 'Beer', brewery_name: 'Br', beer_type: STYLES[0],
+  venue_name: 'Pub', source: 'live', rating: 80, created_at: at(year, o.month ?? 5, o.day ?? 10), ...o });
+
+// Load the year into the sandbox's full history (first-time and milestone
+// logic read it) and build the context.
+function wctx(ctx, yearEs, prevEs = [], older = []) {
+  ctx.entries = [...older, ...prevEs, ...yearEs];
+  return ctx.computeWrappedContext(yearEs, prevEs, 2025);
+}
+
+test('WR7: stat block counts the year and judges new breweries/styles against full history', () => {
+  const ctx = sandbox();
+  const older = [ck(2023, { brewery_name: 'Known', beer_type: STYLES[0] })];
+  const year = [
+    ck(2025, { brewery_name: 'Known', beer_type: STYLES[0], comment: 'nice' }),
+    ck(2025, { brewery_name: 'Fresh', beer_type: STYLES[1], month: 6 }),
+    ck(2025, { brewery_name: 'Fresh', beer_type: STYLES[1], month: 6, comment: '' }),
+    ck(2025, { brewery_name: 'Newer', beer_type: STYLES[2], month: 7, comment: 'ok' }),
+  ];
+  const c = wctx(ctx, year, [], older);
+  assert.equal(c.year, 2025); assert.equal(c.prevYear, 2024);
+  assert.equal(c.total, 4); assert.equal(c.prevTotal, 0);
+  assert.equal(c.breweries, 3); assert.equal(c.styles, 3); assert.equal(c.notes, 2);
+  assert.equal(c.newBreweryCount, 2); assert.equal(c.newStyleCount, 2);
+  assert.equal(c.newBreweryPct, 50);
+  assert.equal(c.busiestMonthName, 'July'); assert.equal(c.busiestMonthCount, 2);
+  assert.equal(c.activeMonths, 3);
+});
+
+test('WR8: busiest month needs at least 2 check-ins', () => {
+  const ctx = sandbox();
+  const c = wctx(ctx, [0, 1, 2].map(m => ck(2025, { month: m })));
+  assert.equal(c.busiestMonthName, '');
+});
+
+test('WR9: superlatives need 2+ check-ins and break ties A–Z', () => {
+  const ctx = sandbox();
+  const c = wctx(ctx, [
+    ck(2025, { brewery_name: 'Zed' }), ck(2025, { brewery_name: 'Zed' }),
+    ck(2025, { brewery_name: 'Alpha' }), ck(2025, { brewery_name: 'Alpha' }),
+    ck(2025, { brewery_name: 'Solo', beer_type: STYLES[1] }),
+  ]);
+  assert.equal(J(c.topBrewery), J({ name: 'Alpha', count: 2 }));
+  assert.equal(J(c.topStyle), J({ name: STYLES[0], count: 4 }));
+  const thin = wctx(sandbox(), [ck(2025, { brewery_name: 'A', beer_type: STYLES[0], venue_name: 'X' }),
+    ck(2025, { brewery_name: 'B', beer_type: STYLES[1], venue_name: 'Y' })]);
+  assert.equal(thin.topBrewery, null); assert.equal(thin.topStyle, null); assert.equal(thin.topVenue, null);
+});
+
+test('WR10: top venue skips Home and venue-less imports; home share counts them', () => {
+  const ctx = sandbox();
+  const c = wctx(ctx, [
+    ...Array.from({ length: 5 }, () => ck(2025, { venue_name: 'Home' })),
+    ck(2025, { venue_name: '', source: 'import' }),          // home by isHomeEntry
+    ck(2025, { venue_name: '', source: 'live' }),            // not home, no venue
+    ck(2025, { venue_name: 'Tap Room' }), ck(2025, { venue_name: 'Tap Room' }),
+    ck(2025, { venue_name: 'Bar' }),
+  ]);
+  assert.equal(J(c.topVenue), J({ name: 'Tap Room', count: 2 }));
+  assert.equal(c.homeCount, 6); assert.equal(c.homePct, 60);
+  const allHome = wctx(sandbox(), Array.from({ length: 4 }, () => ck(2025, { venue_name: 'Home' })));
+  assert.equal(allHome.topVenue, null); assert.equal(allHome.homePct, 100);
+});
+
+test('WR11: names come back raw — escaping is the renderer\'s job', () => {
+  const ctx = sandbox();
+  const c = wctx(ctx, [ck(2025, { brewery_name: '<b>&Co' }), ck(2025, { brewery_name: '<b>&Co' })]);
+  assert.equal(c.topBrewery.name, '<b>&Co');
+});
+
+const styled = (year, nStyles, perStyle = 2) => Array.from({ length: nStyles * perStyle }, (_, i) =>
+  ck(year, { beer_type: STYLES[i % nStyles], month: i % 12 }));
+
+test('WR12: the radar shows at 4+ matched styles, not 3', () => {
+  assert.equal(wctx(sandbox(), styled(2025, 3)).showRadar, false);
+  const c = wctx(sandbox(), styled(2025, 4));
+  assert.equal(c.showRadar, true);
+  assert.equal(c.hpMatchedStyles, 4);
+  assert.equal(c.hpVector.length, 8);
+});
+
+test('WR13: the prior-year overlay needs the radar plus 3+ styles and 5+ entries in the prior year', () => {
+  const yr = styled(2025, 4);
+  assert.equal(wctx(sandbox(), yr, styled(2024, 3)).showPrior, true);           // 3 styles, 6 entries
+  assert.ok(wctx(sandbox(), yr, styled(2024, 3)).prevHpVector);
+  assert.equal(wctx(sandbox(), yr, styled(2024, 2, 3)).showPrior, false);       // 2 styles
+  assert.equal(wctx(sandbox(), yr, styled(2024, 3).slice(0, 4).concat(ck(2024, { beer_type: 'Not A Style' }))).showPrior, false); // 4 matched entries
+  assert.equal(wctx(sandbox(), yr, []).showPrior, false);                        // no prior year
+  const thin = wctx(sandbox(), styled(2025, 3), styled(2024, 5));                // prior is rich, year is thin
+  assert.equal(thin.showPrior, false); assert.equal(thin.prevHpVector, null);
+});
+
+test('WR14: milestones come from milestonesCrossedIn for the year', () => {
+  const ctx = sandbox();
+  const older = Array.from({ length: 99 }, (_, i) => ck(2024, { brewery_name: 'B' + (i % 10) }));
+  const c = wctx(ctx, [ck(2025, { brewery_name: 'B0' })], [], older);
+  assert.equal(J(c.milestones.map(m => m.kind)), J(['checkins']));
+  assert.equal(c.milestones[0].label, '100th check-in');
+});
+
+test('WR15: band fields use band names only, never a 0–100 score', () => {
+  const ctx = sandbox();
+  const year = [
+    ...Array.from({ length: 5 }, () => ck(2025, { beer_type: STYLES[0], beer_name: 'Fave', rating: 90 })),
+    ...Array.from({ length: 5 }, () => ck(2025, { beer_type: STYLES[1], beer_name: 'Meh', rating: 10 })),
+  ];
+  const c = wctx(ctx, year);
+  assert.equal(c.ratedTotal, 10);
+  assert.equal(c.wheelhouse, STYLES[0]);
+  assert.equal(c.lovedBeer, 'Fave');
+  assert.equal(c.unfinishedStyle, STYLES[1]);
+  for (const k of ['mostLogged', 'wheelhouse', 'lovedBeer', 'unfinishedStyle']) assert.equal(typeof c[k], 'string');
 });

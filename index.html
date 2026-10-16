@@ -4159,6 +4159,80 @@ function wrappedYears() {
     .map(year => ({ year, count: counts[year] }));
 }
 
+// Superlative winner from a { name: count } map: highest count, A–Z on ties
+// so the same year always crowns the same name. A "top" that happened once
+// isn't a superlative, so the winner needs at least 2 check-ins (D6 gating).
+function wrappedTop(counts) {
+  const best = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  return best && best[1] >= 2 ? { name: best[0], count: best[1] } : null;
+}
+
+// Everything the Wrapped panel and WRAPPED_COPY read for one completed year.
+// Descriptive claims, so imports count (Import assumption, §3.2). Names are
+// raw — renderers esc() them. First-time breweries/styles and milestones are
+// judged against full history, matching Stats (Phase C / DD-Q2).
+function computeWrappedContext(yearEntries, prevYearEntries, year) {
+  const es = yearEntries, total = es.length, prevTotal = prevYearEntries.length;
+  const tally = (list, pick) => {
+    const out = {};
+    list.forEach(e => { const k = pick(e); if (k) out[k] = (out[k] || 0) + 1; });
+    return out;
+  };
+
+  // ── stat block ──
+  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
+  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
+  const notes = es.filter(e => e.comment).length;
+  const firstBrewIds = firstOccurrenceIds('brewery_name');
+  const firstStyleIds = firstOccurrenceIds('beer_type');
+  const newBreweryCount = es.filter(e => firstBrewIds.has(e.id)).length;
+  const newStyleCount = es.filter(e => firstStyleIds.has(e.id)).length;
+  const newBreweryPct = total ? Math.round(newBreweryCount / total * 100) : 0;
+  const newStylePct = total ? Math.round(newStyleCount / total * 100) : 0;
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthCounts = Array(12).fill(0);
+  es.forEach(e => { const d = new Date(e.created_at); if (!isNaN(d)) monthCounts[d.getMonth()]++; });
+  const busiestMonthCount = Math.max(...monthCounts, 0);
+  const busiestMonthName = busiestMonthCount >= 2 ? MONTHS[monthCounts.indexOf(busiestMonthCount)] : '';
+  const activeMonths = monthCounts.filter(c => c > 0).length;
+
+  // ── superlatives: Home is left out of the venue race and reported as its
+  //    own share instead (DE-Q4 rev. Oct 16) ──
+  const topBrewery = wrappedTop(tally(es, e => e.brewery_name));
+  const topStyle = wrappedTop(tally(es, e => e.beer_type));
+  const topVenue = wrappedTop(tally(es.filter(e => !isHomeEntry(e)), e => e.venue_name));
+  const homeCount = es.filter(isHomeEntry).length;
+  const homePct = total ? Math.round(homeCount / total * 100) : 0;
+
+  // ── YoY hopprint (DE-Q5): the year alone vs the prior year alone, with the
+  //    Your Hopprint screen's honesty gates ──
+  const hp = computeHopprint(es);
+  const prevHp = computeHopprint(prevYearEntries);
+  const showRadar = hp.matchedStyles >= 4;
+  const showPrior = showRadar && prevHp.matchedStyles >= 3 && prevHp.count >= 5;
+
+  // ── bands (D1: band language only, never the 0–100 scores) ──
+  const bands = computeBandAnalytics(es);
+  const ratedTotal = es.filter(e => bandOf(e.rating)).length;
+
+  return {
+    year, prevYear: year - 1, total, prevTotal,
+    breweries, styles, notes, newBreweryCount, newStyleCount, newBreweryPct, newStylePct,
+    busiestMonthName, busiestMonthCount, activeMonths,
+    topBrewery, topStyle, topVenue, homeCount, homePct,
+    hpVector: hp.vector, hpMatchedStyles: hp.matchedStyles, showRadar,
+    prevHpVector: showPrior ? prevHp.vector : null, showPrior,
+    milestones: milestonesCrossedIn(year),
+    ratedTotal,
+    mostLogged: bands.mostLogged ? bands.mostLogged[0] : '',
+    wheelhouse: bands.wheelhouse ? bands.wheelhouse[0] : '',
+    lovedBeer: bands.loved.length ? bands.loved[0][0] : '',
+    unfinishedStyle: bands.unfinished.length ? bands.unfinished[0][0] : '',
+  };
+}
+
 let profileDirty = true;   // PT1 — entries changed since Print was built
 let profileDay = '';       // PT5 — local date Print was last built on
 
