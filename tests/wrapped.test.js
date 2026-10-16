@@ -38,7 +38,8 @@ function sandbox() {
       'isHomeEntry', 'wrappedTop', 'computeWrappedContext', 'esc', 'selectCopy',
       'buildWrappedCopy', 'wrappedSentences'].map(extractFunction),
     ...['WRAPPED_ZONE_ORDER', 'WRAPPED_MAX_EARNED', 'WRAPPED_COPY', 'MS_KIND_ICONS', 'HOPPRINT_DIM_LABELS'].map(constFrom),
-    ...['buildHopprintSVG', 'fmtMonthYear', 'buildWrappedPanel', 'openWrapped', 'closeWrapped'].map(extractFunction),
+    ...['buildHopprintSVG', 'fmtMonthYear', 'buildWrappedPanel', 'openWrapped', 'closeWrapped',
+      'buildWrappedEntry', 'toggleWrappedEarlier'].map(extractFunction),
     'function icon(name) { return `<i data-icon="${name}"></i>`; }',
     'var entries = [];',
   ].join('\n'), ctx);
@@ -465,4 +466,59 @@ test('WR31: openWrapped renders the chosen year against its prior year and opens
   assert.equal(modalInner.scrollTop, 0);
   ctx.closeWrapped();
   assert.ok(!classes.has('open'));
+});
+
+// ── Task 5: Print entry card + Earlier years ────────────────────
+
+const many = (year, n) => Array.from({ length: n }, () => ck(year, {}));
+const rowYears = html => [...html.matchAll(/class="wr-year">(\d+)/g)].map(m => +m[1]);
+
+test('WR32: latest completed year gets the card; older qualifying years fill a closed accordion', () => {
+  const ctx = sandbox(); // Oct 2026 → latest completed is 2025
+  ctx.entries = [...many(2026, 40), ...many(2025, 786), ...many(2024, 618), ...many(2023, 19), ...many(2019, 30)];
+  const html = ctx.buildWrappedEntry();
+  assert.match(html, /onclick="openWrapped\(2025\)"[\s\S]*Your 2025, wrapped/);
+  assert.match(html, /786 check-ins/);
+  assert.equal(J(rowYears(html)), J([2024, 2019]));     // 2023 (19) hidden, newest first
+  assert.match(html, /onclick="openWrapped\(2024\)"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /id="wrEarlier" hidden/);
+  assert.doesNotMatch(html, /openWrapped\(2026\)/);
+});
+
+test('WR33: no headline card when the latest year misses the gate — older years still listed', () => {
+  const ctx = sandbox();
+  ctx.entries = [...many(2025, 19), ...many(2024, 50), ...many(2022, 20)];
+  const html = ctx.buildWrappedEntry();
+  assert.doesNotMatch(html, /wrapped-card wr-entry/);
+  assert.equal(J(rowYears(html)), J([2024, 2022]));
+});
+
+test('WR34: just the card when no earlier year qualifies; nothing when no year does', () => {
+  const ctx = sandbox();
+  ctx.entries = [...many(2025, 20), ...many(2024, 5)];
+  const html = ctx.buildWrappedEntry();
+  assert.match(html, /wrapped-card wr-entry/);
+  assert.doesNotMatch(html, /Earlier years/);
+  ctx.entries = [...many(2026, 300), ...many(2025, 19)];
+  assert.equal(ctx.buildWrappedEntry(), '');
+});
+
+test('WR35: the accordion toggles open and closed in place', () => {
+  const ctx = sandbox();
+  const attrs = {};
+  const head = { setAttribute: (k, v) => { attrs[k] = v; } };
+  const body = { hidden: true };
+  ctx.document = { getElementById: id => ({ 'wrEarlier-head': head, wrEarlier: body })[id] };
+  ctx.toggleWrappedEarlier();
+  assert.equal(body.hidden, false); assert.equal(attrs['aria-expanded'], 'true');
+  ctx.toggleWrappedEarlier();
+  assert.equal(body.hidden, true); assert.equal(attrs['aria-expanded'], 'false');
+});
+
+test('WR36: Print keeps the teaser in place and puts Wrapped after Taste Trends', () => {
+  const src = extractFunction('renderProfile');
+  const teaser = src.indexOf('IN REVIEW'), trends = src.indexOf('<div class="chart-title">Taste Trends'), entry = src.indexOf('${buildWrappedEntry()}');
+  assert.ok(teaser > 0 && trends > teaser && entry > trends, 'order: teaser → Taste Trends → Wrapped entry');
+  assert.match(src, /curYrEs\.length >= 5/); // teaser gate unchanged (DE2/DE8)
 });

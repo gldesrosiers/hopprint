@@ -686,6 +686,20 @@ body.input-focused .fab-feedback { display: none; }
 .wr-stats .pstat-num { font-size: 22px; }
 .wr-count { color: var(--text-dim); font-weight: 300; font-size: 12px; margin-left: 4px; }
 .wr-note { font-size: 13px; color: var(--text-dim); font-weight: 300; text-align: center; }
+/* Wrapped entry points on Print (DE-Q4): the latest year's card, then the
+   Earlier years accordion in the Stats collapsible-card shape. */
+.wr-entry { display: block; width: 100%; text-align: left; color: var(--text); font-family: var(--font-body); cursor: pointer; }
+.wr-entry .wrapped-headline { margin-bottom: 4px; }
+.wr-entry-go { color: var(--orange); }
+.wr-year-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 11px 2px; background: none; border: none; border-bottom: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-body); font-size: 13px; text-align: left; cursor: pointer;
+}
+.wr-year-row:last-child { border-bottom: none; }
+.wr-year-row:hover { background: var(--orange-glow2); }
+.wr-year { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--orange); }
+.wr-year-count { flex: 1; color: var(--text-muted); font-weight: 300; }
 
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .trend-row:last-child { border-bottom: none; }
@@ -4420,6 +4434,47 @@ function closeWrapped() {
   document.getElementById('wrappedModal').classList.remove('open');
 }
 
+// Print's Wrapped entry points (DE-Q4 rev. Oct 16): a card for the most
+// recent completed year when it clears the gate, then an Earlier years
+// accordion of plain link rows for every older qualifying year. Both open the
+// same panel. '' when no year qualifies. The accordion starts closed on every
+// render.
+function buildWrappedEntry() {
+  const ys = wrappedYears();
+  if (!ys.length) return '';
+  const latest = ys[0].year === new Date().getFullYear() - 1 ? ys[0] : null;
+  const earlier = latest ? ys.slice(1) : ys;
+  let html = '';
+  if (latest) {
+    html += `<button class="wrapped-card wr-entry fade-up" type="button" onclick="openWrapped(${latest.year})">
+      <div class="wrapped-year">${latest.year} Wrapped</div>
+      <div class="wrapped-headline">Your ${latest.year}, wrapped <span class="wr-entry-go">→</span></div>
+      <div class="ws-label">${latest.count.toLocaleString()} check-ins</div>
+    </button>`;
+  }
+  if (earlier.length) {
+    html += `<div class="chart-card fade-up">
+      <button class="card-head" type="button" id="wrEarlier-head" aria-expanded="false" aria-controls="wrEarlier" onclick="toggleWrappedEarlier()">
+        <span><span class="chart-title">Earlier years</span><span class="chart-sub">Every year you logged ${WRAPPED_MIN}+ beers</span></span>
+        <span class="card-chevron">${icon('chevron', 18, 2.2)}</span>
+      </button>
+      <div class="card-body" id="wrEarlier" hidden>${earlier.map(y => `
+        <button class="wr-year-row" type="button" onclick="openWrapped(${y.year})"><span class="wr-year">${y.year}</span><span class="wr-year-count">${y.count.toLocaleString()} check-ins</span><span class="wr-entry-go">→</span></button>`).join('')}
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function toggleWrappedEarlier() {
+  const head = document.getElementById('wrEarlier-head');
+  const body = document.getElementById('wrEarlier');
+  if (!head || !body) return;
+  const open = body.hidden;
+  head.setAttribute('aria-expanded', String(open));
+  body.hidden = !open;
+}
+
 let profileDirty = true;   // PT1 — entries changed since Print was built
 let profileDay = '';       // PT5 — local date Print was last built on
 
@@ -4583,6 +4638,8 @@ function renderProfile() {
       <div class="trend-row"><div class="trend-icon">${icon('calendar', 18, 2.2)}</div><div class="trend-label">Peak day</div><div class="trend-val">${peakDow}</div></div>
     </div>
   </div>
+
+  ${buildWrappedEntry()}
   `;
 }
 
