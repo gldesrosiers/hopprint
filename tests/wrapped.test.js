@@ -37,7 +37,9 @@ function sandbox() {
       'milestonesCrossedIn', 'wrappedYears', 'firstOccurrenceIds', 'computeBandAnalytics', 'bandOf',
       'isHomeEntry', 'wrappedTop', 'computeWrappedContext', 'esc', 'selectCopy',
       'buildWrappedCopy', 'wrappedSentences'].map(extractFunction),
-    ...['WRAPPED_ZONE_ORDER', 'WRAPPED_MAX_EARNED', 'WRAPPED_COPY'].map(constFrom),
+    ...['WRAPPED_ZONE_ORDER', 'WRAPPED_MAX_EARNED', 'WRAPPED_COPY', 'MS_KIND_ICONS', 'HOPPRINT_DIM_LABELS'].map(constFrom),
+    ...['buildHopprintSVG', 'fmtMonthYear', 'buildWrappedPanel', 'openWrapped', 'closeWrapped'].map(extractFunction),
+    'function icon(name) { return `<i data-icon="${name}"></i>`; }',
     'var entries = [];',
   ].join('\n'), ctx);
   ctx.clock = clock;
@@ -355,4 +357,112 @@ test('WR24: D1 — the year\'s raw 0–100 ratings never reach the copy', () => 
   const text = reg(ctx).filter(k => k.condition(c)).map(k => k.render(c)).join(' ');
   assert.ok(text.length > 0);
   assert.doesNotMatch(text, /\b77\b/);
+});
+
+// ── Task 4: Wrapped panel ───────────────────────────────────────
+
+const sections = html => (html.match(/class="drill-section"/g) || []).length;
+
+// A full year: 4+ styles, repeat breweries and venues, notes, ratings, a busy
+// month, and a 100th check-in in it. The prior year has its own shape.
+function richYear() {
+  const yr = Array.from({ length: 60 }, (_, i) => ck(2025, {
+    beer_type: STYLES[i % 5], brewery_name: i % 3 ? 'Br' + (i % 6) : 'Tree & <House>',
+    venue_name: i % 4 ? 'Home' : 'Tap <Room>', comment: i % 5 ? '' : 'note',
+    beer_name: i % 10 ? 'B' + i : 'Fave', rating: i % 10 ? (i * 37) % 101 : 95,
+    month: i < 20 ? 6 : i % 12, day: 1 + (i % 27) }));
+  const prev = Array.from({ length: 50 }, (_, i) => ck(2024, { beer_type: STYLES[(i % 3) + 1], brewery_name: 'Old' + (i % 4) }));
+  return { yr, prev };
+}
+
+test('WR25: a rich year renders every section', () => {
+  const ctx = sandbox();
+  const { yr, prev } = richYear();
+  const html = ctx.buildWrappedPanel(wctx(ctx, yr, prev));
+  assert.match(html, /2025 Wrapped/);
+  assert.match(html, /<b>60<\/b> beers logged in 2025/);
+  assert.match(html, /More than 2024's 50/);
+  assert.match(html, /class="wr-stats"/);
+  assert.match(html, /The year's favorites/);
+  assert.match(html, /Your 2025 hopprint[\s\S]*<svg/);
+  assert.match(html, /stroke-dasharray/);              // prior-year overlay
+  assert.match(html, /hp-dashed"><\/span>2024/);
+  assert.match(html, /Milestones[\s\S]*100th check-in/);
+  assert.match(html, /class="insight-text">[A-Z]/);
+  assert.equal(sections(html), 5);
+});
+
+test('WR26: a thin 21-check-in year renders a shorter, honest panel', () => {
+  const ctx = sandbox();
+  const yr = Array.from({ length: 21 }, (_, i) => ck(2025, {
+    beer_type: STYLES[i % 2], brewery_name: 'Br' + i, venue_name: 'V' + i, rating: null, month: i % 12 }));
+  const html = ctx.buildWrappedPanel(wctx(ctx, yr));
+  assert.doesNotMatch(html, /drill-summary/);          // no prior year
+  assert.doesNotMatch(html, /<svg/);
+  assert.match(html, /A hopprint takes shape at 4 styles — 2025 had 2\./);
+  assert.doesNotMatch(html, /Top brewery|Top venue|At home/);
+  assert.match(html, /Top style/);
+  assert.doesNotMatch(html, /Milestones/);
+});
+
+test('WR27: the closing section drops out when nothing is earned', () => {
+  const ctx = sandbox();
+  const yr = Array.from({ length: 21 }, (_, i) => ck(2025, { beer_type: STYLES[0], brewery_name: 'Same', venue_name: 'V' + i, rating: null, month: i % 4 }));
+  const older = [ck(2023, { beer_type: STYLES[0], brewery_name: 'Same' })];
+  const c = wctx(ctx, yr, [], older);
+  assert.equal(ctx.buildWrappedCopy(c).length > 0, true); // sanity: style backbone earns
+  const none = { ...c, topStyle: null, topBrewery: null, newBreweryPct: 20 };
+  assert.equal(ctx.buildWrappedCopy(none).length, 0);
+  assert.doesNotMatch(ctx.buildWrappedPanel(none), /insight-text/);
+});
+
+test('WR28: superlative names are escaped, venue excludes Home, home share shown', () => {
+  const ctx = sandbox();
+  const { yr, prev } = richYear();
+  const html = ctx.buildWrappedPanel(wctx(ctx, yr, prev));
+  assert.match(html, /Tree &amp; &lt;House>/);
+  assert.match(html, /Top venue[\s\S]*?Tap &lt;Room>/);
+  assert.match(html, /At home[\s\S]*?75%/);
+  assert.doesNotMatch(html, /<House>|<Room>/);
+});
+
+test('WR29: no prior-year overlay or legend key when the prior year is thin', () => {
+  const ctx = sandbox();
+  const { yr } = richYear();
+  const prev = Array.from({ length: 4 }, () => ck(2024, { beer_type: STYLES[1] }));
+  const html = ctx.buildWrappedPanel(wctx(ctx, yr, prev));
+  assert.match(html, /<svg/);
+  assert.doesNotMatch(html, /stroke-dasharray|hp-dashed/);
+  assert.match(html, /Fewer than 2024's 4|More than 2024's 4/);
+});
+
+test('WR30: milestones list in the order they happened', () => {
+  const ctx = sandbox();
+  const older = Array.from({ length: 99 }, (_, i) => ck(2024, { brewery_name: 'B' + (i % 20), beer_type: 'S' + (i % 20) }));
+  const yr = [ck(2025, { month: 1, brewery_name: 'B0', beer_type: 'S0' }),
+    ...Array.from({ length: 5 }, (_, i) => ck(2025, { month: 8, brewery_name: 'N' + i, beer_type: 'S0' })),
+    ...Array.from({ length: 14 }, (_, i) => ck(2025, { month: 10, brewery_name: 'B0', beer_type: 'S0' }))];
+  const html = ctx.buildWrappedPanel(wctx(ctx, yr, [], older));
+  const order = [...html.matchAll(/ms-label">([^<]+)/g)].map(m => m[1]);
+  assert.equal(J(order), J(['100th check-in', '25th brewery']));
+});
+
+test('WR31: openWrapped renders the chosen year against its prior year and opens the modal', () => {
+  const ctx = sandbox();
+  const { yr, prev } = richYear();
+  ctx.entries = [...prev, ...yr, ck(2026, {})];
+  const classes = new Set();
+  const modalInner = { scrollTop: 99 };
+  const els = {
+    wrappedBody: { innerHTML: '' },
+    wrappedModal: { classList: { add: c => classes.add(c), remove: c => classes.delete(c) }, querySelector: () => modalInner },
+  };
+  ctx.document = { getElementById: id => els[id] };
+  ctx.openWrapped(2025);
+  assert.match(els.wrappedBody.innerHTML, /<b>60<\/b> beers logged in 2025/);
+  assert.match(els.wrappedBody.innerHTML, /More than 2024's 50/);
+  assert.ok(classes.has('open'));
+  assert.equal(modalInner.scrollTop, 0);
+  ctx.closeWrapped();
+  assert.ok(!classes.has('open'));
 });

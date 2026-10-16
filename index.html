@@ -677,6 +677,16 @@ body.input-focused .fab-feedback { display: none; }
 .ws-num { font-size: 22px; font-weight: 700; color: var(--orange); font-family: var(--font-headline); }
 .ws-label { font-size: 11px; color: var(--text-muted); font-weight: 300; }
 
+/* Wrapped panel (Phase E) — composes from the drill, profile and stats
+   patterns; the only new pieces are the headline size and stat grid. */
+.wr-headline { font-family: var(--font-headline); font-size: 30px; font-weight: 800; line-height: 1.05; }
+.wr-headline b { color: var(--orange); font-weight: 800; }
+.wr-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.wr-stats .pstat { padding: 11px 6px; }
+.wr-stats .pstat-num { font-size: 22px; }
+.wr-count { color: var(--text-dim); font-weight: 300; font-size: 12px; margin-left: 4px; }
+.wr-note { font-size: 13px; color: var(--text-dim); font-weight: 300; text-align: center; }
+
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .trend-row:last-child { border-bottom: none; }
 .trend-icon { display: flex; align-items: center; height: 28px; flex-shrink: 0; }
@@ -1238,6 +1248,16 @@ body.first-sync .first-sync-hint { display: block; }
       <div class="modal-close" onclick="closeDrill()">✕</div>
     </div>
     <div id="drillBody"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="wrappedModal" onclick="if(event.target===this)closeWrapped()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Wrapped</div>
+      <div class="modal-close" onclick="closeWrapped()">✕</div>
+    </div>
+    <div id="wrappedBody"></div>
   </div>
 </div>
 
@@ -4309,6 +4329,95 @@ function buildWrappedCopy(ctx) {
 function wrappedSentences(picked) {
   if (!picked.length) return '';
   return picked.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.';
+}
+
+// The Wrapped panel body for one completed year (§3.3). Every section gates
+// itself (D6): a thin year renders a shorter, honest panel. The YoY radar
+// reuses buildHopprintSVG unmodified — solid orange is the year, dashed lime
+// the prior year (DE-Q5).
+function buildWrappedPanel(c) {
+  const n = v => Number(v).toLocaleString();
+  let html = '';
+
+  // 1 · headline
+  let vsPrev = '';
+  if (c.prevTotal > 0) {
+    vsPrev = c.total > c.prevTotal ? `More than ${c.prevYear}'s ${n(c.prevTotal)}`
+      : c.total < c.prevTotal ? `Fewer than ${c.prevYear}'s ${n(c.prevTotal)}`
+      : `Same as ${c.prevYear}`;
+  }
+  html += `<div class="drill-head">
+    <div class="drill-kicker">${c.year} Wrapped</div>
+    <div class="wr-headline"><b>${n(c.total)}</b> beers logged in ${c.year}</div>
+    ${vsPrev ? `<div class="drill-summary">${vsPrev}</div>` : ''}
+  </div>`;
+
+  // 2 · stat block — a tile only when it has something to say
+  const tiles = [
+    [n(c.breweries), 'Breweries', c.breweries > 0],
+    [n(c.styles), 'Styles', c.styles > 0],
+    [n(c.newBreweryCount), 'New breweries', c.newBreweryCount > 0],
+    [n(c.newStyleCount), 'New styles', c.newStyleCount > 0],
+    [n(c.notes), 'With notes', c.notes > 0],
+    [c.busiestMonthName.slice(0, 3), 'Busiest month', !!c.busiestMonthName],
+  ].filter(t => t[2]);
+  if (tiles.length) {
+    html += `<div class="drill-section"><div class="wr-stats">${tiles.map(([v, l]) =>
+      `<div class="pstat"><div class="pstat-num">${v}</div><div class="pstat-label">${l}</div></div>`).join('')}</div></div>`;
+  }
+
+  // 3 · superlatives — top away venue, with home as its own share
+  const sup = [];
+  const row = (ic, label, val, count) => `<div class="trend-row"><div class="trend-icon">${icon(ic, 18, 2.2)}</div><div class="trend-label">${label}${count ? `<span class="wr-count">${count}</span>` : ''}</div><div class="trend-val" title="${esc(val)}">${esc(val)}</div></div>`;
+  if (c.topBrewery) sup.push(row('trend-loyal', 'Top brewery', c.topBrewery.name, `${n(c.topBrewery.count)}×`));
+  if (c.topStyle) sup.push(row('beers', 'Top style', c.topStyle.name, `${n(c.topStyle.count)}×`));
+  if (c.topVenue) sup.push(row('venue', 'Top venue', c.topVenue.name, `${n(c.topVenue.count)}×`));
+  if (c.homeCount > 0) sup.push(row('occasion-home-solo', 'At home', `${c.homePct}%`, ''));
+  if (sup.length) {
+    html += `<div class="drill-section"><div class="drill-section-title">The year's favorites</div>${sup.join('')}</div>`;
+  }
+
+  // 4 · YoY hopprint, with the screen's honesty gates
+  if (c.showRadar) {
+    const legend = `<span class="hp-key"><span class="hp-swatch hp-solid"></span>${c.year}</span>`
+      + (c.showPrior ? `<span class="hp-key"><span class="hp-swatch hp-dashed"></span>${c.prevYear}</span>` : '');
+    html += `<div class="drill-section"><div class="drill-section-title">Your ${c.year} hopprint</div>
+      <div class="hopprint-radar">${buildHopprintSVG(c.hpVector, c.showPrior ? c.prevHpVector : null)}</div>
+      <div class="hopprint-legend">${legend}</div></div>`;
+  } else if (c.hpMatchedStyles > 0) {
+    html += `<div class="drill-section"><div class="drill-section-title">Your ${c.year} hopprint</div>
+      <div class="wr-note">A hopprint takes shape at 4 styles — ${c.year} had ${c.hpMatchedStyles}.</div></div>`;
+  }
+
+  // 5 · milestones crossed, in the order they happened
+  if (c.milestones.length) {
+    const ms = [...c.milestones].sort((a, b) => new Date(a.date) - new Date(b.date));
+    html += `<div class="drill-section"><div class="drill-section-title">Milestones</div><div class="ms-list">${ms.map(m => `
+      <div class="ms-row">
+        <div class="ms-icon">${icon(MS_KIND_ICONS[m.kind], 18, 2.2)}</div>
+        <div class="ms-body"><div class="ms-label">${m.label}</div><div class="ms-sub">${esc(m.sub)}</div></div>
+        <div class="ms-date">${fmtMonthYear(m.date)}</div>
+      </div>`).join('')}</div></div>`;
+  }
+
+  // 6 · earned closing lines (WRAPPED_COPY)
+  const closing = wrappedSentences(buildWrappedCopy(c));
+  if (closing) {
+    html += `<div class="drill-section"><div class="insight-text">${closing}</div></div>`;
+  }
+  return html;
+}
+
+function openWrapped(year) {
+  const inYear = y => entries.filter(e => new Date(e.created_at).getFullYear() === y);
+  const ctx = computeWrappedContext(inYear(year), inYear(year - 1), year);
+  document.getElementById('wrappedBody').innerHTML = buildWrappedPanel(ctx);
+  const modal = document.getElementById('wrappedModal');
+  modal.classList.add('open');
+  modal.querySelector('.modal').scrollTop = 0;
+}
+function closeWrapped() {
+  document.getElementById('wrappedModal').classList.remove('open');
 }
 
 let profileDirty = true;   // PT1 — entries changed since Print was built
