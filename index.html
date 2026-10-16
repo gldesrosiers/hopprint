@@ -3060,6 +3060,16 @@ function computeMilestones() {
   return out.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+// Milestones crossed inside one calendar year (DD-Q2, retrospective), ranked
+// for copy: check-ins > breweries > styles, then most recent first. Shared by
+// the Stats insight card and Wrapped so both read the same crossings.
+function milestonesCrossedIn(year) {
+  const msWeight = m => (m.kind === 'checkins' ? 3 : m.kind === 'breweries' ? 2 : 1);
+  return computeMilestones()
+    .filter(m => new Date(m.date).getFullYear() === year)
+    .sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date));
+}
+
 function recentStyleFirsts(limit) {
   const seen = new Set(); const firsts = [];
   [...entries]
@@ -4003,12 +4013,10 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
     else if (firstHalfLive >= secondHalfLive * 1.5 && firstHalfLive - secondHalfLive >= 4) paceDirection = 'cooling';
   }
 
-  // ── milestone: retrospective crossings inside this year (DD-Q2). Reuses the
-  //    Phase C thresholds via computeMilestones(). Rank check-ins > breweries >
-  //    styles, biggest first; derive the round number + noun from the label.
-  const yearMilestones = computeMilestones().filter(m => new Date(m.date).getFullYear() === analyticsYear);
-  const msWeight = m => (m.kind === 'checkins' ? 3 : m.kind === 'breweries' ? 2 : 1);
-  const topMs = yearMilestones.slice().sort((a, b) => msWeight(b) - msWeight(a) || new Date(b.date) - new Date(a.date))[0] || null;
+  // ── milestone: retrospective crossings inside this year (DD-Q2), ranked by
+  //    the shared milestonesCrossedIn(); derive the round number + noun from
+  //    the top crossing's label.
+  const topMs = milestonesCrossedIn(analyticsYear)[0] || null;
   let milestone = null;
   if (topMs) {
     const n = parseInt(String(topMs.label).replace(/[^0-9]/g, ''), 10);
@@ -4128,6 +4136,27 @@ function buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, compareOn) 
     <div class="insight-icon">${icon('checkin', 22, 2.2)}</div>
     <div class="insight-body"><div class="insight-text">${sentences}</div></div>
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WRAPPED (Phase E) — full annual summary for completed years
+// ═══════════════════════════════════════════════════════════════
+const WRAPPED_MIN = 20; // DE2: a completed year needs this many check-ins
+
+// Completed years (before the current one) that clear the DE2 gate, newest
+// first, as { year, count }. The first is the entry card's year; the rest
+// fill the Earlier years accordion (DE-Q4, rev. Oct 16).
+function wrappedYears() {
+  const curYear = new Date().getFullYear();
+  const counts = {};
+  entries.forEach(e => {
+    const y = new Date(e.created_at).getFullYear();
+    if (!isNaN(y) && y < curYear) counts[y] = (counts[y] || 0) + 1;
+  });
+  return Object.keys(counts).map(Number)
+    .filter(y => counts[y] >= WRAPPED_MIN)
+    .sort((a, b) => b - a)
+    .map(year => ({ year, count: counts[year] }));
 }
 
 let profileDirty = true;   // PT1 — entries changed since Print was built

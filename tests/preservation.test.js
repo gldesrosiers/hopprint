@@ -44,7 +44,7 @@ const ALLOWED_CHANGES = {
   setNvrField: 'ST14 keep position on rebuild',
   toggleAnalyticsCompare: 'ST4 jump to top',
   setAnalyticsYear: 'ST4 jump to top',
-  computeAnalyticsContext: 'IN19 compare on kind',
+  computeAnalyticsContext: 'IN19 compare on kind; Phase E (a) milestone ranking moved to milestonesCrossedIn()',
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',
   buildAnalyticsInsightCard: 'IN1 insight icon',
