@@ -35,7 +35,9 @@ function sandbox() {
     'let STYLE_KEY_INDEX = null;',
     ...['normalizeStyleKey', 'resolveMatrixStyle', 'computeHopprint', 'computeMilestones',
       'milestonesCrossedIn', 'wrappedYears', 'firstOccurrenceIds', 'computeBandAnalytics', 'bandOf',
-      'isHomeEntry', 'wrappedTop', 'computeWrappedContext'].map(extractFunction),
+      'isHomeEntry', 'wrappedTop', 'computeWrappedContext', 'esc', 'selectCopy',
+      'buildWrappedCopy', 'wrappedSentences'].map(extractFunction),
+    ...['WRAPPED_ZONE_ORDER', 'WRAPPED_MAX_EARNED', 'WRAPPED_COPY'].map(constFrom),
     'var entries = [];',
   ].join('\n'), ctx);
   ctx.clock = clock;
@@ -242,4 +244,115 @@ test('WR15: band fields use band names only, never a 0–100 score', () => {
   assert.equal(c.lovedBeer, 'Fave');
   assert.equal(c.unfinishedStyle, STYLES[1]);
   for (const k of ['mostLogged', 'wheelhouse', 'lovedBeer', 'unfinishedStyle']) assert.equal(typeof c[k], 'string');
+});
+
+// ── Task 3: WRAPPED_COPY consumer ───────────────────────────────
+
+const reg = ctx => vm.runInContext('WRAPPED_COPY', ctx);
+const zones = ctx => vm.runInContext('WRAPPED_ZONE_ORDER', ctx);
+
+// A synthetic context where every candidate's condition holds, with names
+// that need escaping.
+const RICH = {
+  year: 2025, prevYear: 2024, total: 200, prevTotal: 100, deltaVolumePct: 100,
+  breweries: 80, styles: 40, notes: 30, newBreweryCount: 90, newStyleCount: 12,
+  newBreweryPct: 45, newStylePct: 6, busiestMonthName: 'July', busiestMonthCount: 40, activeMonths: 12,
+  topBrewery: { name: 'Tree & <House>', count: 60 }, topStyle: { name: 'IPA - New England', count: 70 },
+  topVenue: { name: 'The "Tap" Room', count: 9 }, homeCount: 130, homePct: 65,
+  ratedTotal: 150, mostLogged: 'IPA - American', wheelhouse: 'Stout & Co', lovedBeer: 'Heady <Topper>',
+  unfinishedStyle: 'Sour - Gose',
+};
+const EMPTY = { ...RICH, prevTotal: 0, deltaVolumePct: null, activeMonths: 3, busiestMonthCount: 3,
+  newBreweryPct: 20, newStyleCount: 1, ratedTotal: 0, topBrewery: null, topStyle: null, topVenue: null, homePct: 10 };
+
+test('WR16: registry hygiene — unique ids, known zones, priority order, explicit shareSlot', () => {
+  const ctx = sandbox();
+  const r = reg(ctx), order = zones(ctx);
+  assert.equal(new Set(r.map(c => c.id)).size, r.length);
+  for (const c of r) {
+    assert.ok(order.includes(c.zone), `${c.id} has unknown zone ${c.zone}`);
+    assert.equal(typeof c.shareSlot, 'boolean', `${c.id} needs an explicit shareSlot`);
+    assert.equal(typeof c.condition, 'function'); assert.equal(typeof c.render, 'function');
+  }
+  for (const z of order) {
+    const ps = r.filter(c => c.zone === z).map(c => c.priority);
+    assert.ok(ps.length >= 2, `zone ${z} needs a minimal pool`);
+    assert.equal(J(ps), J([...ps].sort((a, b) => b - a)), `zone ${z} out of priority order`);
+  }
+  assert.equal(J(order), J(['headline', 'exploration', 'band', 'superlative']));
+  assert.equal(vm.runInContext('WRAPPED_MAX_EARNED', ctx), 2);
+});
+
+test('WR17: venue and home lines never go on a share card (DE3)', () => {
+  const r = reg(sandbox());
+  for (const c of r) {
+    const text = c.render(RICH);
+    if (/Tap|home/i.test(text)) assert.equal(c.shareSlot, false, `${c.id} mentions a venue but is shareable`);
+  }
+});
+
+// RICH plus the mirror-image variants for the mutually exclusive pairs.
+const VARIANTS = [RICH, { ...RICH, deltaVolumePct: -50 }, { ...RICH, newBreweryPct: 10 }];
+
+test('WR18: every candidate renders a clean past-tense fragment under its own condition', () => {
+  const ctx = sandbox();
+  for (const c of reg(ctx)) {
+    const v = VARIANTS.find(x => c.condition(x));
+    assert.ok(v, `${c.id} never qualifies`);
+    const html = c.render(v);
+    assert.ok(html.length > 0, c.id);
+    assert.doesNotMatch(html, /[.!]$/, `${c.id} ends with punctuation`);
+    assert.doesNotMatch(html, /^</, `${c.id} starts with markup`);
+    assert.doesNotMatch(html, /\bso far\b|\bthis year\b|\byou've\b|\byou're\b|\bhave been\b|\bkeep\b/i, `${c.id} is not past tense: ${html}`);
+    assert.doesNotMatch(html, /<(?!\/?b>)/, `${c.id} leaks unescaped markup: ${html}`);
+  }
+});
+
+test('WR19: entity names are escaped', () => {
+  const r = reg(sandbox());
+  const all = r.map(c => c.render(RICH)).join(' | ');
+  assert.match(all, /Tree &amp; &lt;House/);
+  assert.match(all, /Heady &lt;Topper/);
+  assert.match(all, /Stout &amp; Co/);
+  assert.match(all, /The &quot;Tap&quot; Room/);
+  assert.doesNotMatch(all, /<(?!\/?b>)/);
+});
+
+test('WR20: cap of 2, first zones in order win; determinism', () => {
+  const ctx = sandbox();
+  const a = ctx.buildWrappedCopy(RICH);
+  assert.equal(J(a.map(p => p.zone)), J(['headline', 'exploration']));
+  assert.equal(J(a.map(p => p.id)), J(['wr_bigger', 'wr_new_ground']));
+  assert.equal(J(ctx.buildWrappedCopy(RICH)), J(a));
+});
+
+test('WR21: later zones inherit when earlier ones earn nothing', () => {
+  const ctx = sandbox();
+  const c = { ...EMPTY, ratedTotal: 50, homePct: 70 };
+  assert.equal(J(ctx.buildWrappedCopy(c).map(p => p.zone)), J(['band', 'superlative']));
+});
+
+test('WR22: nothing earned → no sentences (no empty shell)', () => {
+  const ctx = sandbox();
+  const picked = ctx.buildWrappedCopy(EMPTY);
+  assert.equal(picked.length, 0);
+  assert.equal(ctx.wrappedSentences(picked), '');
+});
+
+test('WR23: sentences are capitalized and punctuated', () => {
+  const ctx = sandbox();
+  const out = ctx.wrappedSentences(ctx.buildWrappedCopy(RICH));
+  assert.match(out, /^A bigger year than 2024 — <b>100%<\/b> more check-ins\. New ground all year/);
+  assert.match(out, /\.$/);
+});
+
+test('WR24: D1 — the year\'s raw 0–100 ratings never reach the copy', () => {
+  const ctx = sandbox();
+  const year = Array.from({ length: 30 }, (_, i) => ck(2025, {
+    rating: 77, beer_name: i < 6 ? 'Loved' : 'B' + i, beer_type: STYLES[i % 5], brewery_name: 'Br' + (i % 4), month: i % 12 }));
+  const prev = Array.from({ length: 21 }, (_, i) => ck(2024, { rating: 77, beer_type: STYLES[i % 3] }));
+  const c = wctx(ctx, year, prev);
+  const text = reg(ctx).filter(k => k.condition(c)).map(k => k.render(c)).join(' ');
+  assert.ok(text.length > 0);
+  assert.doesNotMatch(text, /\b77\b/);
 });

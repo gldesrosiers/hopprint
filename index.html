@@ -4174,6 +4174,7 @@ function wrappedTop(counts) {
 // judged against full history, matching Stats (Phase C / DD-Q2).
 function computeWrappedContext(yearEntries, prevYearEntries, year) {
   const es = yearEntries, total = es.length, prevTotal = prevYearEntries.length;
+  const deltaVolumePct = prevTotal > 0 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
   const tally = (list, pick) => {
     const out = {};
     list.forEach(e => { const k = pick(e); if (k) out[k] = (out[k] || 0) + 1; });
@@ -4218,7 +4219,7 @@ function computeWrappedContext(yearEntries, prevYearEntries, year) {
   const ratedTotal = es.filter(e => bandOf(e.rating)).length;
 
   return {
-    year, prevYear: year - 1, total, prevTotal,
+    year, prevYear: year - 1, total, prevTotal, deltaVolumePct,
     breweries, styles, notes, newBreweryCount, newStyleCount, newBreweryPct, newStylePct,
     busiestMonthName, busiestMonthCount, activeMonths,
     topBrewery, topStyle, topVenue, homeCount, homePct,
@@ -4231,6 +4232,83 @@ function computeWrappedContext(yearEntries, prevYearEntries, year) {
     lovedBeer: bands.loved.length ? bands.loved[0][0] : '',
     unfinishedStyle: bands.unfinished.length ? bands.unfinished[0][0] : '',
   };
+}
+
+// ── Wrapped consumer (third selectCopy consumer, §3.4) ─────────
+// Same contract as the Profile and Analytics pools: friend-voice, no trailing
+// period, every entity through esc(), no fragment starts with markup, band
+// language only (D1). Past tense throughout — Wrapped only covers completed
+// years. The panel already lists the stats and superlatives, so these lines
+// add color rather than repeat a number on its own. `shareSlot: true` marks a
+// line eligible for the share card's copy slot (DE10 length budget, session
+// c); venue-flavored lines stay off cards (DE3). Ordered within each zone
+// highest-priority first so registry order and priority agree.
+const WRAPPED_ZONE_ORDER = ['headline', 'exploration', 'band', 'superlative'];
+const WRAPPED_MAX_EARNED = 2;
+
+const WRAPPED_COPY = [
+  // ── headline flavor: the shape of the year ──────────────────────
+  { id: 'wr_bigger', zone: 'headline', priority: 25, shareSlot: true,
+    condition: c => c.prevTotal >= WRAPPED_MIN && c.deltaVolumePct !== null && c.deltaVolumePct >= 25,
+    render: c => `a bigger year than ${c.prevYear} — <b>${c.deltaVolumePct}%</b> more check-ins` },
+  { id: 'wr_quieter', zone: 'headline', priority: 20, shareSlot: false,
+    condition: c => c.prevTotal >= WRAPPED_MIN && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,
+    render: c => `a quieter year than ${c.prevYear} — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins` },
+  { id: 'wr_every_month', zone: 'headline', priority: 15, shareSlot: true,
+    condition: c => c.activeMonths === 12,
+    render: () => `you logged a beer in every month of the year` },
+  { id: 'wr_big_month', zone: 'headline', priority: 12, shareSlot: true,
+    condition: c => c.busiestMonthName && c.busiestMonthCount >= 8 && c.activeMonths > 0 && c.busiestMonthCount >= (c.total / c.activeMonths) * 2,
+    render: c => `${esc(c.busiestMonthName)} was your big month — <b>${c.busiestMonthCount}</b> check-ins` },
+
+  // ── exploration (first-time judged against full history) ────────
+  { id: 'wr_new_ground', zone: 'exploration', priority: 20, shareSlot: true,
+    condition: c => c.total >= WRAPPED_MIN && c.newBreweryPct >= 40,
+    render: c => `new ground all year — <b>${c.newBreweryPct}%</b> of your check-ins were a brewery you'd never logged` },
+  { id: 'wr_new_styles', zone: 'exploration', priority: 15, shareSlot: true,
+    condition: c => c.newStyleCount >= 5,
+    render: c => `you tried <b>${c.newStyleCount}</b> styles for the first time` },
+  { id: 'wr_familiar', zone: 'exploration', priority: 10, shareSlot: true,
+    condition: c => c.total >= WRAPPED_MIN && c.newBreweryPct <= 12,
+    render: () => `you mostly stuck with breweries you already knew` },
+
+  // ── band (the year's rating signals; band names only) ───────────
+  { id: 'wr_band_divergence', zone: 'band', priority: 25, shareSlot: true,
+    condition: c => c.ratedTotal >= 6 && c.mostLogged && c.wheelhouse && c.mostLogged !== c.wheelhouse,
+    render: c => `you poured <b>${esc(c.mostLogged)}</b> most, but <b>${esc(c.wheelhouse)}</b> earned the Definitelys` },
+  { id: 'wr_band_loved', zone: 'band', priority: 20, shareSlot: true,
+    condition: c => c.ratedTotal >= 6 && !!c.lovedBeer,
+    render: c => `one beer you never turned down all year: <b>${esc(c.lovedBeer)}</b>` },
+  { id: 'wr_band_unfinished', zone: 'band', priority: 12, shareSlot: true,
+    condition: c => c.ratedTotal >= 6 && !!c.unfinishedStyle,
+    render: c => `the jury was still out on <b>${esc(c.unfinishedStyle)}</b>` },
+
+  // ── superlative color: how much the winners owned the year ──────
+  { id: 'wr_brewery_hold', zone: 'superlative', priority: 20, shareSlot: true,
+    condition: c => c.topBrewery && c.total >= WRAPPED_MIN && c.topBrewery.count / c.total >= 0.25,
+    render: c => `${esc(c.topBrewery.name)} had your number — <b>${Math.round(c.topBrewery.count / c.total * 100)}%</b> of the year's check-ins` },
+  { id: 'wr_style_backbone', zone: 'superlative', priority: 15, shareSlot: true,
+    condition: c => c.topStyle && c.total >= WRAPPED_MIN && c.topStyle.count / c.total >= 0.3,
+    render: c => `${esc(c.topStyle.name)} was the backbone of your year — <b>${Math.round(c.topStyle.count / c.total * 100)}%</b> of pours` },
+  { id: 'wr_venue_regular', zone: 'superlative', priority: 12, shareSlot: false,
+    condition: c => c.topVenue && c.topVenue.count >= 5,
+    render: c => `you were a regular at <b>${esc(c.topVenue.name)}</b> — <b>${c.topVenue.count}</b> visits` },
+  { id: 'wr_homebody', zone: 'superlative', priority: 10, shareSlot: false,
+    condition: c => c.homePct >= 60,
+    render: c => `home was your favorite bar — <b>${c.homePct}%</b> of the year's pours` },
+];
+
+// The earned closing lines for one year: up to WRAPPED_MAX_EARNED picks, no
+// required zone. Returns selectCopy's picks; wrappedSentences() assembles them.
+function buildWrappedCopy(ctx) {
+  return selectCopy(WRAPPED_COPY, ctx, WRAPPED_ZONE_ORDER, { maxEarned: WRAPPED_MAX_EARNED });
+}
+
+// Picks → one paragraph, capitalized and punctuated like the Stats insight
+// card. '' when nothing is earned, so the section can drop out (D6).
+function wrappedSentences(picked) {
+  if (!picked.length) return '';
+  return picked.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.';
 }
 
 let profileDirty = true;   // PT1 — entries changed since Print was built
