@@ -181,6 +181,8 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     line('OCCASION_MIN_RATED'), line('OCCASION_SIX_UNLOCKED'), line('OCCASION_SMARTER_SHARE'), line('OCCASION_BATCH'),
     line('HOPPRINT_DIMS'), extractBlock('GAP_REGIONS'), extractBlock('GAP_LABELS'),
     ...['GAP_HIGH_MIN', 'GAP_LOW_MAX', 'GAP_THIN_SHARE', 'GAP_DISLIKE_MIN_RATED', 'GAP_MIN_STYLES', 'GAP_PICKS', 'GAP_MIN_PICKS'].map(line),
+    extractBlock('STYLE_FAMILY'),
+    ...['BREWERY_MIN_CHECKINS', 'BREWERY_MIN_RATED', 'BREWERY_NARROW_SHARE', 'BREWERY_ORBIT_DAYS', 'BREWERY_ELSEWHERE_MIN_RATED', 'BREWERY_SUGGESTIONS'].map(line),
     line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
     line('REDISCOVERY_MIN_AGE_DAYS'), line('REDISCOVERY_BATCH'), line('REDISCOVERY_RETIRED_KEY'),
     line('DISC_NOT_BUILT'), extractBlock('DISC_MODES'), extraModes,
@@ -192,7 +194,9 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
       'normalizeVenue', 'normalizeStyleKey', 'resolveMatrixStyle', 'isRecommendableStyle', 'computeSignalModel', 'getNeighborIndex',
       'renderDiscoverOptions', 'occasionSideOf', 'occasionContexts', 'occasionOptions', 'occasionGate', 'renderOccasionOptions',
       'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard',
-      'computeHopprint', 'inGapRegion', 'dimensionGaps', 'gapsGate', 'buildGaps', 'gapRationale', 'renderGapCard'].map(extractFunction),
+      'computeHopprint', 'inGapRegion', 'dimensionGaps', 'gapsGate', 'buildGaps', 'gapRationale', 'renderGapCard',
+      'breweryKeyOf', 'familyOf', 'familyAffinity', 'breweryGaps', 'breweryGapsGate', 'buildBreweryGaps', 'breweryRationale',
+      'renderBreweryGapCard', 'rediscoveryStyleTag'].map(extractFunction),
   ].join('\n'), ctx);
   const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
   return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
@@ -222,7 +226,8 @@ test('DS5: with every mode gated, the tab shows its locked state and the button 
 test('DS4: a gated mode renders greyed with its reason, and cannot be selected', () => {
   const { ctx, els, get } = gridCtx();
   ctx.buildModeGrid();
-  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 1);
+  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 0);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a favorite brewery/);
   assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 4 different styles logged</);
   assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 5 rated check-ins at home or out</);
   assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a beer you rated Definitely/);
@@ -309,10 +314,14 @@ test('RD2: the same beer under case/space drift is one beer', () => {
   assert.deepEqual(names(out), []);
 });
 
-test('OF5/RD6: a beer logged under a non-recommendable bin is still recommended, style as logged', () => {
+test('OF5/RD6/RD9: a beer logged under a non-recommendable bin is still recommended, tagged with its family', () => {
   const { ctx } = gridCtx();
   const [c] = ctx.rediscoveryCandidates([ci('Mystery Porter', 400, 90, { beer_type: 'Porter - Other' })]);
-  assert.equal(c.style, 'Porter - Other');
+  assert.equal(c.style, 'Porter');
+  const [d] = ctx.rediscoveryCandidates([ci('Mystery', 400, 90, { beer_type: 'Other' })]);
+  assert.equal(d.style, '');
+  const [e] = ctx.rediscoveryCandidates([ci('Gose', 400, 90, { beer_type: 'Sour - Other Gose' })]);
+  assert.equal(e.style, 'Sour - Other Gose');
 });
 
 test('RD5: gated with a reason until one beer qualifies', () => {
@@ -550,6 +559,127 @@ test('Gaps suppression: each region rotates on its own key for 7 days', () => {
   const keys = [...ctx.buildGaps(hazyDrinker()).cards.map(c => c.key)];
   assert.ok(keys.includes('alcohol:low'));
   assert.equal(keys[keys.length - 1], 'alcohol:high');   // recently shown: back of the batch, not first
+});
+
+// ── Brewery Gaps (§6) ──────────────────────────────────────────
+
+const APPROVED_FAMILIES = ['Hazy IPA', 'Clear IPA', 'Imperial IPA', 'Specialty IPA', 'Stout', 'Imperial Stout', 'Porter', 'Imperial Porter',
+  'Pale Lager', 'Amber & Dark Lager', 'Gose & Berliner', 'Fruited Sour', 'Flanders & Other Sour', 'Belgian Ale', 'Blonde / Golden Ale',
+  'Scottish Ale', 'Fruit & Spice', 'Wild Ale', 'Farmhouse Ale', 'Historical Beer', 'Rye Beer', 'Smoked Beer', 'Shandy / Radler',
+  'Altbier', 'Barleywine', 'Bitter', 'Bock', 'Brown Ale', 'Cider', 'Mead', 'Mild', 'Non-Alcoholic', 'Pale Ale', 'Pilsner', 'Red Ale',
+  'Strong Ale', 'Wheat Beer'];
+
+test('Families: every STYLE_MATRIX key is mapped, to an approved family or null', () => {
+  const { get } = gridCtx();
+  const fam = get('STYLE_FAMILY');
+  assert.deepEqual(Object.keys(STYLE_MATRIX).filter(k => !(k in fam)), [], 'unmapped');
+  assert.deepEqual(Object.keys(fam).filter(k => !STYLE_MATRIX[k]), [], 'not a matrix key');
+  assert.deepEqual([...new Set(Object.values(fam).filter(Boolean))].filter(f => !APPROVED_FAMILIES.includes(f)), []);
+  assert.deepEqual(Object.keys(fam).filter(k => fam[k] === null).sort(),
+    ['Dark Ale', 'Hard Ginger Beer', 'Historical Beer - Other', 'Other', 'Root Beer', 'Traditional Ale']);
+});
+
+test('Families: the approved edge cases', () => {
+  const fam = gridCtx().get('STYLE_FAMILY');
+  const expect = {
+    'IPA - Milkshake': 'Hazy IPA', 'IPA - Fruited': 'Hazy IPA', 'IPA - Session': 'Clear IPA', 'IPA - English': 'Clear IPA',
+    'IPA - Imperial / Double New England / Hazy': 'Imperial IPA', 'IPA - Black / Cascadian Dark Ale': 'Specialty IPA',
+    'Stout - Other': 'Stout', 'Stout - Imperial / Double Pastry': 'Imperial Stout', 'Porter - Baltic': 'Imperial Porter', 'Porter - Other': 'Porter',
+    'Lager - Other': 'Pale Lager', 'Festbier': 'Pale Lager', 'California Common': 'Pale Lager', 'Historical Beer - Pre-Prohibition Lager': 'Pale Lager',
+    'Märzen': 'Amber & Dark Lager', 'Schwarzbier': 'Amber & Dark Lager', 'Sour - Other Gose': 'Gose & Berliner', 'Sour - Fruited': 'Fruited Sour',
+    'Sour - Other': 'Flanders & Other Sour', 'Kölsch': 'Blonde / Golden Ale', 'Brett Beer': 'Wild Ale', 'Table Beer': 'Farmhouse Ale',
+    'Winter Warmer': 'Fruit & Spice', 'Pilsner - German': 'Pilsner', 'Wheat Beer - Other': 'Wheat Beer',
+  };
+  Object.entries(expect).forEach(([k, f]) => assert.equal(fam[k], f, k));
+});
+
+let brN = 0;
+const br = (brewery_name, beer_type, rating = 90, days = 30) => ({ id: `br${++brN}`, beer_name: `Beer ${brN}`, brewery_name, beer_type, rating, created_at: ago(days) });
+const loyal = (n = 6, extra = {}) => times(n, () => br('Trillium', 'IPA - New England / Hazy', extra.rating ?? 90, extra.days ?? 30));
+const lovedElsewhere = (family = 'Stout - Imperial / Double', n = 3, rating = 90) => times(n, (_, i) => br(`Elsewhere ${i}`, family, rating));
+const names2 = list => [...list].map(b => b.brewery);
+
+test('BG2: needs 5 check-ins, 5 rated, and a Definitely majority', () => {
+  const { ctx } = gridCtx();
+  const else3 = lovedElsewhere();
+  assert.deepEqual(names2(ctx.breweryGaps([...loyal(5), ...else3])), ['Trillium']);
+  assert.deepEqual(names2(ctx.breweryGaps([...loyal(4), ...else3])), []);
+  assert.deepEqual(names2(ctx.breweryGaps([...loyal(4), br('Trillium', 'IPA - New England / Hazy', null), ...else3])), [], '4 rated');
+  const split = [...times(3, () => br('Trillium', 'IPA - New England / Hazy', 50)), ...times(2, () => br('Trillium', 'IPA - New England / Hazy', 90))];
+  assert.deepEqual(names2(ctx.breweryGaps([...split, ...else3])), [], '2 of 5 Definitely');
+  const unrated = times(8, () => br('Trillium', 'IPA - New England / Hazy', null));
+  assert.deepEqual(names2(ctx.breweryGaps([...unrated, ...else3])), [], 'no ratings, no affection');
+});
+
+test('BG3: 70% in one family fires; 60% does not; no-family check-ins count toward depth only', () => {
+  const { ctx } = gridCtx();
+  const else3 = lovedElsewhere();
+  const mix = (hazy, other) => [...times(hazy, () => br('Trillium', 'IPA - New England / Hazy')), ...times(other, () => br('Trillium', 'Pale Ale - American'))];
+  assert.deepEqual(names2(ctx.breweryGaps([...mix(7, 3), ...else3])), ['Trillium']);
+  assert.deepEqual(names2(ctx.breweryGaps([...mix(6, 4), ...else3])), []);
+  const withRootBeer = [...times(4, () => br('Trillium', 'IPA - New England / Hazy')), br('Trillium', 'Root Beer')];
+  const [b] = ctx.breweryGaps([...withRootBeer, ...else3]);
+  assert.equal(b.checkins, 5);
+  assert.equal(b.famTotal, 4);
+});
+
+test('BG4: suggests families rated Definitely elsewhere (3+ rated), never one already had here, best first, at most 2', () => {
+  const { ctx } = gridCtx();
+  const list = [
+    ...loyal(6), br('Trillium', 'Stout - Imperial / Double', 90),                   // Imperial Stout already had here
+    ...lovedElsewhere('Stout - Imperial / Double', 4, 95),
+    ...lovedElsewhere('Pilsner - German', 3, 80), ...lovedElsewhere('Porter - Baltic', 3, 90),
+    ...lovedElsewhere('Farmhouse Ale - Saison', 2, 99),                           // only 2 rated elsewhere
+    ...lovedElsewhere('Lager - Helles', 3, 50),                                   // not Definitely
+  ];
+  const [b] = ctx.breweryGaps(list);
+  assert.deepEqual([...b.suggestions.map(x => x.family)], ['Imperial Porter', 'Pilsner']);
+});
+
+test('BG4: no qualifying suggestion means no card for that brewery', () => {
+  const { ctx } = gridCtx();
+  assert.deepEqual(names2(ctx.breweryGaps(loyal(8))), []);
+});
+
+test('BG5: still in orbit within 12 months; out of orbit past it', () => {
+  const { ctx } = gridCtx();
+  assert.deepEqual(names2(ctx.breweryGaps([...loyal(6, { days: 300 }), ...lovedElsewhere()])), ['Trillium']);
+  assert.deepEqual(names2(ctx.breweryGaps([...loyal(6, { days: 400 }), ...lovedElsewhere()])), []);
+});
+
+test('Brewery names match across case and spacing; deepest relationship first', () => {
+  const { ctx } = gridCtx();
+  const drift = [...times(3, () => br('Trillium', 'IPA - New England / Hazy')), ...times(3, () => br('  trillium ', 'IPA - New England / Hazy'))];
+  const deeper = times(9, () => br('Other Half', 'IPA - Imperial / Double New England / Hazy'));
+  assert.deepEqual(names2(ctx.breweryGaps([...drift, ...deeper, ...lovedElsewhere()])), ['Other Half', 'Trillium']);
+});
+
+test('Gate: locked with a reason until a brewery qualifies', () => {
+  const { ctx } = gridCtx();
+  assert.equal(ctx.breweryGapsGate(loyal(4)).open, false);
+  assert.match(ctx.breweryGapsGate(loyal(4)).reason, /favorite brewery/);
+  assert.equal(ctx.breweryGapsGate([...loyal(6), ...lovedElsewhere()]).open, true);
+});
+
+test('BG1 card: brewery headline, families with Save pills, never a specific beer, counts not scores', () => {
+  const wishlist = [];
+  const list = [...loyal(6), ...lovedElsewhere(), ...lovedElsewhere('Pilsner - German', 3, 85)];
+  const app = gridCtx(list, '', { wishlist });
+  app.ctx.enterDiscover();
+  app.ctx.selectMode('brewery');
+  app.ctx.generateRecs();
+  const html = app.els.recResults.innerHTML;
+  assert.match(html, /rec-name">Trillium</);
+  assert.match(html, /Mostly Hazy IPA so far/);
+  assert.match(html, /gap-style-name">Imperial Stout<.*recSave-0/s);
+  assert.match(html, /gap-style-name">Pilsner<.*recSave-1/s);
+  assert.match(html, /6 of your 6 check-ins here are Hazy IPA\./);
+  assert.doesNotMatch(html, /Beer \d+/, 'no beer names');
+  assert.doesNotMatch(html, /\d\.\d/);
+  assert.deepEqual(app.shown(), [['trillium', 'brewery']]);
+  fakeNode(app.els, 'recSave-0');
+  app.ctx.saveShownToWishlist(0);
+  assert.deepEqual({ name: wishlist[0].name, brewery: wishlist[0].brewery }, { name: 'Imperial Stout', brewery: 'Trillium' });
 });
 
 // ── Occasion (§5) ──────────────────────────────────────────────

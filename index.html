@@ -1584,7 +1584,9 @@ const DISC_MODES = [
     gate: occasionGate, build: buildOccasion, renderCard: renderOccasionCard,
     suppressionKey: c => `${c.style}|${c.context}`, wishItem: c => ({ name: c.style, brewery: '', style: c.style }),
     renderOptions: renderOccasionOptions, precheck: occasionPrecheck },
-  { id:'brewery', iconName:'trend-loyal', name:'Brewery Gaps', desc:'More from breweries you love', gate: DISC_NOT_BUILT },
+  { id:'brewery', iconName:'trend-loyal', name:'Brewery Gaps', desc:'More from breweries you love',
+    gate: breweryGapsGate, build: buildBreweryGaps, renderCard: renderBreweryGapCard,
+    suppressionKey: b => b.key, wishItem: (b, i) => ({ name: b.suggestions[i].family, brewery: b.brewery, style: '' }) },
   { id:'rediscovery', iconName:'mode-random', name:'Rediscovery', desc:'Old favorites worth another round',
     gate: rediscoveryGate, build: buildRediscovery, renderCard: renderRediscoveryCard,
     suppressionKey: c => c.key, wishItem: c => ({ name: c.name, brewery: c.brewery, style: c.style }),
@@ -1641,6 +1643,167 @@ const NON_RECOMMENDABLE_STYLES = new Set([
 function isRecommendableStyle(style) {
   return !!style && !!STYLE_MATRIX[style] && !NON_RECOMMENDABLE_STYLES.has(style);
 }
+
+// Style families (§6 Brewery Gaps; approved Oct 19, 2026). Explicit for every
+// STYLE_MATRIX key — many keys have no " - " prefix, and IPA / Stout / Porter
+// / Lager / Sour split by character, not by prefix. `- Other` bins roll up
+// into their family; null means no meaningful family (OF4): the check-in
+// counts toward a brewery's depth but toward no family's share.
+const STYLE_FAMILY = {
+  "Altbier - Traditional": "Altbier",
+  "Barleywine - American": "Barleywine",
+  "Barleywine - English": "Barleywine",
+  "Belgian Blonde": "Belgian Ale",
+  "Belgian Dubbel": "Belgian Ale",
+  "Belgian Strong Dark Ale": "Belgian Ale",
+  "Belgian Tripel": "Belgian Ale",
+  "Bitter - Extra Special / Strong (ESB)": "Bitter",
+  "Bitter - Session / Ordinary": "Bitter",
+  "Blonde / Golden Ale - American": "Blonde / Golden Ale",
+  "Blonde / Golden Ale - Other": "Blonde / Golden Ale",
+  "Bock - Doppelbock": "Bock",
+  "Bock - Hell / Maibock / Lentebock": "Bock",
+  "Bock - Single / Traditional": "Bock",
+  "Brett Beer": "Wild Ale",
+  "Brown Ale - American": "Brown Ale",
+  "Brown Ale - Belgian": "Brown Ale",
+  "Brown Ale - English": "Brown Ale",
+  "Brown Ale - Imperial / Double": "Brown Ale",
+  "Brown Ale - Other": "Brown Ale",
+  "California Common": "Pale Lager",
+  "Cider - Herbed / Spiced": "Cider",
+  "Cider - Traditional / Apfelwein": "Cider",
+  "Cream Ale": "Blonde / Golden Ale",
+  "Dark Ale": null,
+  "Farmhouse Ale - Bière de Garde": "Farmhouse Ale",
+  "Farmhouse Ale - Grisette": "Farmhouse Ale",
+  "Farmhouse Ale - Saison": "Farmhouse Ale",
+  "Festbier": "Pale Lager",
+  "Fruit Beer": "Fruit & Spice",
+  "Hard Ginger Beer": null,
+  "Historical Beer - Kentucky Common": "Historical Beer",
+  "Historical Beer - Other": null,
+  "Historical Beer - Pre-Prohibition Lager": "Pale Lager",
+  "IPA - American": "Clear IPA",
+  "IPA - Australian": "Clear IPA",
+  "IPA - Belgian": "Specialty IPA",
+  "IPA - Black / Cascadian Dark Ale": "Specialty IPA",
+  "IPA - Brown": "Specialty IPA",
+  "IPA - Cold": "Clear IPA",
+  "IPA - English": "Clear IPA",
+  "IPA - Farmhouse": "Specialty IPA",
+  "IPA - Fruited": "Hazy IPA",
+  "IPA - Imperial / Double": "Imperial IPA",
+  "IPA - Imperial / Double New England / Hazy": "Imperial IPA",
+  "IPA - Milkshake": "Hazy IPA",
+  "IPA - New England / Hazy": "Hazy IPA",
+  "IPA - New Zealand": "Clear IPA",
+  "IPA - Red": "Specialty IPA",
+  "IPA - Rye": "Clear IPA",
+  "IPA - Session": "Clear IPA",
+  "IPA - Session New England / Hazy": "Hazy IPA",
+  "IPA - Triple": "Imperial IPA",
+  "IPA - Triple New England / Hazy": "Imperial IPA",
+  "IPA - White / Wheat": "Specialty IPA",
+  "Kellerbier / Zwickelbier": "Pale Lager",
+  "Kölsch": "Blonde / Golden Ale",
+  "Lager - Amber / Red": "Amber & Dark Lager",
+  "Lager - American": "Pale Lager",
+  "Lager - American Amber / Red": "Amber & Dark Lager",
+  "Lager - American Light": "Pale Lager",
+  "Lager - Dark": "Amber & Dark Lager",
+  "Lager - Dortmunder / Export": "Pale Lager",
+  "Lager - Helles": "Pale Lager",
+  "Lager - IPL (India Pale Lager)": "Pale Lager",
+  "Lager - Japanese Rice": "Pale Lager",
+  "Lager - Mexican": "Pale Lager",
+  "Lager - Munich Dunkel": "Amber & Dark Lager",
+  "Lager - Other": "Pale Lager",
+  "Lager - Pale": "Pale Lager",
+  "Lager - Smoked": "Amber & Dark Lager",
+  "Lager - Světlé (Czech Pale)": "Pale Lager",
+  "Lager - Tmavé (Czech Dark)": "Amber & Dark Lager",
+  "Lager - Vienna": "Amber & Dark Lager",
+  "Lager - Winter": "Amber & Dark Lager",
+  "Malt Liquor": "Pale Lager",
+  "Mead - Braggot": "Mead",
+  "Mild - Dark": "Mild",
+  "Mild - Other": "Mild",
+  "Märzen": "Amber & Dark Lager",
+  "Non-Alcoholic - IPA": "Non-Alcoholic",
+  "Non-Alcoholic - Porter / Stout": "Non-Alcoholic",
+  "Other": null,
+  "Pale Ale - American": "Pale Ale",
+  "Pale Ale - Belgian": "Pale Ale",
+  "Pale Ale - English": "Pale Ale",
+  "Pale Ale - New England / Hazy": "Pale Ale",
+  "Pale Ale - Other": "Pale Ale",
+  "Pale Ale - XPA (Extra Pale)": "Pale Ale",
+  "Pilsner - American": "Pilsner",
+  "Pilsner - Czech / Bohemian": "Pilsner",
+  "Pilsner - German": "Pilsner",
+  "Pilsner - Imperial / Double": "Pilsner",
+  "Pilsner - Italian": "Pilsner",
+  "Pilsner - New Zealand": "Pilsner",
+  "Pilsner - Other": "Pilsner",
+  "Porter - American": "Porter",
+  "Porter - Baltic": "Imperial Porter",
+  "Porter - Coffee": "Porter",
+  "Porter - English": "Porter",
+  "Porter - Imperial / Double": "Imperial Porter",
+  "Porter - Imperial / Double Coffee": "Imperial Porter",
+  "Porter - Other": "Porter",
+  "Porter - Smoked": "Porter",
+  "Pumpkin / Yam Beer": "Fruit & Spice",
+  "Red Ale - American Amber / Red": "Red Ale",
+  "Red Ale - Imperial / Double": "Red Ale",
+  "Red Ale - Irish": "Red Ale",
+  "Red Ale - Other": "Red Ale",
+  "Root Beer": null,
+  "Rye Beer": "Rye Beer",
+  "Schwarzbier": "Amber & Dark Lager",
+  "Scotch Ale / Wee Heavy": "Scottish Ale",
+  "Scottish Ale": "Scottish Ale",
+  "Scottish Export Ale": "Scottish Ale",
+  "Shandy / Radler": "Shandy / Radler",
+  "Smoked Beer": "Smoked Beer",
+  "Sour - Berliner Weisse": "Gose & Berliner",
+  "Sour - Flanders Red Ale": "Flanders & Other Sour",
+  "Sour - Fruited": "Fruited Sour",
+  "Sour - Fruited Berliner Weisse": "Gose & Berliner",
+  "Sour - Fruited Gose": "Gose & Berliner",
+  "Sour - Other": "Flanders & Other Sour",
+  "Sour - Other Gose": "Gose & Berliner",
+  "Sour - Tomato / Vegetable Gose": "Gose & Berliner",
+  "Sour - Traditional Gose": "Gose & Berliner",
+  "Spiced / Herbed Beer": "Fruit & Spice",
+  "Stout - American": "Stout",
+  "Stout - Coffee": "Stout",
+  "Stout - Foreign / Export": "Stout",
+  "Stout - Imperial / Double": "Imperial Stout",
+  "Stout - Imperial / Double Coffee": "Imperial Stout",
+  "Stout - Imperial / Double Milk": "Imperial Stout",
+  "Stout - Imperial / Double Pastry": "Imperial Stout",
+  "Stout - Irish Dry": "Stout",
+  "Stout - Milk / Sweet": "Stout",
+  "Stout - Oatmeal": "Stout",
+  "Stout - Other": "Stout",
+  "Stout - Russian Imperial": "Imperial Stout",
+  "Stout - White / Golden": "Stout",
+  "Strong Ale - American": "Strong Ale",
+  "Table Beer": "Farmhouse Ale",
+  "Traditional Ale": null,
+  "Wheat Beer - American Pale Wheat": "Wheat Beer",
+  "Wheat Beer - Dunkelweizen": "Wheat Beer",
+  "Wheat Beer - Hefeweizen": "Wheat Beer",
+  "Wheat Beer - Kristallweizen": "Wheat Beer",
+  "Wheat Beer - Other": "Wheat Beer",
+  "Wheat Beer - Wheat Wine": "Wheat Beer",
+  "Wheat Beer - Witbier / Blanche": "Wheat Beer",
+  "Wild Ale - American": "Wild Ale",
+  "Winter Ale": "Fruit & Spice",
+  "Winter Warmer": "Fruit & Spice",
+};
 
 // ═══════════════════════════════════════════════════════════════
 // DATE LOOKUP — production/best-by date decoder + freshness verdict
@@ -2105,13 +2268,21 @@ function rediscoveryCandidates(entriesList, now = Date.now()) {
       key: b.key,
       name: b.last.beer_name,
       brewery: b.last.brewery_name || '',
-      style: b.last.beer_type || '',   // as logged for now; family once the Brewery Gaps table lands (OF5)
+      style: rediscoveryStyleTag(b.last.beer_type),
       abv: b.last.beer_abv || '',
       lastLogged: b.last.created_at,
       imported: b.rated.source === 'import' || b.rated.rating_mode === 'import',
     });
   });
   return out;
+}
+
+// RD9/OF5: the card's style tag shows the family for a non-recommendable
+// bin ('Porter - Other' → 'Porter'), and nothing for one with no family.
+function rediscoveryStyleTag(rawStyle) {
+  const style = resolveMatrixStyle(rawStyle);
+  if (!style || isRecommendableStyle(style)) return rawStyle || '';
+  return STYLE_FAMILY[style] || '';
 }
 
 function rediscoveryGate(entriesList) {
@@ -2291,6 +2462,114 @@ function renderGapCard(g) {
     <div class="gap-styles">${styles}
     </div>
     <div class="rec-why">${esc(gapRationale(g))}</div>`;
+}
+
+// ── Brewery Gaps (§6) — weak form ─────────────────────────────
+// BG1: BEER_DB only knows the user's own history, so the card points at the
+// gap between families loved elsewhere and what the user has had from this
+// brewery. It never claims the brewery makes something.
+// BG2: ≥ 5 check-ins, ≥ 5 of them rated, a majority of those Definitely.
+// BG3: ≥ 70% of the check-ins that have a family are in one family.
+// BG4: 1–2 families rated Definitely at other breweries (recency-weighted,
+// ≥ 3 rated check-ins there) and never had from this one, best first.
+// BG5: last check-in from the brewery within the past 12 months.
+const BREWERY_MIN_CHECKINS = 5;
+const BREWERY_MIN_RATED = 5;
+const BREWERY_NARROW_SHARE = 0.7;
+const BREWERY_ORBIT_DAYS = 365;
+const BREWERY_ELSEWHERE_MIN_RATED = 3;
+const BREWERY_SUGGESTIONS = 2;
+
+function breweryKeyOf(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function familyOf(rawStyle) {
+  const style = resolveMatrixStyle(rawStyle);
+  return style ? STYLE_FAMILY[style] : null;
+}
+
+// Recency-weighted average rating per family, from rated check-ins.
+function familyAffinity(entriesList, now) {
+  const acc = {};
+  entriesList.forEach(e => {
+    const fam = familyOf(e.beer_type);
+    if (!fam || typeof e.rating !== 'number') return;
+    const days = (now - new Date(e.created_at).getTime()) / 86400000;
+    if (!Number.isFinite(days)) return;
+    const w = Math.pow(0.5, days / 180);
+    const a = acc[fam] || (acc[fam] = { sumW: 0, sumWR: 0, rated: 0 });
+    a.sumW += w; a.sumWR += w * e.rating; a.rated++;
+  });
+  return Object.fromEntries(Object.entries(acc).map(([fam, a]) => [fam, { avg: a.sumWR / a.sumW, rated: a.rated }]));
+}
+
+// Qualifying breweries with their suggestions, deepest relationship first.
+function breweryGaps(entriesList, now = Date.now()) {
+  const definitelyMin = RATING_BANDS.find(b => b.id === 'definitely').min;
+  const byBrewery = new Map();
+  entriesList.forEach(e => {
+    const key = breweryKeyOf(e.brewery_name);
+    if (!key) return;
+    if (!byBrewery.has(key)) byBrewery.set(key, []);
+    byBrewery.get(key).push(e);
+  });
+  const out = [];
+  byBrewery.forEach((list, key) => {
+    if (list.length < BREWERY_MIN_CHECKINS) return;
+    const rated = list.filter(e => typeof e.rating === 'number');
+    if (rated.length < BREWERY_MIN_RATED) return;
+    if (rated.filter(e => e.rating >= definitelyMin).length * 2 <= rated.length) return;   // majority Definitely
+    const times = list.map(e => new Date(e.created_at).getTime()).filter(Number.isFinite);
+    if (!times.length || now - Math.max(...times) > BREWERY_ORBIT_DAYS * 86400000) return;  // still in orbit
+    const famCounts = {};
+    list.forEach(e => { const fam = familyOf(e.beer_type); if (fam) famCounts[fam] = (famCounts[fam] || 0) + 1; });
+    const famTotal = Object.values(famCounts).reduce((a, b) => a + b, 0);
+    if (!famTotal) return;
+    const [topFamily, topCount] = Object.entries(famCounts).sort((a, b) => b[1] - a[1])[0];
+    if (topCount / famTotal < BREWERY_NARROW_SHARE) return;
+    const elsewhere = familyAffinity(entriesList.filter(e => breweryKeyOf(e.brewery_name) !== key), now);
+    const suggestions = Object.entries(elsewhere)
+      .filter(([fam, a]) => !famCounts[fam] && a.rated >= BREWERY_ELSEWHERE_MIN_RATED && a.avg >= definitelyMin)
+      .sort((a, b) => b[1].avg - a[1].avg || b[1].rated - a[1].rated)
+      .slice(0, BREWERY_SUGGESTIONS)
+      .map(([family, a]) => ({ family, rated: a.rated }));
+    if (!suggestions.length) return;
+    const latest = list.reduce((a, b) => (new Date(b.created_at) > new Date(a.created_at) ? b : a));
+    out.push({ key, brewery: latest.brewery_name.trim(), checkins: list.length, topFamily, topCount, famTotal, suggestions });
+  });
+  return out.sort((a, b) => b.checkins - a.checkins || a.key.localeCompare(b.key));
+}
+
+function breweryGapsGate(entriesList) {
+  return breweryGaps(entriesList).length
+    ? { open: true, reason: '' }
+    : { open: false, reason: 'Needs a favorite brewery you mostly drink one style from' };
+}
+
+function buildBreweryGaps(entriesList) {
+  const list = breweryGaps(entriesList);
+  return { cards: takeUnsuppressed(list, 'brewery', b => b.key, list.length).cards, starved: false };
+}
+
+// Placeholder copy (BP1). Counts, never scores (D1); never claims the
+// brewery makes the suggested family (BG1).
+function breweryRationale(b) {
+  return `${b.topCount} of your ${b.famTotal} check-ins here are ${b.topFamily}. `
+    + `You rate ${b.suggestions.map(x => x.family).join(' and ')} well at other breweries — worth seeing if they pour one.`;
+}
+
+function renderBreweryGapCard(b) {
+  const rows = b.suggestions.map((x, i) => `
+      <div class="gap-style"><span class="gap-style-name">${esc(x.family)}</span>${recSaveButton({ name: x.family, brewery: b.brewery }, i)}</div>`).join('');
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(b.brewery)}</div>
+        <div class="rec-brewery">Mostly ${esc(b.topFamily)} so far</div>
+      </div>
+    </div>
+    <div class="gap-styles">${rows}
+    </div>
+    <div class="rec-why">${esc(breweryRationale(b))}</div>`;
 }
 
 // ── Occasion (§5) ─────────────────────────────────────────────
