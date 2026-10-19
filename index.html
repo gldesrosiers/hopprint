@@ -2525,13 +2525,16 @@ function renderGapCard(g) {
 // BG1: BEER_DB only knows the user's own history, so the card points at the
 // gap between families loved elsewhere and what the user has had from this
 // brewery. It never claims the brewery makes something.
-// BG2: ≥ 5 check-ins, ≥ 5 of them rated, a majority of those Definitely.
+// BG2: ≥ 5 check-ins, ≥ 5 of them rated, a majority of those Definitely,
+// and ≥ 3 different beers — a brewery whose range you explore, not a
+// one-beer habit (walkthrough: Miller Lite ×37 / High Life ×36 qualified).
 // BG3: ≥ 70% of the check-ins that have a family are in one family.
 // BG4: 1–2 families rated Definitely at other breweries (recency-weighted,
 // ≥ 3 rated check-ins there) and never had from this one, best first.
 // BG5: last check-in from the brewery within the past 12 months.
 const BREWERY_MIN_CHECKINS = 5;
 const BREWERY_MIN_RATED = 5;
+const BREWERY_MIN_BEERS = 3;
 const BREWERY_NARROW_SHARE = 0.7;
 const BREWERY_ORBIT_DAYS = 365;
 const BREWERY_ELSEWHERE_MIN_RATED = 3;
@@ -2576,6 +2579,7 @@ function breweryGaps(entriesList, now = Date.now()) {
     const rated = list.filter(e => typeof e.rating === 'number');
     if (rated.length < BREWERY_MIN_RATED) return;
     if (rated.filter(e => e.rating >= definitelyMin).length * 2 <= rated.length) return;   // majority Definitely
+    if (new Set(list.map(stubBeerKey)).size < BREWERY_MIN_BEERS) return;                  // a range, not a habit
     const times = list.map(e => new Date(e.created_at).getTime()).filter(Number.isFinite);
     if (!times.length || now - Math.max(...times) > BREWERY_ORBIT_DAYS * 86400000) return;  // still in orbit
     const famCounts = {};

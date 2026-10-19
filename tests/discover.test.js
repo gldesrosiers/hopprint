@@ -185,7 +185,7 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     ...['REDISCOVERY_ZONES', 'GAP_ZONES', 'BREWERY_ZONES', 'OCCASION_ZONES'].map(line),
     extractBlock('GAP_AXIS_WORDS'), extractBlock('OCCASION_PLACES'),
     ...['REDISCOVERY_COPY', 'GAP_COPY', 'BREWERY_COPY', 'OCCASION_COPY'].map(extractBlock),
-    ...['BREWERY_MIN_CHECKINS', 'BREWERY_MIN_RATED', 'BREWERY_NARROW_SHARE', 'BREWERY_ORBIT_DAYS', 'BREWERY_ELSEWHERE_MIN_RATED', 'BREWERY_SUGGESTIONS'].map(line),
+    ...['BREWERY_MIN_CHECKINS', 'BREWERY_MIN_RATED', 'BREWERY_MIN_BEERS', 'BREWERY_NARROW_SHARE', 'BREWERY_ORBIT_DAYS', 'BREWERY_ELSEWHERE_MIN_RATED', 'BREWERY_SUGGESTIONS'].map(line),
     line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
     line('REDISCOVERY_MIN_AGE_DAYS'), line('REDISCOVERY_BATCH'), line('REDISCOVERY_RETIRED_KEY'),
     line('DISC_NOT_BUILT'), extractBlock('DISC_MODES'), extraModes,
@@ -646,6 +646,15 @@ test('BG2: needs 5 check-ins, 5 rated, and a Definitely majority', () => {
   assert.deepEqual(names2(ctx.breweryGaps([...split, ...else3])), [], '2 of 5 Definitely');
   const unrated = times(8, () => br('Trillium', 'IPA - New England / Hazy', null));
   assert.deepEqual(names2(ctx.breweryGaps([...unrated, ...else3])), [], 'no ratings, no affection');
+});
+
+test('BG2: a one- or two-beer habit is not a favorite brewery — 3 different beers needed', () => {
+  const { ctx } = gridCtx();
+  const pour = (name, n) => times(n, () => ({ ...br('Miller', 'Lager - American Light'), beer_name: name }));
+  const else3 = lovedElsewhere();
+  assert.deepEqual(names2(ctx.breweryGaps([...pour('Miller Lite', 37), ...pour('High Life', 36), ...else3])), []);
+  assert.deepEqual(names2(ctx.breweryGaps([...pour('Miller Lite', 37), ...pour('  miller lite ', 5), ...pour('High Life', 36), ...else3])), [], 'case/space drift is one beer');
+  assert.deepEqual(names2(ctx.breweryGaps([...pour('Miller Lite', 3), ...pour('High Life', 3), ...pour('Genuine Draft', 1), ...else3])), ['Miller']);
 });
 
 test('BG3: 70% in one family fires; 60% does not; no-family check-ins count toward depth only', () => {
