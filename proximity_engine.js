@@ -85,9 +85,10 @@ function transferredAffinity(styleName, userAffinityMap, neighborIndex, styleMat
 // Combines transferred affinity with the user's real signal data (if any)
 // and novelty, weighted per recommendation mode.
 const MODE_WEIGHTS = {
-  wheelhouse: { affinity: 0.75, novelty: 0.25 },
-  adjacent:   { affinity: 0.45, novelty: 0.55 },
-  wildcard:   { affinity: 0.15, novelty: 0.85 },
+  // Occasion (DISCOVER_REDESIGN_HANDOFF.md §5): the retired Wheelhouse
+  // weighting — a "what should I order now" pick, where the occasion filter,
+  // not novelty, keeps it from repeating the usual favorites.
+  occasion: { affinity: 0.75, novelty: 0.25 },
 };
 
 // DIRECT_SIGNAL_THRESHOLD: familiarity above which we trust the user's own
@@ -134,52 +135,7 @@ function scoreRecommendation(styleName, signalData, userAffinityMap, neighborInd
 // whatever scale the signal model's affinity scores land in.
 const POSITIVE_AFFINITY_THRESHOLD = 2.5;
 
-// Minimum number of known-affinity neighbors required before the function
-// will make a confident positive/negative claim. Below this, say so honestly
-// rather than generalizing from a single data point.
-const MIN_CONTRIBUTORS_FOR_CONFIDENCE = 2;
-
-// Rationale sentence generator — uses actual contributor data, never
-// generic filler. This is the trust-building layer.
-function generateRationale(result, mode) {
-  const { contributors, source, predictedAffinity } = result;
-
-  if (source === 'direct') {
-    return null; // handled by the existing wheelhouse/adjacent rationale logic from the signal model
-  }
-
-  if (contributors.length === 0) {
-    return `New territory — nothing in your history is close enough to predict how you'd feel about this one.`;
-  }
-
-  // Only cite neighbors that actually support the claim being made —
-  // positive neighbors for a positive rationale, negative for a negative one.
-  const positiveNeighbors = contributors.filter(c => c.affinity >= POSITIVE_AFFINITY_THRESHOLD);
-  const negativeNeighbors = contributors.filter(c => c.affinity < POSITIVE_AFFINITY_THRESHOLD);
-
-  const nameList = (list) => {
-    const names = list.slice(0, 2).map(c => c.style);
-    return names.length === 2 ? `${names[0]} and ${names[1]}` : names[0];
-  };
-
-  if (predictedAffinity >= POSITIVE_AFFINITY_THRESHOLD && positiveNeighbors.length > 0) {
-    if (positiveNeighbors.length < MIN_CONTRIBUTORS_FOR_CONFIDENCE) {
-      return `Limited data, but it's close to ${nameList(positiveNeighbors)}, which you've rated well — worth a cautious try.`;
-    }
-    return mode === 'wildcard'
-      ? `You haven't tried this, but it shares real flavor overlap with ${nameList(positiveNeighbors)} — styles you rate well.`
-      : `Close in flavor profile to ${nameList(positiveNeighbors)}, which you've enjoyed. Worth a try.`;
-  }
-
-  if (predictedAffinity < POSITIVE_AFFINITY_THRESHOLD && negativeNeighbors.length > 0) {
-    return `Skip this one — it's closest to ${nameList(negativeNeighbors)}, which hasn't been a favorite of yours.`;
-  }
-
-  return `Not enough signal to say either way — this sits between styles you like and styles you don't.`;
-}
-
-
 // Exported for use in the Discover tab
 if (typeof module !== 'undefined') {
-  module.exports = { buildNeighborIndex, transferredAffinity, scoreRecommendation, generateRationale, styleDistance };
+  module.exports = { buildNeighborIndex, transferredAffinity, scoreRecommendation, styleDistance };
 }

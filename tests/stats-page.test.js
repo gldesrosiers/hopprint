@@ -40,7 +40,7 @@ function app() {
       querySelectorAll: sel => (sel === '.bn-item' ? TABS.map(t => els[`tab-${t}`]) : sel === '.screen' ? TABS.map(t => els[`screen-${t}`]) : []),
     },
     enterHistory: render('history'), enterAnalytics: render('analytics'),
-    enterProfile: render('profile'), renderWishlist: render('discover'),
+    enterProfile: render('profile'), enterDiscover: render('discover'),
   });
   vm.runInContext([
     ...['currentTab', 'tabScroll'].map(n => script.match(new RegExp(`^let ${n} = [^\\n]*;`, 'm'))[0]),
@@ -153,7 +153,7 @@ function statsApp(src, entries, { year = 'all' } = {}) {
     localStorage: { setItem() {} },
     // What a pull or a tab switch touches outside Stats.
     buildLiveLists: stub('buildLiveLists'), updateHeaderMeta: stub('updateHeaderMeta'),
-    renderWishlist: stub('renderWishlist'), enterProfile: stub('enterProfile'), refreshProfile: stub('refreshProfile'),
+    enterDiscover: stub('enterDiscover'), renderWishlist: stub('renderWishlist'), buildModeGrid: stub('buildModeGrid'), enterProfile: stub('enterProfile'), refreshProfile: stub('refreshProfile'),
     enterHistory: stub('enterHistory'), refreshHistory: stub('refreshHistory'),
   });
   const code = resolved.get(src) || [];

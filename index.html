@@ -15,7 +15,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
 <script src="style_matrix.js"></script>
-<script src="proximity_engine.js"></script>
+<!-- ?v= busts the HTTP cache when the engine changes, so a new index.html never runs a stale engine (Discover redesign: MODE_WEIGHTS.occasion). Bump it with every proximity_engine.js change. -->
+<script src="proximity_engine.js?v=2"></script>
 <style>
 /* ── FONTS ─────────────────────────────────────────────────── */
 @font-face {
@@ -756,6 +757,16 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 }
 .mode-card:hover { border-color: var(--border-orange); }
 .mode-card.sel { background: var(--orange-glow); border-color: var(--orange); }
+.mode-card.gated { opacity: 0.45; cursor: not-allowed; }
+.occ-pill.gated { opacity: 0.45; cursor: not-allowed; }
+.occ-pill.gated:hover { border-color: var(--border); color: var(--text-muted); }
+.discover-sub-title { margin: 16px 0 10px; }
+.gap-styles { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.gap-style { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.gap-style-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.mode-card.gated:hover { border-color: var(--border); }
+.mode-reason { font-size: 11px; color: var(--text-dim); margin-top: 6px; font-style: italic; font-weight: 300; line-height: 1.3; }
+.btn-discover:disabled { opacity: 0.45; cursor: not-allowed; }
 .mode-icon { display: flex; align-items: center; justify-content: center; height: 32px; margin-bottom: 5px; }
 .mode-name { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
 .mode-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 300; line-height: 1.3; }
@@ -798,15 +809,12 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 .rec-footer-btn:first-child { border-right: 1px solid var(--border); }
 .rec-footer-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
 .rec-footer-btn.negative:hover { color: var(--orange); }
+.rec-footer-btn.rec-confirm { color: var(--text); cursor: default; }
+.rec-footer-btn.rec-confirm span { color: var(--orange); cursor: pointer; padding: 0 4px; }
 .rec-badge {
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
   text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 7px;
 }
-.badge-wheelhouse { background: var(--orange); color: var(--charcoal); }
-.badge-adjacent { background: var(--lime); color: var(--charcoal); }
-.badge-wildcard-confident { background: var(--yellow); color: var(--charcoal); }
-.badge-wildcard-hedged { background: transparent; border: 1px dashed var(--yellow); color: var(--yellow); }
-.badge-random { background: var(--charcoal3); color: var(--text-muted); border: 1px solid var(--border); }
 .rec-starve-note {
   font-size: 12px; color: var(--text-dim); font-style: italic; font-weight: 300;
   text-align: center; margin-top: 10px; padding: 0 8px;
@@ -1225,12 +1233,15 @@ body.first-sync .first-sync-hint { display: block; }
 <div class="screen" id="screen-discover">
 <div class="screen-inner">
 
+  <div id="discoverLocked"></div>
+
   <div class="discover-step">
-    <div class="discover-step-title">What kind of recommendation?</div>
+    <div class="discover-step-title">What are you in the mood for?</div>
     <div class="mode-grid" id="modeGrid"></div>
+    <div id="discoverOptions"></div>
   </div>
 
-  <button class="btn-discover" onclick="generateRecs()">Find My Next Beer</button>
+  <button class="btn-discover" id="discoverGo" onclick="generateRecs()">Find My Next Beer</button>
 
   <div id="recResults" style="margin-top:16px"></div>
 
@@ -1430,10 +1441,11 @@ const ICON_PATHS = {
   'occasion-dining': '<path d="M6 3v6.5M6 9.5V17M4 3v4a2 2 0 0 0 4 0V3M14 3c-1.6 0-2.6 1.4-2.6 3.2S12.4 9.5 14 9.5V17"></path>',
   'occasion-traveling': '<path d="M3 11.5 17 6l-4.5 9-2-3.5Z"></path>',
   // set 2: modes, feedback, milestones, trends, actions, status
-  'mode-wheelhouse': '<circle cx="9" cy="11" r="6"></circle><circle cx="9" cy="11" r="2.2"></circle><path d="M9 11 16.5 3.5M13.5 3.5h3v3"></path>',
-  'mode-adjacent': '<path d="M2.5 8q2.5-2.6 5 0t5 0t5 0M2.5 13.5q2.5-2.6 5 0t5 0t5 0"></path>',
   'mode-wildcard': '<rect x="3.5" y="3.5" width="13" height="13" rx="3"></rect><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="10" cy="10" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="13" cy="13" r="1.2" fill="currentColor" stroke="none"></circle>',
-  'mode-random': '<path d="M3 6h2.8c2.2 0 3.4 1 4.4 4s2.2 4 4.4 4H17M3 14h2.8c1.3 0 2.2-.4 2.9-1.2M11.3 7.2c.7-.8 1.6-1.2 2.9-1.2H17M14.8 3.8 17 6l-2.2 2.2M14.8 11.8 17 14l-2.2 2.2"></path>',
+  'mode-branch-out': '<path d="M7 17V3" stroke-dasharray="0.1 3.4"></path><path d="M7 14c0-4.4 3.2-7 8-7"></path><path d="M12.7 4.7 15 7l-2.3 2.3"></path>',
+  'mode-occasion': '<path d="M10 17.5s5.5-5 5.5-9a5.5 5.5 0 0 0-11 0c0 4 5.5 9 5.5 9Z"></path><path d="M8.4 5.8h3.2l-.4 4a.6.6 0 0 1-.6.5H9.4a.6.6 0 0 1-.6-.5Z" stroke-width="1.5"></path>',
+  'mode-brewery': '<path d="M3 17V9.5l4 2.4V9.5l4 2.4V9.5l4 2.4V3.5h2V17Z"></path><path d="M6 14.5h1.6M10 14.5h1.6"></path>',
+  'mode-rediscovery': '<path d="M4 10a6 6 0 1 0 1.8-4.3M4 3.5v3.2h3.2"></path><path d="M10 7v3.2l2.2 1.4"></path>',
   'feedback': '<path d="M4.5 4h11A1.5 1.5 0 0 1 17 5.5v7a1.5 1.5 0 0 1-1.5 1.5H9l-4 3v-3h-.5A1.5 1.5 0 0 1 3 12.5v-7A1.5 1.5 0 0 1 4.5 4Z"></path><path d="M6.5 7.8h7M6.5 10.8h4.5"></path>',
   'feedback-bug': '<rect x="6" y="6.5" width="8" height="10.5" rx="4"></rect><path d="M7.6 6.8a2.4 2.4 0 0 1 4.8 0M3.5 9.5 6 10.5M16.5 9.5 14 10.5M3.5 14.5 6 14M16.5 14.5 14 14M7.5 3.2l.9 1.4M12.5 3.2l-.9 1.4"></path>',
   'feedback-idea': '<path d="M7.2 13.5c0-1.4-2.2-2.6-2.2-5.3a5 5 0 0 1 10 0c0 2.7-2.2 3.9-2.2 5.3Z"></path><path d="M7.8 16.6h4.4"></path>',
@@ -1507,7 +1519,13 @@ let discoverMode = '';
 let discoverQueue = [];
 let discoverQueueMode = '';
 let discoverStarved = false;
-let discoverUsedFallback = false;
+// Suppression key of the card on screen. Read by the Not for Me handler
+// rather than inlined into it, since keys can be beer names with any quotes.
+let discoverShownKey = '';
+let discoverShownCard = null;
+// Occasion's chosen context: 'home' / 'out', or an OCCASIONS id in the
+// six-occasion picker. Cleared whenever it stops being a valid choice.
+let discoverContext = '';
 let currentPromptIdx = 0;
 let analyticsYear = 'all';
 let analyticsCharts = {};
@@ -1545,12 +1563,41 @@ let fbCategory = null;
 
 const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','Side Pull','Taster'];
 
+// Discover modes (DISCOVER_REDESIGN_HANDOFF.md §2). Each mode owns its gate,
+// batch builder, card renderer, and suppression key (DS4/DS6) — they return
+// different kinds of object, so nothing is shared beyond this shape:
+//   gate(entries)      -> { open, reason }  reason is shown on a greyed card
+//   build(entries)     -> { cards, starved }
+//   renderCard(card)   -> inner HTML for one card
+//   suppressionKey(c)  -> string; per-mode namespace, see isSuppressed
+//   wishItem(c, i)     -> { name, brewery, style } for Save pill i (cards with several)
+//   actions(c)         -> optional extra footer buttons
+//   notInterested      -> false hides the shared Not for Me button
+//   renderOptions(es)  -> optional sub-picker shown under the grid while selected
+//   precheck(es)       -> optional; a message means "not ready", shown as a toast
+// Names and icons are final (Oct 19, 2026); descriptions and reasons are
+// placeholders until the copy pass (BP1). Internal ids keep the working names.
+// A mode without build() isn't implemented yet and stays gated.
+const DISC_NOT_BUILT = () => ({ open: false, reason: 'Not built yet' });
 const DISC_MODES = [
-  { id:'wheelhouse', iconName:'mode-wheelhouse', name:'In Your Wheelhouse', desc:'Beers that match your pattern' },
-  { id:'adjacent', iconName:'mode-adjacent', name:'Slightly Outside', desc:'One or two steps from your norm' },
-  { id:'wildcard', iconName:'mode-wildcard', name:'Way Outside', desc:'Styles you rarely or never drink' },
-  { id:'random', iconName:'mode-random', name:'Random', desc:'Anything goes — surprise me' },
+  { id:'gaps', iconName:'mode-branch-out', name:'Branch Out', desc:'One step off your usual',
+    gate: gapsGate, build: buildGaps, renderCard: renderGapCard,
+    suppressionKey: g => g.key, wishItem: (g, i) => ({ name: g.picks[i].style, brewery: '', style: g.picks[i].style }) },
+  { id:'occasion', iconName:'mode-occasion', name:'Occasion', desc:'The right pick for where you are',
+    gate: occasionGate, build: buildOccasion, renderCard: renderOccasionCard,
+    suppressionKey: c => `${c.style}|${c.context}`, wishItem: c => ({ name: c.style, brewery: '', style: c.style }),
+    renderOptions: renderOccasionOptions, precheck: occasionPrecheck },
+  { id:'brewery', iconName:'mode-brewery', name:'Same Brewery, New Style', desc:'Something new from a favorite',
+    gate: breweryGapsGate, build: buildBreweryGaps, renderCard: renderBreweryGapCard,
+    suppressionKey: b => b.key, wishItem: (b, i) => ({ name: b.suggestions[i].family, brewery: b.brewery, style: '' }) },
+  { id:'rediscovery', iconName:'mode-rediscovery', name:'Rediscovery', desc:'An old favorite, due another round',
+    gate: rediscoveryGate, build: buildRediscovery, renderCard: renderRediscoveryCard,
+    suppressionKey: c => c.key, wishItem: c => ({ name: c.name, brewery: c.brewery, style: c.style }),
+    actions: rediscoveryActions, notInterested: false },
 ];
+function discModeById(id) {
+  return DISC_MODES.find(m => m.id === id) || null;
+}
 
 // Resolve a raw beer_type string (as stored on an entry — could come from
 // live check-in autocomplete, CSV import, or years-old data) to the exact
@@ -1571,6 +1618,199 @@ function resolveMatrixStyle(rawStyle) {
   }
   return STYLE_KEY_INDEX[normalizeStyleKey(rawStyle)] || null;
 }
+
+// Non-recommendable styles (§3, OF1–OF3): valid input, never output. These
+// still count toward familiarity, affinity, coverage, and the hopprint — they
+// are real drinking — but are never rendered as a recommended style or cited
+// as a card's reason. An explicit list, not a string match: 'Sour - Other Gose'
+// is orderable (it's a gose) and 'Dark Ale' / 'Traditional Ale' fail the
+// actionability test without containing "Other". Keys are canonical
+// STYLE_MATRIX keys; pass resolveMatrixStyle output.
+const NON_RECOMMENDABLE_STYLES = new Set([
+  'Other',
+  'Blonde / Golden Ale - Other',
+  'Brown Ale - Other',
+  'Lager - Other',
+  'Mild - Other',
+  'Pale Ale - Other',
+  'Pilsner - Other',
+  'Porter - Other',
+  'Red Ale - Other',
+  'Sour - Other',
+  'Stout - Other',
+  'Wheat Beer - Other',
+  'Historical Beer - Other',
+  'Dark Ale',
+  'Traditional Ale',
+  // Not a beer discovery for a full-strength beer drinker (Oct 19 walkthrough).
+  'Root Beer',
+  'Non-Alcoholic - IPA',
+  'Non-Alcoholic - Porter / Stout',
+]);
+function isRecommendableStyle(style) {
+  return !!style && !!STYLE_MATRIX[style] && !NON_RECOMMENDABLE_STYLES.has(style);
+}
+
+// Style families (§6 Brewery Gaps; approved Oct 19, 2026). Explicit for every
+// STYLE_MATRIX key — many keys have no " - " prefix, and IPA / Stout / Porter
+// / Lager / Sour split by character, not by prefix. `- Other` bins roll up
+// into their family; null means no meaningful family (OF4): the check-in
+// counts toward a brewery's depth but toward no family's share.
+const STYLE_FAMILY = {
+  "Altbier - Traditional": "Altbier",
+  "Barleywine - American": "Barleywine",
+  "Barleywine - English": "Barleywine",
+  "Belgian Blonde": "Belgian Ale",
+  "Belgian Dubbel": "Belgian Ale",
+  "Belgian Strong Dark Ale": "Belgian Ale",
+  "Belgian Tripel": "Belgian Ale",
+  "Bitter - Extra Special / Strong (ESB)": "Bitter",
+  "Bitter - Session / Ordinary": "Bitter",
+  "Blonde / Golden Ale - American": "Blonde / Golden Ale",
+  "Blonde / Golden Ale - Other": "Blonde / Golden Ale",
+  "Bock - Doppelbock": "Bock",
+  "Bock - Hell / Maibock / Lentebock": "Bock",
+  "Bock - Single / Traditional": "Bock",
+  "Brett Beer": "Wild Ale",
+  "Brown Ale - American": "Brown Ale",
+  "Brown Ale - Belgian": "Brown Ale",
+  "Brown Ale - English": "Brown Ale",
+  "Brown Ale - Imperial / Double": "Brown Ale",
+  "Brown Ale - Other": "Brown Ale",
+  "California Common": "Pale Lager",
+  "Cider - Herbed / Spiced": "Cider",
+  "Cider - Traditional / Apfelwein": "Cider",
+  "Cream Ale": "Blonde / Golden Ale",
+  "Dark Ale": null,
+  "Farmhouse Ale - Bière de Garde": "Farmhouse Ale",
+  "Farmhouse Ale - Grisette": "Farmhouse Ale",
+  "Farmhouse Ale - Saison": "Farmhouse Ale",
+  "Festbier": "Pale Lager",
+  "Fruit Beer": "Fruit & Spice",
+  "Hard Ginger Beer": null,
+  "Historical Beer - Kentucky Common": "Historical Beer",
+  "Historical Beer - Other": null,
+  "Historical Beer - Pre-Prohibition Lager": "Pale Lager",
+  "IPA - American": "Clear IPA",
+  "IPA - Australian": "Clear IPA",
+  "IPA - Belgian": "Specialty IPA",
+  "IPA - Black / Cascadian Dark Ale": "Specialty IPA",
+  "IPA - Brown": "Specialty IPA",
+  "IPA - Cold": "Clear IPA",
+  "IPA - English": "Clear IPA",
+  "IPA - Farmhouse": "Specialty IPA",
+  "IPA - Fruited": "Hazy IPA",
+  "IPA - Imperial / Double": "Imperial IPA",
+  "IPA - Imperial / Double New England / Hazy": "Imperial IPA",
+  "IPA - Milkshake": "Hazy IPA",
+  "IPA - New England / Hazy": "Hazy IPA",
+  "IPA - New Zealand": "Clear IPA",
+  "IPA - Red": "Specialty IPA",
+  "IPA - Rye": "Clear IPA",
+  "IPA - Session": "Clear IPA",
+  "IPA - Session New England / Hazy": "Hazy IPA",
+  "IPA - Triple": "Imperial IPA",
+  "IPA - Triple New England / Hazy": "Imperial IPA",
+  "IPA - White / Wheat": "Specialty IPA",
+  "Kellerbier / Zwickelbier": "Pale Lager",
+  "Kölsch": "Blonde / Golden Ale",
+  "Lager - Amber / Red": "Amber & Dark Lager",
+  "Lager - American": "Pale Lager",
+  "Lager - American Amber / Red": "Amber & Dark Lager",
+  "Lager - American Light": "Pale Lager",
+  "Lager - Dark": "Amber & Dark Lager",
+  "Lager - Dortmunder / Export": "Pale Lager",
+  "Lager - Helles": "Pale Lager",
+  "Lager - IPL (India Pale Lager)": "Pale Lager",
+  "Lager - Japanese Rice": "Pale Lager",
+  "Lager - Mexican": "Pale Lager",
+  "Lager - Munich Dunkel": "Amber & Dark Lager",
+  "Lager - Other": "Pale Lager",
+  "Lager - Pale": "Pale Lager",
+  "Lager - Smoked": "Amber & Dark Lager",
+  "Lager - Světlé (Czech Pale)": "Pale Lager",
+  "Lager - Tmavé (Czech Dark)": "Amber & Dark Lager",
+  "Lager - Vienna": "Amber & Dark Lager",
+  "Lager - Winter": "Amber & Dark Lager",
+  "Malt Liquor": "Pale Lager",
+  "Mead - Braggot": "Mead",
+  "Mild - Dark": "Mild",
+  "Mild - Other": "Mild",
+  "Märzen": "Amber & Dark Lager",
+  "Non-Alcoholic - IPA": "Non-Alcoholic",
+  "Non-Alcoholic - Porter / Stout": "Non-Alcoholic",
+  "Other": null,
+  "Pale Ale - American": "Pale Ale",
+  "Pale Ale - Belgian": "Pale Ale",
+  "Pale Ale - English": "Pale Ale",
+  "Pale Ale - New England / Hazy": "Pale Ale",
+  "Pale Ale - Other": "Pale Ale",
+  "Pale Ale - XPA (Extra Pale)": "Pale Ale",
+  "Pilsner - American": "Pilsner",
+  "Pilsner - Czech / Bohemian": "Pilsner",
+  "Pilsner - German": "Pilsner",
+  "Pilsner - Imperial / Double": "Pilsner",
+  "Pilsner - Italian": "Pilsner",
+  "Pilsner - New Zealand": "Pilsner",
+  "Pilsner - Other": "Pilsner",
+  "Porter - American": "Porter",
+  "Porter - Baltic": "Imperial Porter",
+  "Porter - Coffee": "Porter",
+  "Porter - English": "Porter",
+  "Porter - Imperial / Double": "Imperial Porter",
+  "Porter - Imperial / Double Coffee": "Imperial Porter",
+  "Porter - Other": "Porter",
+  "Porter - Smoked": "Porter",
+  "Pumpkin / Yam Beer": "Fruit & Spice",
+  "Red Ale - American Amber / Red": "Red Ale",
+  "Red Ale - Imperial / Double": "Red Ale",
+  "Red Ale - Irish": "Red Ale",
+  "Red Ale - Other": "Red Ale",
+  "Root Beer": null,
+  "Rye Beer": "Rye Beer",
+  "Schwarzbier": "Amber & Dark Lager",
+  "Scotch Ale / Wee Heavy": "Scottish Ale",
+  "Scottish Ale": "Scottish Ale",
+  "Scottish Export Ale": "Scottish Ale",
+  "Shandy / Radler": "Shandy / Radler",
+  "Smoked Beer": "Smoked Beer",
+  "Sour - Berliner Weisse": "Gose & Berliner",
+  "Sour - Flanders Red Ale": "Flanders & Other Sour",
+  "Sour - Fruited": "Fruited Sour",
+  "Sour - Fruited Berliner Weisse": "Gose & Berliner",
+  "Sour - Fruited Gose": "Gose & Berliner",
+  "Sour - Other": "Flanders & Other Sour",
+  "Sour - Other Gose": "Gose & Berliner",
+  "Sour - Tomato / Vegetable Gose": "Gose & Berliner",
+  "Sour - Traditional Gose": "Gose & Berliner",
+  "Spiced / Herbed Beer": "Fruit & Spice",
+  "Stout - American": "Stout",
+  "Stout - Coffee": "Stout",
+  "Stout - Foreign / Export": "Stout",
+  "Stout - Imperial / Double": "Imperial Stout",
+  "Stout - Imperial / Double Coffee": "Imperial Stout",
+  "Stout - Imperial / Double Milk": "Imperial Stout",
+  "Stout - Imperial / Double Pastry": "Imperial Stout",
+  "Stout - Irish Dry": "Stout",
+  "Stout - Milk / Sweet": "Stout",
+  "Stout - Oatmeal": "Stout",
+  "Stout - Other": "Stout",
+  "Stout - Russian Imperial": "Imperial Stout",
+  "Stout - White / Golden": "Stout",
+  "Strong Ale - American": "Strong Ale",
+  "Table Beer": "Farmhouse Ale",
+  "Traditional Ale": null,
+  "Wheat Beer - American Pale Wheat": "Wheat Beer",
+  "Wheat Beer - Dunkelweizen": "Wheat Beer",
+  "Wheat Beer - Hefeweizen": "Wheat Beer",
+  "Wheat Beer - Kristallweizen": "Wheat Beer",
+  "Wheat Beer - Other": "Wheat Beer",
+  "Wheat Beer - Wheat Wine": "Wheat Beer",
+  "Wheat Beer - Witbier / Blanche": "Wheat Beer",
+  "Wild Ale - American": "Wild Ale",
+  "Winter Ale": "Fruit & Spice",
+  "Winter Warmer": "Fruit & Spice",
+};
 
 // ═══════════════════════════════════════════════════════════════
 // DATE LOOKUP — production/best-by date decoder + freshness verdict
@@ -1861,7 +2101,7 @@ function dlRecompute() {
 
 // ═══════════════════════════════════════════════════════════════
 // RECOMMENDATION ENGINE — signal model, suppression, orchestration
-// (uses STYLE_MATRIX + buildNeighborIndex/scoreRecommendation/generateRationale
+// (uses STYLE_MATRIX + buildNeighborIndex/scoreRecommendation
 // from style_matrix.js and proximity_engine.js, loaded via <script> above)
 // ═══════════════════════════════════════════════════════════════
 
@@ -1905,9 +2145,15 @@ function computeSignalModel(entriesList) {
   return { signalData, userAffinityMap };
 }
 
-// Suppression / rotation tracking — per style, per mode, independently.
-// Windows are midpoints of the ranges locked in the handoff doc.
-const SUPPRESSION_WINDOWS = { wheelhouse: 4, adjacent: 8, wildcard: 18, random: 6 };
+// Suppression / rotation tracking — per mode, keyed by whatever that mode
+// recommends (§8): axis (gaps), style|occasion (occasion), brewery (brewery),
+// beer (rediscovery). Rows are { mode, key, timestamp }; the mode namespaces
+// the key, so equal keys in different modes never collide. Rows from the
+// retired modes ({ style, mode }) never match a current mode and age out at
+// the prune. Local only — not synced. RD4's permanent "can't get it anymore"
+// retirement is a separate, synced store.
+const SUPPRESSION_WINDOWS = { gaps: 7, occasion: 4, brewery: 14, rediscovery: 30 };
+const SUPPRESSION_PRUNE_DAYS = 31; // one past the longest window
 
 function loadSuppression() {
   return JSON.parse(localStorage.getItem('hopprint_rec_suppression') || '[]');
@@ -1915,18 +2161,37 @@ function loadSuppression() {
 function saveSuppression(list) {
   localStorage.setItem('hopprint_rec_suppression', JSON.stringify(list));
 }
-function isStyleSuppressed(style, mode, windowDays, suppressionList) {
+function isSuppressed(key, mode, windowDays, suppressionList) {
   if (windowDays <= 0) return false;
   const now = Date.now();
-  return suppressionList.some(s => s.style === style && s.mode === mode && (now - s.timestamp) < windowDays * 86400000);
+  return suppressionList.some(s => s.key === key && s.mode === mode && (now - s.timestamp) < windowDays * 86400000);
 }
-function recordShown(styles, mode) {
-  if (!styles.length) return;
+function recordShown(keys, mode) {
+  if (!keys.length) return;
   const list = loadSuppression();
   const now = Date.now();
-  styles.forEach(style => list.push({ style, mode, timestamp: now }));
-  const cutoff = now - 25 * 86400000; // prune anything older than the longest window
+  keys.forEach(key => list.push({ mode, key, timestamp: now }));
+  const cutoff = now - SUPPRESSION_PRUNE_DAYS * 86400000;
   saveSuppression(list.filter(s => s.timestamp > cutoff));
+}
+// Starvation ladder shared by every mode's build(): full window, then half,
+// then none — so a mode with a small candidate pool still fills its batch
+// rather than going blank because everything was shown recently. Each step
+// only appends, so recently shown items fill the back of a batch and never
+// jump ahead of fresh ones. candidates arrive ranked (or shuffled, for
+// Rediscovery); keyOf maps one to its key.
+function takeUnsuppressed(candidates, mode, keyOf, target) {
+  const baseWindow = SUPPRESSION_WINDOWS[mode];
+  const suppressionList = loadSuppression();
+  const picked = [];
+  for (const windowDays of [baseWindow, baseWindow / 2, 0]) {
+    for (const c of candidates) {
+      if (picked.length >= target) break;
+      if (!picked.includes(c) && !isSuppressed(keyOf(c), mode, windowDays, suppressionList)) picked.push(c);
+    }
+    if (picked.length >= target) break;
+  }
+  return { cards: picked, starved: picked.length < target };
 }
 function showAnotherRec() {
   // Neutral cycle — no extra suppression stamp beyond the normal
@@ -1935,129 +2200,625 @@ function showAnotherRec() {
   renderNextRec();
 }
 
-function notInterestedRec(style, mode) {
+function notInterestedRec(key, mode) {
   // Explicit negative signal — re-stamp suppression to *now* on top of the
-  // shown-at-render entry, so this style is pushed out further than one
+  // shown-at-render entry, so this key is pushed out further than one
   // that was simply shown and cycled past.
-  recordShown([style], mode);
+  recordShown([key], mode);
   renderNextRec();
 }
 
-// Styles the user has actually logged, weighted by log-damped frequency —
-// used ONLY as a last-resort ranking signal when there isn't a single rated
-// check-in anywhere to build real taste affinity from (computeSignalModel
-// returns an empty userAffinityMap in that case). Without this, Discover's
-// wheelhouse/adjacent/wildcard modes go completely silent for a "log
-// everything, rate nothing" user — which contradicts the locked "rating
-// sparsity is the norm, not an edge case" principle. This must never claim
-// to know a *preference*, only a *habit*: pseudo-affinity stays clamped to a
-// narrow, neutral-or-above band (3.0–4.2) — frequency is evidence of a
-// habit, not evidence of dislike — and callers must render an honestly
-// distinct rationale for it (see rationaleFor), never the taste-confidence
-// copy real ratings earn.
-function buildFamiliarityFallbackSignal(entriesList) {
-  const counts = {};
+// Shared Save pill (§8: wishlist save on every mode). The mode's wishItem()
+// says what gets saved; a beer already on the wish list shows as saved.
+function isOnWishlist(item) {
+  const k = stubBeerKey({ beer_name: item.name, brewery_name: item.brewery });
+  return wishlist.some(w => stubBeerKey({ beer_name: w.name, brewery_name: w.brewery }) === k);
+}
+function recSaveButton(item, index = 0) {
+  return isOnWishlist(item)
+    ? `<div class="rec-save saved">On Wish List</div>`
+    : `<div class="rec-save" id="recSave-${index}" onclick="saveShownToWishlist(${index})">Save</div>`;
+}
+function saveShownToWishlist(index = 0) {
+  const m = discModeById(discoverQueueMode);
+  if (!m || !m.wishItem || !discoverShownCard) return;
+  const src = m.wishItem(discoverShownCard, index);
+  if (isOnWishlist(src)) return;
+  const item = { id: newId(), name: src.name, brewery: src.brewery || '', style: src.style || '', added: new Date().toISOString() };
+  wishlist.push(item);
+  localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+  queueSync('wishlist', item.id, 'upsert', true);
+  renderWishlist();
+  showToast('Added to wish list', 'wishlist');
+  const btn = document.getElementById(`recSave-${index}`);
+  if (btn) btn.outerHTML = `<div class="rec-save saved">On Wish List</div>`;
+}
+
+// Card rationales are selectCopy consumers (Phase D engine, unchanged): one
+// registry per mode, one zone per sentence slot. Candidates follow the
+// engine's contract — complete sentences without the final period, entity
+// names through esc(), band language only (D1). The copy pass edits these
+// registries, not the builders. Copy here is placeholder (BP1).
+function discoverRationale(copy, zones, ctx) {
+  const picked = selectCopy(copy, ctx, zones);
+  if (!picked.length) return '';
+  return picked.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.';
+}
+
+// ── Rediscovery (§7) ──────────────────────────────────────────
+// RD1–RD6: a beer from the user's own history whose most recent rating is in
+// the Definitely band and which hasn't been logged in the past year.
+// Selection is random among qualifiers (RD3) — no ranking. The
+// non-recommendable style filter doesn't apply (OF5): it's a specific,
+// buyable beer whatever bin it was logged under. Beers are identified the
+// way My Beers stubs are (stubBeerKey: name + brewery, case/space-folded).
+const REDISCOVERY_MIN_AGE_DAYS = 365;
+const REDISCOVERY_BATCH = 5;
+// RD4: "Can't get it anymore" retires a beer from Rediscovery for good.
+// Separate from time-windowed suppression; rows carry an id for sync.
+const REDISCOVERY_RETIRED_KEY = 'hopprint_rediscovery_retired';
+
+function loadRetired() {
+  return JSON.parse(localStorage.getItem(REDISCOVERY_RETIRED_KEY) || '[]');
+}
+function saveRetired(list) {
+  localStorage.setItem(REDISCOVERY_RETIRED_KEY, JSON.stringify(list));
+}
+
+function rediscoveryCandidates(entriesList, now = Date.now()) {
+  const retired = new Set(loadRetired().map(r => r.key));
+  const definitelyMin = RATING_BANDS.find(b => b.id === 'definitely').min;
+  const byBeer = new Map();
+  entriesList.forEach(e => {
+    const t = new Date(e.created_at).getTime();
+    if (!e.beer_name || !Number.isFinite(t)) return;
+    const key = stubBeerKey(e);
+    let b = byBeer.get(key);
+    if (!b) byBeer.set(key, b = { key, last: null, lastT: -Infinity, rated: null, ratedT: -Infinity });
+    if (t > b.lastT) { b.last = e; b.lastT = t; }
+    if (typeof e.rating === 'number' && t > b.ratedT) { b.rated = e; b.ratedT = t; }
+  });
+  const out = [];
+  byBeer.forEach(b => {
+    if (retired.has(b.key) || !b.rated || b.rated.rating < definitelyMin) return;   // latest opinion wins
+    if (now - b.lastT < REDISCOVERY_MIN_AGE_DAYS * 86400000) return;
+    out.push({
+      key: b.key,
+      name: b.last.beer_name,
+      brewery: b.last.brewery_name || '',
+      style: rediscoveryStyleTag(b.last.beer_type),
+      abv: b.last.beer_abv || '',
+      lastLogged: b.last.created_at,
+      imported: b.rated.source === 'import' || b.rated.rating_mode === 'import',
+    });
+  });
+  return out;
+}
+
+// RD9/OF5: the card's style tag shows the family for a non-recommendable
+// bin ('Porter - Other' → 'Porter'), and nothing for one with no family.
+function rediscoveryStyleTag(rawStyle) {
+  const style = resolveMatrixStyle(rawStyle);
+  if (!style || isRecommendableStyle(style)) return rawStyle || '';
+  return STYLE_FAMILY[style] || '';
+}
+
+function rediscoveryGate(entriesList) {
+  return rediscoveryCandidates(entriesList).length
+    ? { open: true, reason: '' }
+    : { open: false, reason: 'Unlocks when a beer you loved hasn\'t been in your glass for a year' };
+}
+
+function buildRediscovery(entriesList) {
+  const pool = rediscoveryCandidates(entriesList);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  // A small pool isn't a "focused history" — no starvation note here.
+  return { cards: takeUnsuppressed(pool, 'rediscovery', c => c.key, REDISCOVERY_BATCH).cards, starved: false };
+}
+
+// Bands, never scores (D1); provenance stays visible.
+const REDISCOVERY_ZONES = ['reason', 'when'];
+const REDISCOVERY_COPY = [
+  { id: 'rd_definitely', zone: 'reason', priority: 10,
+    condition: () => true,
+    render: c => (c.imported ? `you rated it Definitely back on Untappd` : `you rated it Definitely last time`) },
+  { id: 'rd_last_logged', zone: 'when', priority: 10,
+    condition: c => Number.isFinite(new Date(c.lastLogged).getTime()),
+    render: c => `you haven't had one since ${new Date(c.lastLogged).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}` },
+];
+function rediscoveryRationale(c) {
+  return discoverRationale(REDISCOVERY_COPY, REDISCOVERY_ZONES, c);
+}
+
+function renderRediscoveryCard(c) {
+  const sub = `${esc(c.brewery)}${c.abv ? ` · ${esc(c.abv)}% ABV` : ''}`;
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(c.name)}</div>
+        ${sub ? `<div class="rec-brewery">${sub}</div>` : ''}
+      </div>
+      ${recSaveButton({ name: c.name, brewery: c.brewery })}
+    </div>
+    ${c.style ? `<div class="rec-tags"><span class="etag style">${esc(c.style)}</span></div>` : ''}
+    <div class="rec-why">${rediscoveryRationale(c)}</div>`;
+}
+
+// Inline two-step confirm — retirement is permanent, and browser dialogs
+// are off the table.
+function rediscoveryActions() {
+  return `<div class="rec-footer-btn negative" id="recRetire" onclick="askRetireShown()">Can't Find It Anymore</div>`;
+}
+function askRetireShown() {
+  const el = document.getElementById('recRetire');
+  el.removeAttribute('onclick');
+  el.classList.add('rec-confirm');
+  el.innerHTML = `Stop suggesting it? <span onclick="retireShownBeer()">Yes</span> · <span onclick="cancelRetireShown()">Cancel</span>`;
+}
+function cancelRetireShown() {
+  document.getElementById('recRetire').outerHTML = rediscoveryActions();
+}
+function retireShownBeer() {
+  const c = discoverShownCard;
+  if (!c) return;
+  const list = loadRetired();
+  if (!list.some(r => r.key === c.key)) {
+    const row = { id: newId(), key: c.key, beer_name: c.name, brewery_name: c.brewery, retired_at: new Date().toISOString() };
+    list.push(row);
+    saveRetired(list);
+    queueSync('rediscovery_retired', row.id, 'upsert', true);
+  }
+  showToast("Won't suggest that one again", 'success');
+  renderNextRec();
+}
+
+// ── Dimension Gaps (§4) ───────────────────────────────────────
+// DG1: project every matched check-in (rated or not) onto the axes through
+// STYLE_MATRIX; a region holding under 5% of them is a gap. Coverage is
+// recency-weighted (180-day half-life, like affinity) so a direction the
+// user has drifted away from reopens — all-time counts let a heavy explorer
+// run out of gaps for good. Regions are the
+// high end (≥ 4) of every axis, plus low alcohol (= 1) — DG4; low haze and
+// low carbonation are not discoveries. DG3: a region with ≥ 3 rated check-ins
+// whose recency-weighted average is in the Never band is a known dislike and
+// never shown. DG2: picks sit in the gap on the target axis and as close as
+// possible to the hopprint on the other seven; untried styles first, then
+// the least-logged (a user who has had every style still gets the corner of
+// the region they barely touched).
+const GAP_REGIONS = [
+  { axis: 'bitterness', end: 'high' }, { axis: 'sweetness', end: 'high' }, { axis: 'roast', end: 'high' },
+  { axis: 'body', end: 'high' }, { axis: 'fruit', end: 'high' }, { axis: 'carbonation', end: 'high' },
+  { axis: 'alcohol', end: 'high' }, { axis: 'haze', end: 'high' }, { axis: 'alcohol', end: 'low' },
+];
+// Placeholder copy (BP1).
+const GAP_LABELS = {
+  'bitterness:high': 'More bitter', 'sweetness:high': 'Sweeter', 'roast:high': 'Roast-forward',
+  'body:high': 'Fuller-bodied', 'fruit:high': 'Fruit-forward', 'carbonation:high': 'More carbonated',
+  'alcohol:high': 'Stronger', 'haze:high': 'Hazier', 'alcohol:low': 'Sessionable',
+};
+const GAP_HIGH_MIN = 4;
+const GAP_LOW_MAX = 1;
+const GAP_THIN_SHARE = 0.05;
+const GAP_HALF_LIFE_DAYS = 180;
+const GAP_DISLIKE_MIN_RATED = 3;
+const GAP_MIN_STYLES = 4;      // the hopprint's own gate (DG6)
+const GAP_PICKS = 3;
+const GAP_MIN_PICKS = 2;
+
+function inGapRegion(region, vec) {
+  return region.end === 'high' ? vec[region.axis] >= GAP_HIGH_MIN : vec[region.axis] <= GAP_LOW_MAX;
+}
+
+// Gaps ordered thinnest first; equal shares go to the smallest step (the
+// gap whose picks sit nearest the hopprint on the other seven axes).
+function dimensionGaps(entriesList) {
+  const hp = computeHopprint(entriesList);
+  if (hp.matchedStyles < GAP_MIN_STYLES) return { gaps: [], matchedStyles: hp.matchedStyles };
+  const center = Object.fromEntries(HOPPRINT_DIMS.map((d, i) => [d, hp.vector[i]]));
+  const neverMax = RATING_BANDS.find(b => b.id === 'never').max;
+  const now = Date.now();
+  const matched = [];
   entriesList.forEach(e => {
     const style = resolveMatrixStyle(e.beer_type);
     if (!style) return;
-    counts[style] = (counts[style] || 0) + 1;
+    const days = (now - new Date(e.created_at).getTime()) / 86400000;
+    const weight = Number.isFinite(days) ? Math.pow(0.5, Math.max(0, days) / GAP_HALF_LIFE_DAYS) : 0;
+    matched.push({ e, style, weight, pastYear: Number.isFinite(days) && days <= 365 });
   });
-  const styles = Object.keys(counts);
-  if (!styles.length) return null; // genuinely no matched-style history — nothing to fall back to
-
-  const signalData = {};
-  const userAffinityMap = {};
-  const maxCount = Math.max(...styles.map(s => counts[s]));
-  styles.forEach(style => {
-    const count = counts[style];
-    const familiarity = Math.min(5, Math.log(1 + count) * 1.5);
-    const pseudoAffinity = 3.0 + 1.2 * (Math.log(1 + count) / Math.log(1 + maxCount));
-    const novelty = Math.max(0, 1 - count / 8);
-    signalData[style] = { affinity: pseudoAffinity, familiarity, novelty, count };
-    userAffinityMap[style] = pseudoAffinity;
+  const totalWeight = matched.reduce((sum, m) => sum + m.weight, 0);
+  if (!totalWeight) return { gaps: [], matchedStyles: hp.matchedStyles };
+  const logged = {};
+  matched.forEach(m => { logged[m.style] = (logged[m.style] || 0) + 1; });
+  const yearTotal = matched.filter(m => m.pastYear).length;
+  const gaps = [];
+  GAP_REGIONS.forEach(region => {
+    const inside = matched.filter(m => inGapRegion(region, STYLE_MATRIX[m.style]));
+    const share = inside.reduce((sum, m) => sum + m.weight, 0) / totalWeight;
+    if (share >= GAP_THIN_SHARE) return;
+    let rated = 0, sumW = 0, sumWR = 0;
+    inside.forEach(({ e }) => {
+      if (typeof e.rating !== 'number') return;
+      rated++;
+      const days = (now - new Date(e.created_at).getTime()) / 86400000;
+      if (!Number.isFinite(days)) return;
+      const w = Math.pow(0.5, days / 180);
+      sumW += w;
+      sumWR += w * e.rating;
+    });
+    if (rated >= GAP_DISLIKE_MIN_RATED && sumW > 0 && sumWR / sumW <= neverMax) return;   // known dislike
+    const others = HOPPRINT_DIMS.filter(d => d !== region.axis);
+    const distance = style => Math.sqrt(others.reduce((sum, d) => sum + (STYLE_MATRIX[style][d] - center[d]) ** 2, 0));
+    const picks = Object.keys(STYLE_MATRIX)
+      .filter(style => isRecommendableStyle(style) && inGapRegion(region, STYLE_MATRIX[style]))   // OF3
+      .map(style => ({ style, distance: distance(style), logged: logged[style] || 0, tried: !!logged[style] }))
+      .sort((a, b) => (a.tried - b.tried) || (a.logged - b.logged) || (a.distance - b.distance))
+      .slice(0, GAP_PICKS);
+    if (picks.length < GAP_MIN_PICKS) return;
+    const key = `${region.axis}:${region.end}`;
+    gaps.push({
+      key, axis: region.axis, end: region.end, label: GAP_LABELS[key],
+      share, yearCount: inside.filter(m => m.pastYear).length, yearTotal, rated, picks,
+      step: picks.reduce((sum, p) => sum + p.distance, 0) / picks.length,
+    });
   });
-  return { signalData, userAffinityMap };
+  gaps.sort((a, b) => (a.share - b.share) || (a.step - b.step));
+  return { gaps, matchedStyles: hp.matchedStyles };
 }
 
-function pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex) {
-  return Object.keys(STYLE_MATRIX)
-    .map(style => {
-      const result = scoreRecommendation(style, signalData, userAffinityMap, neighborIndex, mode, STYLE_MATRIX);
-      result.count = (signalData[style] && signalData[style].count) || 0;
-      return result;
-    })
-    .sort((a, b) => b.score - a.score);
+function gapsGate(entriesList) {
+  const { gaps, matchedStyles } = dimensionGaps(entriesList);
+  if (matchedStyles < GAP_MIN_STYLES) return { open: false, reason: `Log ${GAP_MIN_STYLES} different styles to unlock` };
+  return gaps.length ? { open: true, reason: '' } : { open: false, reason: "You've been all over the map lately. Check back soon" };
 }
 
-// Style-only recommendations: no specific-beer lookup, so no candidate-pool
-// exhaustion is possible here. Starvation ladder now only has to work around
-// suppression (a style recently shown), not beer availability.
-function buildAffinityRecs(mode, entriesList) {
-  let { signalData, userAffinityMap } = computeSignalModel(entriesList);
-  let usedFallback = false;
-  if (Object.keys(userAffinityMap).length === 0) {
-    // No rated check-ins anywhere, so real taste affinity can't be computed
-    // at all (not "sparse" — zero). Fall back to ranking by drinking
-    // frequency rather than returning nothing. Genuinely empty history (no
-    // matched styles at all, e.g. brand-new account) still falls through to
-    // the real "not enough data" empty state below via an empty `ranked`.
-    const fallback = buildFamiliarityFallbackSignal(entriesList);
-    if (fallback) { signalData = fallback.signalData; userAffinityMap = fallback.userAffinityMap; usedFallback = true; }
-  }
-  const neighborIndex = getNeighborIndex();
-  const ranked = pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex);
-  // Every result in a fallback pass is frequency-derived, not taste-derived —
-  // normalize the source label uniformly (regardless of the internal
-  // direct/blended/transferred distinction scoreRecommendation assigned)
-  // so the UI renders one honest rationale rather than mixing real-taste
-  // and frequency-only copy in the same list.
-  if (usedFallback) ranked.forEach(r => { r.source = 'familiarity_fallback'; });
-  const target = 5;
-  const baseWindow = SUPPRESSION_WINDOWS[mode];
-  const attempts = [baseWindow, baseWindow / 2, 0];
-  const suppressionList = loadSuppression();
-  let cards = [];
-  for (const windowDays of attempts) {
-    cards = [];
-    for (const result of ranked) {
-      if (cards.length >= target) break;
-      if (isStyleSuppressed(result.style, mode, windowDays, suppressionList)) continue;
-      // Negative recommendations are internal-only (used to suppress bad Wildcard
-      // picks) and must never render as a card — filter them out here rather than
-      // relying on generateRationale's own negative-branch text staying unused.
-      if (result.source !== 'direct' && result.source !== 'familiarity_fallback' && result.predictedAffinity < 2.5) continue;
-      cards.push({ style: result.style, result });
+function buildGaps(entriesList) {
+  const { gaps } = dimensionGaps(entriesList);
+  // Fewer gaps means broader drinking, not a focused history — no starvation note.
+  return { cards: takeUnsuppressed(gaps, 'gaps', g => g.key, gaps.length).cards, starved: false };
+}
+
+// Counts, never scores (D1). DG5: says what changes and what stays;
+// DG6: admits it can't rule out a dislike on thin ratings.
+const GAP_ZONES = ['coverage', 'change', 'caution'];
+const GAP_AXIS_WORDS = {
+  bitterness: 'bitterness', sweetness: 'sweetness', roast: 'roast', body: 'body',
+  fruit: 'fruit', carbonation: 'sparkle', alcohol: 'strength', haze: 'haze',
+};
+const GAP_COPY = [
+  { id: 'gp_coverage_year', zone: 'coverage', priority: 20,
+    condition: g => g.yearTotal > 0,
+    render: g => `just ${g.yearCount.toLocaleString()} of your ${g.yearTotal.toLocaleString()} check-ins this past year went this way` },
+  { id: 'gp_coverage_lately', zone: 'coverage', priority: 10,
+    condition: () => true,
+    render: () => `not much of your drinking has gone this way lately` },
+  { id: 'gp_change_down', zone: 'change', priority: 20,
+    condition: g => g.end === 'low',
+    render: () => `these dial the strength down and keep the rest close to your usual` },
+  { id: 'gp_change_up', zone: 'change', priority: 10,
+    condition: () => true,
+    render: g => `these turn up the ${GAP_AXIS_WORDS[g.axis]} and keep the rest close to your usual` },
+  { id: 'gp_cant_rule_out', zone: 'caution', priority: 10,
+    condition: g => g.rated < GAP_DISLIKE_MIN_RATED,
+    render: () => `fair warning: you haven't rated much here, so it may not be your thing` },
+];
+function gapRationale(g) {
+  return discoverRationale(GAP_COPY, GAP_ZONES, g);
+}
+
+function renderGapCard(g) {
+  const styles = g.picks.map((p, i) => `
+      <div class="gap-style"><span class="gap-style-name">${esc(p.style)}</span>${recSaveButton({ name: p.style, brewery: '' }, i)}</div>`).join('');
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(g.label)}</div>
+        <div class="rec-brewery">A direction you haven't explored much</div>
+      </div>
+    </div>
+    <div class="gap-styles">${styles}
+    </div>
+    <div class="rec-why">${gapRationale(g)}</div>`;
+}
+
+// ── Brewery Gaps (§6) — weak form ─────────────────────────────
+// BG1: BEER_DB only knows the user's own history, so the card points at the
+// gap between families loved elsewhere and what the user has had from this
+// brewery. It never claims the brewery makes something.
+// BG2: ≥ 5 check-ins, ≥ 5 of them rated, a majority of those Definitely,
+// and ≥ 3 different beers — a brewery whose range you explore, not a
+// one-beer habit (walkthrough: Miller Lite ×37 / High Life ×36 qualified).
+// BG3: ≥ 70% of the check-ins that have a family are in one family.
+// BG4: 1–2 families rated Definitely at other breweries (recency-weighted,
+// ≥ 3 rated check-ins there) and never had from this one, best first.
+// BG5: last check-in from the brewery within the past 12 months.
+const BREWERY_MIN_CHECKINS = 5;
+const BREWERY_MIN_RATED = 5;
+const BREWERY_MIN_BEERS = 3;
+const BREWERY_NARROW_SHARE = 0.7;
+const BREWERY_ORBIT_DAYS = 365;
+const BREWERY_ELSEWHERE_MIN_RATED = 3;
+const BREWERY_SUGGESTIONS = 2;
+
+function breweryKeyOf(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function familyOf(rawStyle) {
+  const style = resolveMatrixStyle(rawStyle);
+  return style ? STYLE_FAMILY[style] : null;
+}
+
+// Recency-weighted average rating per family, from rated check-ins.
+function familyAffinity(entriesList, now) {
+  const acc = {};
+  entriesList.forEach(e => {
+    const fam = familyOf(e.beer_type);
+    if (!fam || typeof e.rating !== 'number') return;
+    const days = (now - new Date(e.created_at).getTime()) / 86400000;
+    if (!Number.isFinite(days)) return;
+    const w = Math.pow(0.5, days / 180);
+    const a = acc[fam] || (acc[fam] = { sumW: 0, sumWR: 0, rated: 0 });
+    a.sumW += w; a.sumWR += w * e.rating; a.rated++;
+  });
+  return Object.fromEntries(Object.entries(acc).map(([fam, a]) => [fam, { avg: a.sumWR / a.sumW, rated: a.rated }]));
+}
+
+// Qualifying breweries with their suggestions, deepest relationship first.
+function breweryGaps(entriesList, now = Date.now()) {
+  const definitelyMin = RATING_BANDS.find(b => b.id === 'definitely').min;
+  const byBrewery = new Map();
+  entriesList.forEach(e => {
+    const key = breweryKeyOf(e.brewery_name);
+    if (!key) return;
+    if (!byBrewery.has(key)) byBrewery.set(key, []);
+    byBrewery.get(key).push(e);
+  });
+  const out = [];
+  byBrewery.forEach((list, key) => {
+    if (list.length < BREWERY_MIN_CHECKINS) return;
+    const rated = list.filter(e => typeof e.rating === 'number');
+    if (rated.length < BREWERY_MIN_RATED) return;
+    if (rated.filter(e => e.rating >= definitelyMin).length * 2 <= rated.length) return;   // majority Definitely
+    if (new Set(list.map(stubBeerKey)).size < BREWERY_MIN_BEERS) return;                  // a range, not a habit
+    const times = list.map(e => new Date(e.created_at).getTime()).filter(Number.isFinite);
+    if (!times.length || now - Math.max(...times) > BREWERY_ORBIT_DAYS * 86400000) return;  // still in orbit
+    const famCounts = {};
+    list.forEach(e => { const fam = familyOf(e.beer_type); if (fam) famCounts[fam] = (famCounts[fam] || 0) + 1; });
+    const famTotal = Object.values(famCounts).reduce((a, b) => a + b, 0);
+    if (!famTotal) return;
+    const [topFamily, topCount] = Object.entries(famCounts).sort((a, b) => b[1] - a[1])[0];
+    if (topCount / famTotal < BREWERY_NARROW_SHARE) return;
+    const elsewhere = familyAffinity(entriesList.filter(e => breweryKeyOf(e.brewery_name) !== key), now);
+    const suggestions = Object.entries(elsewhere)
+      .filter(([fam, a]) => !famCounts[fam] && a.rated >= BREWERY_ELSEWHERE_MIN_RATED && a.avg >= definitelyMin)
+      .sort((a, b) => b[1].avg - a[1].avg || b[1].rated - a[1].rated)
+      .slice(0, BREWERY_SUGGESTIONS)
+      .map(([family, a]) => ({ family, rated: a.rated }));
+    if (!suggestions.length) return;
+    const latest = list.reduce((a, b) => (new Date(b.created_at) > new Date(a.created_at) ? b : a));
+    out.push({ key, brewery: latest.brewery_name.trim(), checkins: list.length, topFamily, topCount, famTotal, suggestions });
+  });
+  return out.sort((a, b) => b.checkins - a.checkins || a.key.localeCompare(b.key));
+}
+
+function breweryGapsGate(entriesList) {
+  return breweryGaps(entriesList).length
+    ? { open: true, reason: '' }
+    : { open: false, reason: 'Unlocks when you have a go-to brewery and a go-to style there' };
+}
+
+function buildBreweryGaps(entriesList) {
+  const list = breweryGaps(entriesList);
+  return { cards: takeUnsuppressed(list, 'brewery', b => b.key, list.length).cards, starved: false };
+}
+
+// Counts, never scores (D1); never claims the brewery makes the suggested
+// family (BG1).
+const BREWERY_ZONES = ['pattern', 'suggest'];
+const BREWERY_COPY = [
+  { id: 'br_all', zone: 'pattern', priority: 20,
+    condition: b => b.topCount === b.famTotal,
+    render: b => `all ${b.famTotal.toLocaleString()} of your check-ins here are ${esc(b.topFamily)}` },
+  { id: 'br_mostly', zone: 'pattern', priority: 10,
+    condition: () => true,
+    render: b => `${b.topCount.toLocaleString()} of your ${b.famTotal.toLocaleString()} check-ins here are ${esc(b.topFamily)}` },
+  { id: 'br_loved_elsewhere', zone: 'suggest', priority: 10,
+    condition: b => b.suggestions.length > 0,
+    render: b => `you love ${b.suggestions.map(x => esc(x.family)).join(' and ')} elsewhere, so it's worth asking if they pour one` },
+];
+function breweryRationale(b) {
+  return discoverRationale(BREWERY_COPY, BREWERY_ZONES, b);
+}
+
+function renderBreweryGapCard(b) {
+  const rows = b.suggestions.map((x, i) => `
+      <div class="gap-style"><span class="gap-style-name">${esc(x.family)}</span>${recSaveButton({ name: x.family, brewery: b.brewery }, i)}</div>`).join('');
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(b.brewery)}</div>
+        <div class="rec-brewery">You mostly drink their ${esc(b.topFamily)}</div>
+      </div>
+    </div>
+    <div class="gap-styles">${rows}
+    </div>
+    <div class="rec-why">${breweryRationale(b)}</div>`;
+}
+
+// ── Occasion (§5) ─────────────────────────────────────────────
+// OC1: computeSignalModel + scoreRecommendation on an occasion-filtered
+// entry list. Each rated check-in gets a side from its stated occasion if
+// it has one (OC4/OC5), else from its venue (OC2/OC3: Home → home, any other
+// venue → out, no venue → left out). Only rated, style-matched check-ins
+// count — they're the ones the signal model can learn from.
+const OCCASION_SIDE = { 'home-solo': 'home', 'home-social': 'home', 'bar-taproom': 'out', event: 'out', dining: 'out', traveling: 'out' };
+const OCCASION_SIDES = [
+  { id: 'home', iconName: 'occasion-home-solo', label: 'Home' },
+  { id: 'out', iconName: 'occasion-bar', label: 'Out' },
+];
+const OCCASION_MIN_RATED = 5;        // per side, and per stated occasion for the six-way picker
+const OCCASION_SIX_UNLOCKED = 3;     // six-way picker once this many occasions qualify
+const OCCASION_SMARTER_SHARE = 0.5;  // OC6: "gets smarter" line at ≥ half derived
+const OCCASION_BATCH = 5;
+
+function occasionSideOf(e) {
+  if (OCCASION_SIDE[e.occasion]) return { side: OCCASION_SIDE[e.occasion], stated: true };
+  const venue = normalizeVenue(e.venue_name);
+  if (!venue) return null;
+  return { side: venue === HOME_VENUE ? 'home' : 'out', stated: false };
+}
+
+function occasionContexts(entriesList) {
+  const sides = { home: { entries: [], stated: 0 }, out: { entries: [], stated: 0 } };
+  const six = Object.fromEntries(OCCASIONS.map(o => [o.id, []]));
+  entriesList.forEach(e => {
+    if (typeof e.rating !== 'number' || !resolveMatrixStyle(e.beer_type)) return;
+    const r = occasionSideOf(e);
+    if (!r) return;
+    sides[r.side].entries.push(e);
+    if (r.stated) { sides[r.side].stated++; six[e.occasion].push(e); }
+  });
+  const sixMode = OCCASIONS.filter(o => six[o.id].length >= OCCASION_MIN_RATED).length >= OCCASION_SIX_UNLOCKED;
+  return { sides, six, sixMode };
+}
+
+// The picker's options. Home/Out until three stated occasions qualify, then
+// all six; a six-way occasion short of data borrows its parent side's
+// entries (fallback) and says so on the card.
+function occasionOptions(entriesList) {
+  const { sides, six, sixMode } = occasionContexts(entriesList);
+  const sideOpt = (o, extra = {}) => {
+    const s = sides[o.id];
+    return { ...o, open: s.entries.length >= OCCASION_MIN_RATED, entries: s.entries, stated: s.stated, fallback: false, parent: o.id, ...extra };
+  };
+  if (!sixMode) return OCCASION_SIDES.map(o => sideOpt(o));
+  return OCCASIONS.map(o => {
+    const parent = OCCASION_SIDE[o.id];
+    if (six[o.id].length >= OCCASION_MIN_RATED) {
+      return { ...o, open: true, entries: six[o.id], stated: six[o.id].length, fallback: false, parent };
     }
-    if (cards.length >= target) break;
-  }
-  return { cards, starved: cards.length < target, usedFallback };
+    const p = sideOpt(OCCASION_SIDES.find(x => x.id === parent));
+    return { ...o, open: p.open, entries: p.entries, stated: p.stated, fallback: true, parent };
+  });
 }
 
-function wildcardConfidence(result) {
-  if (result.source === 'direct') return null;
-  const positive = (result.contributors || []).filter(c => c.affinity >= 2.5);
-  if (positive.length >= 2) return 'confident';
-  if (positive.length === 1) return 'hedged';
-  return 'insufficient';
+function occasionGate(entriesList) {
+  const { sides } = occasionContexts(entriesList);
+  return Object.values(sides).some(s => s.entries.length >= OCCASION_MIN_RATED)
+    ? { open: true, reason: '' }
+    : { open: false, reason: `Rate ${OCCASION_MIN_RATED} beers at home or out to unlock` };
 }
 
-function rationaleFor(card, mode) {
-  if (mode === 'random') return 'A completely random pick — adventure awaits.';
-  const result = card.result;
-  if (result.source === 'familiarity_fallback') {
-    // No rated check-ins exist yet, so this list is ranked by drinking
-    // frequency, not taste — say so plainly rather than borrowing the
-    // confidence language real ratings earn (see buildFamiliarityFallbackSignal).
-    const times = result.count || 0;
-    if (mode === 'wheelhouse') return `You've logged this style ${times} time${times===1?'':'s'} — no ratings yet, so this is based on how often you reach for it. Rate a few check-ins to sharpen these picks.`;
-    if (mode === 'adjacent') return `Close in flavor to styles you log often. Rate a few check-ins and this list gets more precise.`;
-    return `Haven't seen this one in your history — suggested from your drinking habits, not rated taste, since there's no rating data yet.`;
-  }
-  if (result.source === 'direct') {
-    if (mode === 'wheelhouse') return `One of your go-tos — you've had this style ${result.count} times and keep rating it near the top.`;
-    if (mode === 'adjacent') return `You've only had this a handful of times, but you've rated it well every time. Feels like one to revisit.`;
-  }
-  return generateRationale(result, mode);
+function renderOccasionOptions(entriesList) {
+  const opts = occasionOptions(entriesList);
+  if (!opts.some(o => o.id === discoverContext && o.open)) discoverContext = '';
+  const pills = opts.map(o => `
+    <div class="occ-pill${!o.open ? ' gated' : discoverContext === o.id ? ' sel' : ''}" onclick="selectDiscoverContext('${o.id}')"${o.open ? '' : ' aria-disabled="true"'}>
+      <span class="occ-icon">${icon(o.iconName, 15, 2.2)}</span>${o.label}
+    </div>`).join('');
+  const note = opts.some(o => !o.open) ? `<div class="mode-reason">Rate ${OCCASION_MIN_RATED} beers in a setting to unlock it.</div>` : '';
+  return `<div class="discover-step-title discover-sub-title">Where are you?</div><div class="occasion-grid">${pills}</div>${note}`;
+}
+
+function selectDiscoverContext(id) {
+  const opt = occasionOptions(entries).find(o => o.id === id);
+  if (!opt || !opt.open) return;
+  discoverContext = discoverContext === id ? '' : id;
+  renderDiscoverOptions();
+  clearDiscoverResults();
+}
+
+function occasionPrecheck(entriesList) {
+  return occasionOptions(entriesList).some(o => o.id === discoverContext && o.open) ? '' : 'Pick where you are first';
+}
+
+function nearestContributor(result) {
+  return result.contributors.length ? Math.min(...result.contributors.map(c => c.distance)) : Infinity;
+}
+
+function buildOccasion(entriesList) {
+  const opt = occasionOptions(entriesList).find(o => o.id === discoverContext && o.open);
+  if (!opt) return { cards: [], starved: false };
+  const { signalData, userAffinityMap } = computeSignalModel(opt.entries);
+  const neighborIndex = getNeighborIndex();
+  const ctx = { context: opt.id, label: opt.label, parent: opt.parent, fallback: opt.fallback, rated: opt.entries.length, stated: opt.stated };
+  const ranked = Object.keys(STYLE_MATRIX)
+    .filter(isRecommendableStyle)                                         // OF3
+    .map(style => scoreRecommendation(style, signalData, userAffinityMap, neighborIndex, 'occasion', STYLE_MATRIX))
+    .filter(r => r.predictedAffinity >= POSITIVE_AFFINITY_THRESHOLD)      // never suggest a predicted dislike
+    // Equal scores are common on thin data (one rated style gives all its
+    // neighbours the same transferred affinity) — nearest neighbour first,
+    // not matrix order.
+    .sort((a, b) => (b.score - a.score) || (nearestContributor(a) - nearestContributor(b)))
+    .map(r => ({ style: r.style, result: r, ...ctx }));
+  return takeUnsuppressed(ranked, 'occasion', c => `${c.style}|${c.context}`, OCCASION_BATCH);
+}
+
+// Bands and counts, never scores (D1); cites only recommendable styles
+// (OF3); says which signal was used (OC2/OC4/OC6).
+// Where-phrases per context, written to read in "which you rate well …",
+// "you've liked this one …" and "what you like …".
+const OCCASION_PLACES = {
+  home: 'at home', out: "when you're out",
+  'home-solo': 'on solo nights in', 'home-social': 'with friends at home', 'bar-taproom': 'at bars and taprooms',
+  event: 'at events', dining: 'when dining out', traveling: 'on the road',
+};
+function occasionPlace(context) {
+  return OCCASION_PLACES[context] || '';
+}
+// Card subtitle: the setting the picks are for.
+function occasionFor(c) {
+  if (c.context === 'home') return 'For home';
+  if (c.context === 'out') return 'For a night out';
+  return `For ${c.label}`;
+}
+// "you've liked this one at home before" / "…before when you're out"
+function likedBefore(place) {
+  return place.startsWith('when ') ? `before ${place}` : `${place} before`;
+}
+const OCCASION_ZONES = ['fallback', 'reason', 'provenance', 'nudge'];
+const OCCASION_COPY = [
+  { id: 'oc_fallback', zone: 'fallback', priority: 10,
+    condition: c => c.fallback,
+    render: c => `not much logged ${occasionPlace(c.context)} yet, so these lean on everything you drink ${c.parent === 'home' ? 'at home' : 'out'}` },
+  { id: 'oc_direct', zone: 'reason', priority: 30,
+    condition: c => c.result.source === 'direct',
+    render: c => `you've liked this one ${likedBefore(c.fallback ? occasionPlace(c.parent) : c.place)}` },
+  { id: 'oc_neighbours', zone: 'reason', priority: 20,
+    condition: c => c.cites.length > 0,
+    render: c => `close to ${c.cites.map(esc).join(' and ')}, which you rate well ${esc(c.place)}` },
+  { id: 'oc_fits', zone: 'reason', priority: 10,
+    condition: () => true,
+    render: c => `right in line with what you like ${c.place}` },
+  { id: 'oc_all_tagged', zone: 'provenance', priority: 30,
+    condition: c => c.derived === 0,
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins, all tagged with an occasion` },
+  { id: 'oc_all_venue', zone: 'provenance', priority: 20,
+    condition: c => c.stated === 0,
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins, all placed by venue` },
+  { id: 'oc_mixed', zone: 'provenance', priority: 10,
+    condition: () => true,
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins: ${c.stated.toLocaleString()} you tagged, ${c.derived.toLocaleString()} placed by venue` },
+  { id: 'oc_gets_sharper', zone: 'nudge', priority: 10,
+    condition: c => c.derived / c.rated >= OCCASION_SMARTER_SHARE,
+    render: () => `tag the occasion when you check in to sharpen these` },
+];
+function occasionRationale(c) {
+  const cites = c.result.source === 'direct' ? [] : c.result.contributors
+    .filter(x => x.affinity >= POSITIVE_AFFINITY_THRESHOLD && isRecommendableStyle(x.style))
+    .slice(0, 2).map(x => x.style);
+  return discoverRationale(OCCASION_COPY, OCCASION_ZONES,
+    { ...c, place: occasionPlace(c.context), cites, derived: c.rated - c.stated });
+}
+
+function renderOccasionCard(c) {
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(c.style)}</div>
+        <div class="rec-brewery">${esc(occasionFor(c))}</div>
+      </div>
+      ${recSaveButton({ name: c.style, brewery: '' })}
+    </div>
+    <div class="rec-why">${occasionRationale(c)}</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -5389,18 +6150,61 @@ function renderProfile() {
 // ═══════════════════════════════════════════════════════════════
 // DISCOVER
 // ═══════════════════════════════════════════════════════════════
+// DS4: gates are evaluated against the current history every time Discover
+// opens, so a mode unlocks as soon as the data for it exists. A gated mode
+// renders greyed with its reason and can't be selected. DS5: when every mode
+// is gated, the tab-level locked state is just that — no fallback mode.
+function discGates() {
+  return Object.fromEntries(DISC_MODES.map(m => [m.id, m.build ? m.gate(entries) : DISC_NOT_BUILT()]));
+}
+
 function buildModeGrid() {
-  document.getElementById('modeGrid').innerHTML = DISC_MODES.map(m => `
-    <div class="mode-card" id="mode-${m.id}" onclick="selectMode('${m.id}')">
+  const gates = discGates();
+  if (discoverMode && !gates[discoverMode].open) discoverMode = '';
+  document.getElementById('modeGrid').innerHTML = DISC_MODES.map(m => {
+    const g = gates[m.id];
+    const cls = !g.open ? ' gated' : discoverMode === m.id ? ' sel' : '';
+    return `
+    <div class="mode-card${cls}" id="mode-${m.id}" onclick="selectMode('${m.id}')"${g.open ? '' : ' aria-disabled="true"'}>
       <div class="mode-icon">${icon(m.iconName, 24, 2.2)}</div>
       <div class="mode-name">${m.name}</div>
       <div class="mode-desc">${m.desc}</div>
-    </div>`).join('');
+      ${g.open ? '' : `<div class="mode-reason">${esc(g.reason)}</div>`}
+    </div>`;
+  }).join('');
+  const allGated = DISC_MODES.every(m => !gates[m.id].open);
+  document.getElementById('discoverLocked').innerHTML = allGated
+    ? `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Discover grows with your log. Each card shows what it needs to unlock.</p></div>`
+    : '';
+  document.getElementById('discoverGo').disabled = allGated;
+  renderDiscoverOptions();
+}
+
+// The selected mode's sub-picker (Occasion's Where are you?), if it has one.
+function renderDiscoverOptions() {
+  const m = discModeById(discoverMode);
+  document.getElementById('discoverOptions').innerHTML = m && m.renderOptions ? m.renderOptions(entries) : '';
 }
 
 function selectMode(id) {
+  const m = discModeById(id);
+  if (!m || !m.build || !m.gate(entries).open) return;
   discoverMode = discoverMode === id ? '' : id;
   document.querySelectorAll('.mode-card').forEach(c => c.classList.toggle('sel', c.id === `mode-${id}` && discoverMode === id));
+  renderDiscoverOptions();
+  clearDiscoverResults();
+}
+
+// A card from another mode or context would read as an answer to the new
+// choice — clear it until Find My Next Beer is tapped again.
+function clearDiscoverResults() {
+  discoverQueue = [];
+  document.getElementById('recResults').innerHTML = '';
+}
+
+function enterDiscover() {
+  renderWishlist();
+  buildModeGrid();
 }
 
 function generateRecs() {
@@ -5408,43 +6212,21 @@ function generateRecs() {
   const el = document.getElementById('recResults');
   el.innerHTML = '';
 
-  const mode = discoverMode || 'wheelhouse';
-  let cards = [];
-  let starved = false;
-  let usedFallback = false;
-
-  if (mode === 'random') {
-    // Random stays beer-specific (paired with its style) and allows repeats —
-    // "surprise me with anything" doesn't carry the same unobtainability risk
-    // as a targeted pick, so it keeps sampling straight from BEER_DB. Still
-    // pulls a small batch — just held as a queue, one shown at a time.
-    const suppressionList = loadSuppression();
-    const windowDays = SUPPRESSION_WINDOWS.random;
-    const allBeers = Object.entries(BEER_DB);
-    const candidates = allBeers.filter(([name, b]) => !(b.s && isStyleSuppressed(b.s, 'random', windowDays, suppressionList)));
-    const pool = candidates.length >= 5 ? candidates : allBeers;
-    cards = [...pool].sort(() => Math.random() - 0.5).slice(0, 5)
-      .map(([name, b]) => ({ name, brewery: b.b || '', style: b.s || '', abv: b.a || '', result: { source: 'direct' } }));
-  } else {
-    // Wheelhouse / Adjacent / Wildcard now recommend a style, not a specific
-    // beer — see buildAffinityRecs for why. Still ranks a small batch — just
-    // held as a queue, one shown at a time.
-    const built = buildAffinityRecs(mode, entries);
-    cards = built.cards;
-    starved = built.starved;
-    usedFallback = built.usedFallback;
-  }
+  const m = discModeById(discoverMode);
+  if (!m) { showToast('Pick a recommendation type first', 'warning'); return; }
+  const notReady = m.precheck ? m.precheck(entries) : '';
+  if (notReady) { showToast(notReady, 'warning'); return; }
+  const { cards, starved } = m.build(entries);
 
   if (!cards.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Nothing to suggest here yet. Log a few more and check back.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     discoverQueue = [];
     return;
   }
 
   discoverQueue = cards;
-  discoverQueueMode = mode;
+  discoverQueueMode = m.id;
   discoverStarved = starved;
-  discoverUsedFallback = usedFallback;
   renderNextRec();
 }
 
@@ -5452,69 +6234,34 @@ function generateRecs() {
 // was built for. Dismissing pulls the next queued pick instead of vanishing
 // to blank; running out points back at "Find My Next Beer" rather than
 // silently re-querying, since a fresh tap is the honest place to re-ask
-// affinity/suppression for a new batch.
+// for a new batch. The card body comes from the mode's own renderer (DS6);
+// the footer and suppression stamp are shared.
 function renderNextRec() {
   const el = document.getElementById('recResults');
-  const mode = discoverQueueMode;
+  const m = discModeById(discoverQueueMode);
 
-  if (!discoverQueue.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
+  if (!discoverQueue.length || !m) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's all for now. Tap Find My Next Beer to start a fresh round.</p></div>`;
     return;
   }
 
   const c = discoverQueue.shift();
-  let badgeHtml = '';
-  let nameClass = '';
-  if (mode === 'random') {
-    badgeHtml = `<span class="rec-badge badge-random">Random</span>`;
-  } else if (mode === 'wheelhouse') {
-    badgeHtml = `<span class="rec-badge badge-wheelhouse">In Your Wheelhouse</span>`;
-  } else if (mode === 'adjacent') {
-    badgeHtml = `<span class="rec-badge badge-adjacent">Slightly Outside</span>`;
-  } else if (mode === 'wildcard') {
-    const conf = wildcardConfidence(c.result);
-    if (conf === 'confident') {
-      badgeHtml = `<span class="rec-badge badge-wildcard-confident">Wildcard</span>`;
-    } else {
-      badgeHtml = `<span class="rec-badge badge-wildcard-hedged">Wildcard</span>`;
-      nameClass = 'muted';
-    }
-  }
-  const why = rationaleFor(c, mode);
-  // Random is still beer-specific (name + brewery/ABV, style as a tag).
-  // Wheelhouse/Adjacent/Wildcard recommend a style, so the style name is
-  // the headline and there's no brewery/ABV/tag line to show.
-  const headline = mode === 'random' ? c.name : c.style;
-  const subhead = mode === 'random' ? `${c.brewery || ''}${c.abv ? ` · ${c.abv}% ABV` : ''}` : '';
-  const styleTag = mode === 'random' && c.style ? `<div class="rec-tags"><span class="etag style">${c.style}</span></div>` : '';
-
+  const key = discoverShownKey = m.suppressionKey(c);
+  discoverShownCard = c;
   el.innerHTML = `<div class="rec-card fade-up">
-    <div class="rec-top">
-      <div>
-        ${badgeHtml}
-        <div class="rec-name ${nameClass}">${headline}</div>
-        ${subhead ? `<div class="rec-brewery">${subhead}</div>` : ''}
-      </div>
-    </div>
-    ${styleTag}
-    ${why ? `<div class="rec-why">${why}</div>` : ''}
+    ${m.renderCard(c)}
     <div class="rec-footer">
       <div class="rec-footer-btn" onclick="showAnotherRec()"><span class="ico-pair">${icon('refresh', 14, 2.2)}Show Another</span></div>
-      <div class="rec-footer-btn negative" onclick="notInterestedRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}')">✕ Not Interested</div>
+      ${m.notInterested === false ? '' : `<div class="rec-footer-btn negative" onclick="notInterestedRec(discoverShownKey, discoverQueueMode)">✕ Not for Me</div>`}
+      ${m.actions ? m.actions(c) : ''}
     </div>
   </div>`;
 
-  recordShown([c.style].filter(Boolean), mode);
+  recordShown([key], m.id);
 
-  let notes = '';
-  if (discoverUsedFallback) {
-    notes += `<div class="rec-starve-note">No rated check-ins yet, so this is ranked by what you log most, not what you'd like most. Rate a few and this sharpens.</div>`;
-  }
   if (discoverStarved && !discoverQueue.length) {
-    const modeName = (DISC_MODES.find(m => m.id === mode) || {}).name || mode;
-    notes += `<div class="rec-starve-note">Your ${modeName} history is still pretty focused — more variety will show up as you explore.</div>`;
+    el.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">Not many picks for this setting yet. Rate a few more here to widen them.</div>`);
   }
-  if (notes) el.insertAdjacentHTML('beforeend', notes);
 }
 
 function addWishlistItem() {
@@ -5642,8 +6389,8 @@ function handleImport(event) {
       showToast(`Imported ${newOnes.length} entries`, 'success');
 
       // Diagnostic, not decoration: style-match and rating coverage directly
-      // determine whether Discover's wheelhouse/adjacent/wildcard modes will
-      // have anything to work with (see buildAffinityRecs / resolveMatrixStyle).
+      // determine whether Discover's modes will have anything to work with
+      // (see DISC_MODES / resolveMatrixStyle).
       // Only surface this when it reveals something actionable — a clean
       // import shouldn't nag the user with a status report.
       const diagEl = document.getElementById('importDiagnostic');
@@ -5756,7 +6503,7 @@ function switchTab(tab) {
   if (tab === 'history') enterHistory();
   if (tab === 'analytics') enterAnalytics();
   if (tab === 'profile') enterProfile();
-  if (tab === 'discover') renderWishlist();
+  if (tab === 'discover') enterDiscover();
   restoreScroll(tabScroll[tab]);   // ST1: after the page has rendered
 }
 
@@ -6239,6 +6986,30 @@ function shapeWishlistRow(w, userId) {
   };
 }
 
+// RD4: Rediscovery retirements. The local key is derived, not stored, so a
+// change to stubBeerKey can't strand old rows.
+function shapeRetiredRow(r, userId) {
+  if (!r || !r.beer_name) return null;
+  return {
+    id: r.id,
+    user_id: userId,
+    beer_name: r.beer_name,
+    brewery_name: r.brewery_name || null,
+    retired_at: r.retired_at || new Date().toISOString(),
+  };
+}
+
+// Synced tables in upload/pull order, and where each lives locally.
+const SYNC_TABLES = ['check_ins', 'wishlist', 'rediscovery_retired'];
+function syncLocalRows(table) {
+  if (table === 'check_ins') return entries;
+  if (table === 'wishlist') return wishlist;
+  return loadRetired();
+}
+function syncShapeFor(table) {
+  return { check_ins: shapeCheckInRow, wishlist: shapeWishlistRow, rediscovery_retired: shapeRetiredRow }[table];
+}
+
 // Stop the whole flush (vs. skipping one bad row): no network, or the
 // session is no longer accepted.
 function isStopError(err) {
@@ -6304,7 +7075,7 @@ async function flushPending() {
   syncing = true;
   updateSyncPill();
   try {
-    for (const table of ['check_ins', 'wishlist']) {
+    for (const table of SYNC_TABLES) {
       const res = await flushTable(table, mine.filter(o => o.table === table), uid);
       if (res.stopped) { stopped = true; break; }
     }
@@ -6321,8 +7092,8 @@ async function flushPending() {
 }
 
 async function flushTable(table, ops, uid) {
-  const src = table === 'check_ins' ? entries : wishlist;
-  const shape = table === 'check_ins' ? shapeCheckInRow : shapeWishlistRow;
+  const src = syncLocalRows(table);
+  const shape = syncShapeFor(table);
   const byId = new Map(src.map(r => [r.id, r]));
   const done = op => {
     const key = pendingKey(op.table, op.id);
@@ -6441,6 +7212,11 @@ function wishFromRow(r) {
   return { id: r.id, name: r.beer_name, brewery: r.brewery_name ?? '', style: r.beer_type ?? '', added: r.added_at };
 }
 
+function retiredFromRow(r) {
+  const brewery_name = r.brewery_name ?? '';
+  return { id: r.id, key: stubBeerKey({ beer_name: r.beer_name, brewery_name }), beer_name: r.beer_name, brewery_name, retired_at: r.retired_at };
+}
+
 // SY6 "pending wins": a row with a queued local write keeps the local copy.
 function mergePulled(local, rows, table, pending, fromRow) {
   const out = local.slice();
@@ -6524,6 +7300,7 @@ async function pullChanges(opts = {}) {
   const tables = [
     { table: 'check_ins', fromRow: checkInFromRow },
     { table: 'wishlist', fromRow: wishFromRow },
+    { table: 'rediscovery_retired', fromRow: retiredFromRow },
   ];
 
   pulling = true;
@@ -6549,7 +7326,7 @@ async function pullChanges(opts = {}) {
 
     // Everything fetched — merge synchronously against the current cache.
     tables.forEach(t => {
-      const current = t.table === 'check_ins' ? entries : wishlist;
+      const current = syncLocalRows(t.table);
       const merged = mergePulled(current, t.rows, t.table, pendingOps, t.fromRow);
       let list = merged.list, n = merged.changed;
       if (t.ids) { const pruned = pruneMissing(list, t.ids, t.table, pendingOps); list = pruned.list; n += pruned.removed; }
@@ -6559,9 +7336,11 @@ async function pullChanges(opts = {}) {
       if (t.table === 'check_ins') {
         entries = list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         save();
-      } else {
+      } else if (t.table === 'wishlist') {
         wishlist = list.sort((a, b) => String(a.added).localeCompare(String(b.added)));
         localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+      } else {
+        saveRetired(list.sort((a, b) => String(a.retired_at).localeCompare(String(b.retired_at))));
       }
     });
     if (idCheckDue) st.lastIdCheck = today;
@@ -6584,6 +7363,7 @@ function refreshAfterPull() {
   if (currentTab === 'history') refreshHistory();
   else if (currentTab === 'analytics') refreshAnalytics();
   else if (currentTab === 'profile') refreshProfile();
+  else if (currentTab === 'discover') buildModeGrid();   // DS4: pulled rows can open or close a gate
 }
 
 // Part 2 "App open": upload what's pending, then pull. Also run on the
@@ -6672,10 +7452,10 @@ function preSyncMessage(nCheckIns, nWishes) {
 
 // Resolves when the person taps Continue (right away if nothing would drop).
 function confirmDropUnsyncedLocal(tables) {
+  // Retirements are only made while signed in, so none predate sign-in.
   const byTable = {};
-  tables.forEach(t => {
-    const current = t.table === 'check_ins' ? entries : wishlist;
-    byTable[t.table] = rowsMissingFromServer(current, t.ids, t.table, pendingOps);
+  tables.filter(t => t.table === 'check_ins' || t.table === 'wishlist').forEach(t => {
+    byTable[t.table] = rowsMissingFromServer(syncLocalRows(t.table), t.ids, t.table, pendingOps);
   });
   const nCheckIns = byTable.check_ins.length, nWishes = byTable.wishlist.length;
   if (!nCheckIns && !nWishes) return Promise.resolve();
