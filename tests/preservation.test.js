@@ -48,7 +48,8 @@ const ALLOWED_CHANGES = {
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',
   buildAnalyticsInsightCard: 'IN1 insight icon',
-  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years',
+  buildHopprintSVG: 'Phase E (c) DE5 geometry moved to hopprintGeometry() for the canvas share card; SVG output identical (SP1)',
+  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years; Phase E (c) Hopprint Share pill in the hero kicker row',
   generateRecs: 'IN1/IN18 empty state + CTA',
   renderNextRec: 'IN1/IN18 empty state, Show Another',
   // IT7 — showToast(msg, iconName) (IN8)

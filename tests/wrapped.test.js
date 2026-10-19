@@ -37,9 +37,11 @@ function sandbox() {
       'milestonesCrossedIn', 'wrappedYears', 'firstOccurrenceIds', 'computeBandAnalytics', 'bandOf',
       'isHomeEntry', 'wrappedTop', 'computeWrappedContext', 'esc', 'selectCopy',
       'buildWrappedCopy', 'wrappedSentences'].map(extractFunction),
-    ...['WRAPPED_ZONE_ORDER', 'WRAPPED_MAX_EARNED', 'WRAPPED_COPY', 'MS_KIND_ICONS', 'HOPPRINT_DIM_LABELS'].map(constFrom),
-    ...['buildHopprintSVG', 'fmtMonthYear', 'buildWrappedPanel', 'openWrapped', 'closeWrapped',
-      'buildWrappedEntry', 'toggleWrappedEarlier'].map(extractFunction),
+    ...['WRAPPED_ZONE_ORDER', 'WRAPPED_MAX_EARNED', 'WRAPPED_COPY', 'MS_KIND_ICONS', 'HOPPRINT_DIM_LABELS', 'SHARE_COPY'].map(constFrom),
+    ...['hopprintGeometry', 'buildHopprintSVG', 'fmtMonthYear', 'buildWrappedPanel', 'openWrapped', 'closeWrapped',
+      'buildWrappedEntry', 'toggleWrappedEarlier', 'buildWrappedCardSpec', 'shareWrapped'].map(extractFunction),
+    'function openSharePreview(c) { this.lastPreview = c; }',
+    'this.WRAPPED_COPY = WRAPPED_COPY; this.WRAPPED_ZONE_ORDER = WRAPPED_ZONE_ORDER;',
     'function icon(name) { return `<i data-icon="${name}"></i>`; }',
     'var entries = [];',
   ].join('\n'), ctx);
@@ -521,4 +523,105 @@ test('WR36: Print keeps the teaser in place and puts Wrapped after Taste Trends'
   const teaser = src.indexOf('IN REVIEW'), trends = src.indexOf('<div class="chart-title">Taste Trends'), entry = src.indexOf('${buildWrappedEntry()}');
   assert.ok(teaser > 0 && trends > teaser && entry > trends, 'order: teaser → Taste Trends → Wrapped entry');
   assert.match(src, /curYrEs\.length >= 5/); // teaser gate unchanged (DE2/DE8)
+});
+
+test('WR37: topBeer is the most-logged beer at its brewery, gated at 2, ties A–Z', () => {
+  const ctx = sandbox();
+  const year = [
+    ck(2025, { beer_name: 'Pils', brewery_name: 'North' }), ck(2025, { beer_name: 'Pils', brewery_name: 'South' }),
+    ck(2025, { beer_name: 'Lager', brewery_name: 'East' }), ck(2025, { beer_name: 'Lager', brewery_name: 'East' }),
+    ck(2025, { beer_name: 'Ale', brewery_name: 'West' }), ck(2025, { beer_name: 'Ale', brewery_name: 'West' }),
+    ck(2025, { beer_name: '', brewery_name: 'West' }), ck(2025, { beer_name: '', brewery_name: 'West' }),
+  ];
+  const c = wctx(ctx, year);
+  // Two breweries' "Pils" never merge; Ale and Lager tie at 2 and Ale wins A–Z.
+  assert.equal(JSON.stringify(c.topBeer), JSON.stringify({ name: 'Ale', brewery: 'West', count: 2 }));
+  const thin = wctx(sandbox(), [ck(2025, { beer_name: 'Pils', brewery_name: 'North' }), ck(2025, { beer_name: 'Pils', brewery_name: 'South' })]);
+  assert.equal(thin.topBeer, null);
+});
+
+
+// ── WR38–WR42: Wrapped share card (Phase E c, DE3 / §3.6) ─────────
+
+const blocksOf = spec => spec.blocks.map(b => b.type);
+const rowsOf = spec => (spec.blocks.find(b => b.type === 'rows') || { items: [] }).items.map(r => r.label + '=' + r.value);
+
+test('WR38: story card — hero total, year radar, non-zero stats, favorites, one shareable line; no venue', () => {
+  const ctx = sandbox();
+  const { yr, prev } = richYear();
+  const c = wctx(ctx, yr, prev);
+  const spec = ctx.buildWrappedCardSpec(c, 'story', {});
+  assert.equal(spec.kicker, '2025 WRAPPED');
+  assert.equal(J(blocksOf(spec)), J(['hero', 'radar', 'stats', 'rows', 'text']));
+  assert.equal(J(spec.blocks[0]), J({ type: 'hero', value: '60', label: 'beers logged' }));
+  assert.equal(J(spec.blocks[1].vector), J(c.hpVector));
+  assert.equal(J(spec.blocks[2].items.map(i => i.label)), J(['Breweries', 'Styles', 'New breweries']));
+  assert.equal(J(rowsOf(spec)), J([`Top brewery=${c.topBrewery.name}`, `Top style=${c.topStyle.name}`, `Top beer=${c.topBeer.name}`]));
+  const rows = spec.blocks.find(b => b.type === 'rows'), text = spec.blocks.find(b => b.type === 'text');
+  assert.ok(rows.optional > text.optional, 'favorites drop before the copy line');
+  assert.ok(!J(spec).includes('Tap'), 'venue stays off by default');
+  // One sentence, from shareSlot candidates only.
+  const shareable = ctx.WRAPPED_COPY.filter(x => x.shareSlot);
+  assert.equal(text.html, ctx.wrappedSentences(ctx.selectCopy(shareable, c, ctx.WRAPPED_ZONE_ORDER, { maxEarned: 1 })));
+  assert.equal(text.html.split('. ').length, 1);
+  assert.ok(text.html.endsWith('.'));
+});
+
+test('WR39: venue toggle — fourth favorites row on story, single row on portrait, never without the toggle', () => {
+  const ctx = sandbox();
+  const { yr, prev } = richYear();
+  const c = wctx(ctx, yr, prev);
+  assert.ok(c.topVenue);
+  const venueRow = `Top venue=${c.topVenue.name}`;
+  assert.equal(rowsOf(ctx.buildWrappedCardSpec(c, 'story', { venue: true }))[3], venueRow);
+  assert.equal(J(rowsOf(ctx.buildWrappedCardSpec(c, 'portrait', { venue: true }))), J([venueRow]));
+  assert.equal(J(rowsOf(ctx.buildWrappedCardSpec(c, 'portrait', {}))), J([]));
+  assert.ok(!blocksOf(ctx.buildWrappedCardSpec(c, 'portrait', {})).includes('rows'));
+  assert.ok(!J(ctx.buildWrappedCardSpec(c, 'story', { venue: false })).includes('Top venue'));
+  assert.ok(!J(ctx.buildWrappedCardSpec({ ...c, topVenue: null }, 'story', { venue: true })).includes('Top venue'));
+});
+
+test('WR40: the card line skips a non-shareable winner (quieter year) for the next shareable zone', () => {
+  const ctx = sandbox();
+  const quiet = { ...RICH, deltaVolumePct: -50, total: 40, prevTotal: 80 };
+  const panelFirst = ctx.buildWrappedCopy(quiet)[0];
+  assert.equal(panelFirst.id, 'wr_quieter');
+  const spec = ctx.buildWrappedCardSpec(quiet, 'story', {});
+  const text = spec.blocks.find(b => b.type === 'text');
+  assert.ok(text);
+  const ids = ctx.selectCopy(ctx.WRAPPED_COPY.filter(x => x.shareSlot), quiet, ctx.WRAPPED_ZONE_ORDER, { maxEarned: 1 }).map(p => p.id);
+  assert.equal(ids.length, 1);
+  assert.notEqual(ids[0], 'wr_quieter');
+  assert.ok(!/quieter/i.test(text.html));
+});
+
+test('WR41: a thin year drops the radar and zero stats instead of drawing them', () => {
+  const ctx = sandbox();
+  const yr = Array.from({ length: 21 }, (_, i) => ck(2025, { beer_type: STYLES[i % 2], brewery_name: 'Only' }));
+  const c = wctx(ctx, yr, [], [ck(2023, { brewery_name: 'Only', beer_type: STYLES[0] }), ck(2023, { brewery_name: 'Only', beer_type: STYLES[1] })]);
+  assert.equal(c.showRadar, false);
+  assert.equal(c.newBreweryCount, 0);
+  const spec = ctx.buildWrappedCardSpec(c, 'portrait', {});
+  assert.ok(!blocksOf(spec).includes('radar'));
+  assert.equal(J(spec.blocks.find(b => b.type === 'stats').items.map(i => i.label)), J(['Breweries', 'Styles']));
+  assert.equal(spec.blocks[0].value, '21');
+});
+
+test('WR42: every panel ends in Share; shareWrapped opens the year with a venue toggle only when one exists', () => {
+  const ctx = sandbox();
+  const { yr, prev } = richYear();
+  const html = ctx.buildWrappedPanel(wctx(ctx, yr, prev));
+  assert.match(html, /<button class="btn-save has-icon" onclick="shareWrapped\(2025\)">[\s\S]*<span>Share<\/span><\/button>$/);
+  ctx.entries = [...prev, ...yr];
+  ctx.shareWrapped(2025);
+  const p = ctx.lastPreview;
+  assert.equal(p.kind, 'wrapped');
+  assert.equal(p.year, 2025);
+  assert.equal(J(p.toggles), J([{ key: 'venue', label: 'Show top venue' }]));
+  assert.equal(p.buildSpec('story', {}).kicker, '2025 WRAPPED');
+  assert.ok(J(p.buildSpec('portrait', { venue: true })).includes('Top venue'));
+  // A year whose only venue is Home offers no venue toggle.
+  ctx.entries = Array.from({ length: 25 }, () => ck(2024, { venue_name: 'Home' }));
+  ctx.shareWrapped(2024);
+  assert.equal(J(ctx.lastPreview.toggles), J([]));
 });

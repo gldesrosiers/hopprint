@@ -368,12 +368,15 @@ body.input-focused .fab-feedback { display: none; }
   align-items: flex-end; justify-content: center;
 }
 .modal-backdrop.open { display: flex; }
+/* While any modal is open the page behind it stays put: no background
+   scroll, and a scroll that reaches the modal's end doesn't chain to the page. */
+html:has(.modal-backdrop.open) { overflow: hidden; }
 .modal {
   background: var(--charcoal2);
   border: 1px solid var(--border-orange);
   border-radius: var(--radius) var(--radius) 0 0;
   width: 100%; max-width: 520px;
-  max-height: 90vh; overflow-y: auto;
+  max-height: 90vh; overflow-y: auto; overscroll-behavior: contain;
   padding: 20px 16px 40px;
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -700,6 +703,38 @@ body.input-focused .fab-feedback { display: none; }
 .wr-year-row:hover { background: var(--orange-glow2); }
 .wr-year { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--orange); }
 .wr-year-count { flex: 1; color: var(--text-muted); font-weight: 300; }
+
+/* ── SHARE PREVIEW (Phase E c, DE12) ─────────────────────────── */
+.hero-kicker-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; min-height: 26px; }
+.share-pill {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;
+  font-family: var(--font-body); font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--orange); background: var(--orange-glow2); border: 1px solid var(--border-orange);
+  border-radius: 999px; cursor: pointer;
+}
+.share-pill:hover { background: var(--orange-glow); }
+.share-formats { display: flex; justify-content: center; margin-bottom: 12px; }
+.share-formats .seg-toggle { margin-bottom: 0; }
+.share-stage {
+  /* Fixed height that fits both formats (portrait is the wider one at
+     1080:1350), so switching format or a toggle never moves the controls. */
+  position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 12px;
+  height: min(52vh, 560px, calc((min(100vw, 520px) - 34px) * 1.25));
+}
+.share-img {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  height: 100%; width: auto; max-width: 100%; object-fit: contain;
+  border-radius: var(--radius-sm); transition: opacity 0.25s ease;
+}
+.share-img.entering, .share-img.leaving { opacity: 0; }
+.share-img.stale { opacity: 0.55; }
+@media (prefers-reduced-motion: reduce) { .share-img { transition: none; } }
+.share-status { font-size: 13px; color: var(--text-muted); }
+.share-status.err { color: var(--danger); }
+.share-toggle { display: flex; gap: 10px; align-items: center; margin: 4px 0 10px; font-size: 14px; cursor: pointer; }
+.share-toggle input { width: 20px; height: 20px; margin: 0; accent-color: var(--orange); }
+.share-privacy { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--text-dim); margin-top: 10px; }
+.btn-save:disabled { opacity: 0.45; cursor: default; }
 
 .trend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .trend-row:last-child { border-bottom: none; }
@@ -1272,6 +1307,15 @@ body.first-sync .first-sync-hint { display: block; }
       <div class="modal-close" onclick="closeWrapped()">✕</div>
     </div>
     <div id="wrappedBody"></div>
+  </div>
+</div>
+<div class="modal-backdrop" id="shareModal" onclick="if(event.target===this)closeSharePreview()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="shareTitle"></div>
+      <div class="modal-close" id="shareClose" onclick="closeSharePreview()" role="button">✕</div>
+    </div>
+    <div id="shareBody"></div>
   </div>
 </div>
 
@@ -3652,31 +3696,53 @@ function computeHopprint(entriesList) {
 // locked confidence-differentiation pattern; no dots. Grid rings are placed on
 // the same 1–5 value→radius mapping as the shapes, so a blob reads honestly
 // against the labeled scale rather than being stretched to look spiky.
-function buildHopprintSVG(allTime, trailing) {
-  const W = 320, H = 296, cx = W/2, cy = 150, R = 96;
+// Radar geometry shared by the on-screen SVG and the canvas share card (DE5),
+// so both draw the identical shape. Sized by center + radius; the label gap
+// and the label-alignment thresholds scale with R (16 / 6 / 4 at the screen's
+// R = 96). Points are raw numbers; each renderer formats them its own way.
+function hopprintGeometry(cx, cy, R) {
   const floor = 0.10; // value 1 sits at 10% radius so it stays visible, not collapsed
   const n = HOPPRINT_DIMS.length;
+  const s = R / 96;
   const ang = i => (-Math.PI/2) + (i * 2*Math.PI/n); // start at top, clockwise
   const rOf = v => { const c = Math.max(1, Math.min(5, v)); return R * (floor + (c-1)/4 * (1-floor)); };
   const pt = (i, r) => [cx + r*Math.cos(ang(i)), cy + r*Math.sin(ang(i))];
-  const poly = vec => vec.map((v,i) => pt(i, rOf(v)).map(x=>x.toFixed(1)).join(',')).join(' ');
+  // grid rings (values 1..5)
+  const rings = [];
+  for (let k=1; k<=5; k++) {
+    const rr = R * (floor + (k-1)/4 * (1-floor));
+    rings.push(Array.from({length:n}, (_,i)=>pt(i,rr)));
+  }
+  const spokes = Array.from({length:n}, (_,i)=>pt(i,R));
+  // axis labels: anchor is the horizontal alignment, dyEm the baseline offset
+  // in ems (0 above center, 0.7 below, 0.32 level with it)
+  const labels = Array.from({length:n}, (_,i) => {
+    const [x,y] = pt(i, R+16*s);
+    const anchor = Math.abs(x-cx) < 6*s ? 'middle' : (x > cx ? 'start' : 'end');
+    const dyEm = y < cy-4*s ? 0 : (y > cy+4*s ? 0.7 : 0.32);
+    return { x, y, anchor, dyEm, text: HOPPRINT_DIM_LABELS[HOPPRINT_DIMS[i]] };
+  });
+  return { cx, cy, R, rings, spokes, labels, shape: vec => vec.map((v,i) => pt(i, rOf(v))) };
+}
+
+function buildHopprintSVG(allTime, trailing) {
+  const W = 320, H = 296, cx = W/2, cy = 150, R = 96;
+  const g = hopprintGeometry(cx, cy, R);
+  const pts = list => list.map(p => p.map(x=>x.toFixed(1)).join(',')).join(' ');
+  const poly = vec => pts(g.shape(vec));
 
   // grid rings (values 1..5) + spokes
   let grid = '';
-  for (let k=1; k<=5; k++) {
-    const rr = R * (floor + (k-1)/4 * (1-floor));
-    const ring = Array.from({length:n}, (_,i)=>pt(i,rr).map(x=>x.toFixed(1)).join(',')).join(' ');
-    grid += `<polygon points="${ring}" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
+  for (const ring of g.rings) {
+    grid += `<polygon points="${pts(ring)}" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
   }
-  for (let i=0;i<n;i++){ const [x,y]=pt(i,R); grid += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`; }
+  for (const [x,y] of g.spokes){ grid += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`; }
 
   // axis labels
   let labels = '';
-  for (let i=0;i<n;i++){
-    const [lx,ly] = pt(i, R+16);
-    const anchor = Math.abs(lx-cx) < 6 ? 'middle' : (lx > cx ? 'start' : 'end');
-    const dy = ly < cy-4 ? '0' : (ly > cy+4 ? '0.7em' : '0.32em');
-    labels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" dy="${dy}" font-size="10" font-weight="600" fill="var(--text-muted)" font-family="var(--font-display)">${HOPPRINT_DIM_LABELS[HOPPRINT_DIMS[i]]}</text>`;
+  for (const l of g.labels){
+    const dy = l.dyEm ? `${l.dyEm}em` : '0';
+    labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" dy="${dy}" font-size="10" font-weight="600" fill="var(--text-muted)" font-family="var(--font-display)">${l.text}</text>`;
   }
 
   const allShape = `<polygon points="${poly(allTime)}" fill="rgba(233,115,36,0.18)" stroke="var(--orange)" stroke-width="2" stroke-linejoin="round"/>`;
@@ -3880,16 +3946,17 @@ function computeProfileContext(allEntries) {
 // Thresholds are principled breakpoints, not tuned to any one user's import.
 const PROFILE_COPY = [
   // ── anchor (required identity line) ──────────────────────────
-  { id: 'anchor_region_loyal', zone: 'anchor', priority: 40,
+  // shareSlot: the identity line is the Hopprint share card's copy (DE11).
+  { id: 'anchor_region_loyal', zone: 'anchor', shareSlot: true, priority: 40,
     condition: c => c.regionName && c.styleParent && c.topStatePct >= 45,
     render: c => `${esc(c.regionName)} loyalist with a ${esc(c.styleParent.toLowerCase())} lean` },
-  { id: 'anchor_region_lean', zone: 'anchor', priority: 30,
+  { id: 'anchor_region_lean', zone: 'anchor', shareSlot: true, priority: 30,
     condition: c => c.regionName && c.styleParent,
     render: c => `${esc(c.styleParent)} drinker with a ${esc(c.regionName)} streak` },
-  { id: 'anchor_style_only', zone: 'anchor', priority: 20,
+  { id: 'anchor_style_only', zone: 'anchor', shareSlot: true, priority: 20,
     condition: c => !!c.styleParent,
     render: c => `${esc(c.styleParent)} enthusiast` },
-  { id: 'anchor_fallback', zone: 'anchor', priority: 0,
+  { id: 'anchor_fallback', zone: 'anchor', shareSlot: true, priority: 0,
     condition: () => true,
     render: () => `An eclectic drinker — no single style owns you yet` },
 
@@ -4238,6 +4305,9 @@ function computeWrappedContext(yearEntries, prevYearEntries, year) {
   const topBrewery = wrappedTop(tally(es, e => e.brewery_name));
   const topStyle = wrappedTop(tally(es, e => e.beer_type));
   const topVenue = wrappedTop(tally(es.filter(e => !isHomeEntry(e)), e => e.venue_name));
+  // A beer is its name at its brewery, so two breweries' "Pils" never merge.
+  const beerTop = wrappedTop(tally(es, e => (e.beer_name ? `${e.beer_name}\n${e.brewery_name || ''}` : '')));
+  const topBeer = beerTop ? { name: beerTop.name.split('\n')[0], brewery: beerTop.name.split('\n')[1], count: beerTop.count } : null;
   const homeCount = es.filter(isHomeEntry).length;
   const homePct = total ? Math.round(homeCount / total * 100) : 0;
 
@@ -4256,7 +4326,7 @@ function computeWrappedContext(yearEntries, prevYearEntries, year) {
     year, prevYear: year - 1, total, prevTotal, deltaVolumePct,
     breweries, styles, notes, newBreweryCount, newStyleCount, newBreweryPct, newStylePct,
     busiestMonthName, busiestMonthCount, activeMonths,
-    topBrewery, topStyle, topVenue, homeCount, homePct,
+    topBrewery, topStyle, topBeer, topVenue, homeCount, homePct,
     hpVector: hp.vector, hpMatchedStyles: hp.matchedStyles, showRadar,
     prevHpVector: showPrior ? prevHp.vector : null, showPrior,
     milestones: milestonesCrossedIn(year),
@@ -4385,6 +4455,7 @@ function buildWrappedPanel(c) {
   const row = (ic, label, val, count) => `<div class="trend-row"><div class="trend-icon">${icon(ic, 18, 2.2)}</div><div class="trend-label">${label}${count ? `<span class="wr-count">${count}</span>` : ''}</div><div class="trend-val" title="${esc(val)}">${esc(val)}</div></div>`;
   if (c.topBrewery) sup.push(row('trend-loyal', 'Top brewery', c.topBrewery.name, `${n(c.topBrewery.count)}×`));
   if (c.topStyle) sup.push(row('beers', 'Top style', c.topStyle.name, `${n(c.topStyle.count)}×`));
+  if (c.topBeer) sup.push(row('checkin', 'Top beer', c.topBeer.name, `${n(c.topBeer.count)}×`));
   if (c.topVenue) sup.push(row('venue', 'Top venue', c.topVenue.name, `${n(c.topVenue.count)}×`));
   if (c.homeCount > 0) sup.push(row('occasion-home-solo', 'At home', `${c.homePct}%`, ''));
   if (sup.length) {
@@ -4419,6 +4490,9 @@ function buildWrappedPanel(c) {
   if (closing) {
     html += `<div class="drill-section"><div class="insight-text">${closing}</div></div>`;
   }
+
+  // 7 · Share (Phase E c) — every year that has a panel can be shared
+  html += `<button class="btn-save has-icon" onclick="shareWrapped(${c.year})">${icon('share', 16, 2.4)}<span>${SHARE_COPY.shareButton}</span></button>`;
   return html;
 }
 
@@ -4473,6 +4547,675 @@ function toggleWrappedEarlier() {
   const open = body.hidden;
   head.setAttribute('aria-expanded', String(open));
   body.hidden = !open;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SHARE PIPELINE (Phase E c)
+// ═══════════════════════════════════════════════════════════════
+// One renderer, many cards (DE9). Every fixed string a card or the preview
+// screen shows lives in SHARE_COPY (DE10), never inline in render code, so
+// copy can be revised app-wide without touching the drawing. Card copy slots
+// come from the registries via selectCopy; nothing new is written here.
+const SHARE_COPY = {
+  wordmark: 'HOPPRINT',
+  url: 'hopprint.app',
+  hopprintKicker: 'MY HOPPRINT',
+  wrappedKicker: year => `${year} WRAPPED`,
+  statCheckins: 'Check-ins',
+  statBreweries: 'Breweries',
+  statStyles: 'Styles',
+  statNewBreweries: 'New breweries',
+  heroBeersLogged: 'beers logged',
+  topBrewery: 'Top brewery',
+  topStyle: 'Top style',
+  topBeer: 'Top beer',
+  topVenue: 'Top venue',
+  previewTitle: 'Share',
+  formatStory: 'Story',
+  formatPortrait: 'Portrait',
+  toggleVenue: 'Show top venue',
+  shareButton: 'Share',
+  saveButton: 'Save image',
+  rendering: 'Making your image…',
+  renderFailed: 'Couldn’t make the image. Try again.',
+  privacyLine: 'Made on this device. Nothing is uploaded.',
+  savedToast: 'Image saved',
+  close: 'Close',
+};
+
+// Registry html → styled runs (DE3). <b> becomes a bold run (drawn bold and
+// orange on the card), any other tag is dropped, and the entities esc() emits
+// are decoded back to plain text. Adjacent runs with the same weight merge.
+function shareRuns(html) {
+  const decode = t => t
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+    .replace(/&amp;/g, '&');
+  const runs = [];
+  String(html || '').split(/(<b>[\s\S]*?<\/b>)/).forEach(part => {
+    const bold = /^<b>[\s\S]*<\/b>$/.test(part);
+    const text = decode((bold ? part.slice(3, -4) : part).replace(/<[^>]*>/g, ''));
+    if (!text) return;
+    const last = runs[runs.length - 1];
+    if (last && last.bold === bold) last.text += text;
+    else runs.push({ text, bold });
+  });
+  return runs;
+}
+
+// Wrap runs to `width` at one font size. Words break only at whitespace (a
+// word may mix weights, e.g. a bold number with trailing plain punctuation);
+// whitespace collapses to single spaces. Returns lines of positioned segments
+// { text, bold, x } plus each line's width, or null when any single word is
+// wider than the slot. measure(text, bold, size) → px.
+function wrapShareRuns(runs, width, size, measure) {
+  const words = [];
+  let cur = null, gapBold = false;
+  for (const r of runs) {
+    for (const tok of r.text.split(/(\s+)/)) {
+      if (!tok) continue;
+      if (/^\s+$/.test(tok)) { if (cur) { words.push(cur); cur = null; } gapBold = r.bold; continue; }
+      if (!cur) cur = { pieces: [], gapBold: words.length ? gapBold : false };
+      cur.pieces.push({ text: tok, bold: r.bold });
+    }
+  }
+  if (cur) words.push(cur);
+  const lines = [];
+  let line = null;
+  for (const w of words) {
+    const ww = w.pieces.reduce((t, p) => t + measure(p.text, p.bold, size), 0);
+    if (ww > width) return null;
+    const gap = line ? measure(' ', w.gapBold, size) : 0;
+    if (line && line.width + gap + ww > width) { lines.push(line); line = null; }
+    if (!line) line = { segs: [], width: 0 };
+    else { line.segs.push({ text: ' ', bold: w.gapBold, x: line.width }); line.width += gap; }
+    for (const p of w.pieces) {
+      line.segs.push({ text: p.text, bold: p.bold, x: line.width });
+      line.width += measure(p.text, p.bold, size);
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// DE10 text fitting: wrap at `size`; if the text needs more than maxLines (or
+// a word can't fit), step the size down by `step` until minSize; if it still
+// doesn't fit, return null so the caller omits the slot. Never ellipsizes.
+function fitShareText(runs, { width, maxLines, size, minSize = size, step = 2 }, measure) {
+  if (!runs.length) return null;
+  for (let s = size; s >= minSize; s -= step) {
+    const lines = wrapShareRuns(runs, width, s, measure);
+    if (lines && lines.length <= maxLines) return { size: s, lines };
+  }
+  return null;
+}
+
+// ── Card layout (pure) ─────────────────────────────────────────
+// layoutShareCard() turns a declarative spec into a flat list of draw ops, so
+// the whole layout (fitting, omission, spacing) is testable without a canvas;
+// renderShareCard() only executes the ops. Colors are token names resolved at
+// draw time via cssVar(). A spec is:
+//   { kicker, blocks: [...] }  with blocks drawn top to bottom, each one of
+//   { type: 'hero',  value, label }            big number + display label
+//   { type: 'radar', vector }                  solo shape (DE-Q6), flexes to fill
+//   { type: 'text',  role, html }              registry copy, fitted per role (DE10)
+//   { type: 'stats', items: [{ value, label }] }
+//   { type: 'rows',  items: [{ label, value }] } label/value list (favorites)
+// and on any block: `formats` (e.g. ['story']) to draw it only in those
+// formats, and `optional`: true (= 1) or a rank. When the card overflows,
+// the highest rank drops first, last-first within a rank. A row whose value
+// can't fit its line is dropped on its own. The footer (logo, wordmark, URL) is always drawn (DE3).
+const SHARE_FORMATS = {
+  story:    { w: 1080, h: 1920, top: 180, bottom: 170, gap: 60, scale: 1,    rMax: 330 },
+  portrait: { w: 1080, h: 1350, top: 110, bottom: 96,  gap: 40, scale: 0.84, rMax: 252 },
+};
+const SHARE_PAD = 96;
+const SHARE_ROLES = {
+  identity: { family: 'headline', weight: 700, boldWeight: 700, fill: '--orange', boldFill: '--orange', size: 84, minSize: 56, maxLines: 3, lh: 1.1, bar: true },
+  body:     { family: 'body', weight: 400, boldWeight: 700, fill: '--text-muted', boldFill: '--orange', size: 48, minSize: 38, maxLines: 3, lh: 1.38 },
+};
+
+function shareFont(fonts, family, weight, size) {
+  return `${weight} ${Math.round(size * 10) / 10}px ${fonts[family]}`;
+}
+
+// Width of text drawn with extra letter spacing (applied between glyphs).
+function shareSpacedWidth(text, font, spacing, measure) {
+  if (!spacing) return measure(text, font);
+  return [...text].reduce((t, ch) => t + measure(ch, font), 0) + spacing * Math.max(0, [...text].length - 1);
+}
+
+function layoutShareCard(spec, format, measure, fonts, logoAspect = 346 / 151.5) {
+  const F = SHARE_FORMATS[format];
+  const k = F.scale;
+  const W = F.w, innerW = W - SHARE_PAD * 2;
+  const omitted = [];
+
+  // Footer: logo mark + wordmark on the left, URL on the right, one baseline.
+  const logoH = Math.round(64 * k), logoW = logoH * logoAspect;
+  const footBase = F.h - F.bottom;
+  const footer = [
+    { op: 'image', key: 'logo', x: SHARE_PAD, y: footBase - logoH, w: logoW, h: logoH },
+    { op: 'text', text: SHARE_COPY.wordmark, x: SHARE_PAD + logoW + 20 * k, y: footBase - logoH * 0.2,
+      font: shareFont(fonts, 'headline', 800, 52 * k), fill: '--text', spacing: 2 * k },
+    { op: 'text', text: SHARE_COPY.url, x: W - SHARE_PAD, y: footBase - logoH * 0.2, align: 'right',
+      font: shareFont(fonts, 'body', 700, 32 * k), fill: '--text-dim', spacing: 1 * k },
+  ];
+  const contentTop = F.top;
+  const contentBottom = footBase - logoH - 72 * k;
+
+  // Measure every non-radar block once; radar height is solved afterwards.
+  const kicker = spec.kicker ? { size: 32 * k, spacing: 6 * k } : null;
+  const kickerH = kicker ? kicker.size * 0.78 + 34 * k : 0;
+  const statH = 196 * k;
+  const RADAR_LABEL = 28 * k;
+  const radarHeight = R => 2 * (R + 16 * (R / 96) + RADAR_LABEL);
+
+  const measured = [];
+  for (const b of spec.blocks || []) {
+    if (b.formats && !b.formats.includes(format)) continue;
+    if (b.type === 'text') {
+      const role = SHARE_ROLES[b.role];
+      const m = (t, bold, size) => measure(t, shareFont(fonts, role.family, bold ? role.boldWeight : role.weight, size));
+      const fit = fitShareText(shareRuns(b.html), {
+        width: innerW, maxLines: b.maxLines || role.maxLines,
+        size: role.size * k, minSize: role.minSize * k, step: 2,
+      }, m);
+      if (!fit) { omitted.push(b); continue; }
+      const barH = role.bar ? 30 * k : 0;
+      const h = barH + fit.size * 0.8 + (fit.lines.length - 1) * fit.size * role.lh + fit.size * 0.22;
+      measured.push({ b, h, fit, role, barH });
+    } else if (b.type === 'hero') {
+      measured.push({ b, h: 176 * k * 0.74 });
+    } else if (b.type === 'stats') {
+      if (!(b.items || []).length) { omitted.push(b); continue; }
+      measured.push({ b, h: statH });
+    } else if (b.type === 'rows') {
+      const lFont = shareFont(fonts, 'body', 700, 26 * k);
+      const rows = [];
+      for (const it of b.items || []) {
+        if (!it.value) continue;
+        const label = String(it.label).toUpperCase();
+        const room = innerW - shareSpacedWidth(label, lFont, 3 * k, measure) - 32 * k;
+        let vs = 42 * k;
+        while (vs > 30 * k && measure(String(it.value), shareFont(fonts, 'body', 700, vs)) > room) vs -= 2;
+        const vFont = shareFont(fonts, 'body', 700, vs);
+        if (measure(String(it.value), vFont) > room) { omitted.push({ type: 'row', label: it.label }); continue; }
+        rows.push({ label, value: String(it.value), vFont });
+      }
+      if (!rows.length) { omitted.push(b); continue; }
+      measured.push({ b, h: rows.length * 64 * k, rows, lFont });
+    } else if (b.type !== 'radar') {
+      omitted.push(b);
+      continue;
+    } else if (b.type === 'radar') {
+      if (!b.vector) { omitted.push(b); continue; }
+      measured.push({ b, radar: true, h: 0 });
+    }
+  }
+
+  // Solve the radar radius from the space left. When it falls under the
+  // minimum, first tighten the gaps (down to 60%), then drop optional blocks.
+  const R_MIN = 170 * k, R_MAX = F.rMax;
+  let R = 0, baseGap = F.gap;
+  for (;;) {
+    const solve = g => {
+      const fixed = kickerH + measured.reduce((t, m) => t + m.h, 0) + g * Math.max(0, measured.length - 1);
+      return Math.min(R_MAX, ((contentBottom - contentTop - fixed) / 2 - RADAR_LABEL) / (1 + 16 / 96));
+    };
+    if (!measured.some(m => m.radar)) { R = 0; break; }
+    baseGap = F.gap;
+    R = solve(baseGap);
+    if (R < R_MIN) {
+      const n = Math.max(1, measured.length - 1);
+      const fixedNoGap = kickerH + measured.reduce((t, m) => t + m.h, 0);
+      const needed = 2 * (R_MIN * (1 + 16 / 96) + RADAR_LABEL);
+      baseGap = Math.max(F.gap * 0.6, Math.min(F.gap, (contentBottom - contentTop - fixedNoGap - needed) / n));
+      R = solve(baseGap);
+    }
+    if (R >= R_MIN - 1e-6) { R = Math.max(R, R_MIN); break; }
+    const rank = m => (m.b.optional === true ? 1 : +m.b.optional || 0);
+    const top = Math.max(0, ...measured.map(rank));
+    const idx = top ? measured.map(m => rank(m) === top).lastIndexOf(true) : -1;
+    if (idx === -1) { R = R_MIN; break; }
+    omitted.push(measured.splice(idx, 1)[0].b);
+  }
+  measured.forEach(m => { if (m.radar) m.h = radarHeight(R); });
+
+  // Spread leftover space: story gains breathing room between blocks (DE4),
+  // capped, and the rest centers the stack.
+  const used = kickerH + measured.reduce((t, m) => t + m.h, 0);
+  const n = measured.length;
+  let gap = baseGap;
+  const slack = contentBottom - contentTop - used - gap * Math.max(0, n - 1);
+  if (slack > 0 && n > 1) gap = Math.min(F.gap * 2, gap + slack / (n + 1));
+  const total = used + gap * Math.max(0, n - 1);
+  let y = contentTop + Math.max(0, (contentBottom - contentTop - total) / 2);
+
+  const ops = [{ op: 'glow', x: W / 2, y: F.h * 0.42, r: W * 0.72 }];
+  if (kicker) {
+    ops.push({ op: 'text', text: spec.kicker, x: SHARE_PAD, y: y + kicker.size * 0.78,
+      font: shareFont(fonts, 'body', 700, kicker.size), fill: '--orange', spacing: kicker.spacing });
+    y += kickerH;
+  }
+  measured.forEach((m, i) => {
+    const b = m.b;
+    if (b.type === 'text') {
+      const { fit, role } = m;
+      if (role.bar) ops.push({ op: 'rect', x: SHARE_PAD, y, w: 72 * k, h: 8 * k, r: 4 * k, fill: '--orange' });
+      fit.lines.forEach((line, li) => {
+        const base = y + m.barH + fit.size * 0.8 + li * fit.size * role.lh;
+        line.segs.forEach(seg => {
+          if (seg.text === ' ') return;
+          ops.push({ op: 'text', text: seg.text, x: SHARE_PAD + seg.x, y: base,
+            font: shareFont(fonts, role.family, seg.bold ? role.boldWeight : role.weight, fit.size),
+            fill: seg.bold ? role.boldFill : role.fill });
+        });
+      });
+    } else if (b.type === 'hero') {
+      let size = 176 * k;
+      const valueStr = String(b.value);
+      const labelFont = s => shareFont(fonts, 'display', 400, s * 0.36);
+      const valueFont = s => shareFont(fonts, 'headline', 800, s);
+      while (size > 110 * k && measure(valueStr, valueFont(size)) + 24 * k + measure(b.label || '', labelFont(size)) > innerW) size -= 4;
+      const base = y + m.h;
+      const vw = measure(valueStr, valueFont(size));
+      ops.push({ op: 'text', text: valueStr, x: SHARE_PAD, y: base, font: valueFont(size), fill: '--text' });
+      if (b.label) ops.push({ op: 'text', text: b.label, x: SHARE_PAD + vw + 24 * k, y: base, font: labelFont(size), fill: '--text-muted' });
+    } else if (b.type === 'radar') {
+      ops.push({ op: 'radar', cx: W / 2, cy: y + m.h / 2, R, vector: b.vector,
+        labelFont: shareFont(fonts, 'display', 400, RADAR_LABEL), lineScale: R / 96 });
+    } else if (b.type === 'stats') {
+      const cols = b.items.length, tileGap = 20 * k;
+      const tileW = (innerW - tileGap * (cols - 1)) / cols;
+      b.items.forEach((it, j) => {
+        const x = SHARE_PAD + j * (tileW + tileGap);
+        ops.push({ op: 'rect', x, y, w: tileW, h: m.h, r: 26 * k, fill: '--charcoal2', stroke: 'rgba(255,255,255,0.06)' });
+        let ns = 92 * k;
+        const nFont = s => shareFont(fonts, 'headline', 800, s);
+        while (ns > 48 * k && measure(String(it.value), nFont(ns)) > tileW - 24 * k) ns -= 4;
+        ops.push({ op: 'text', text: String(it.value), x: x + tileW / 2, y: y + m.h * 0.58, align: 'center', font: nFont(ns), fill: '--lime' });
+        const lFont = shareFont(fonts, 'body', 700, 25 * k);
+        const label = String(it.label).toUpperCase();
+        let sp = 3 * k;
+        if (shareSpacedWidth(label, lFont, sp, measure) > tileW - 20 * k) sp = 0;
+        ops.push({ op: 'text', text: label, x: x + tileW / 2, y: y + m.h - 40 * k, align: 'center', font: lFont, fill: '--text-dim', spacing: sp });
+      });
+    } else if (b.type === 'rows') {
+      const rowH = 64 * k;
+      m.rows.forEach((r, j) => {
+        const top = y + j * rowH;
+        if (j) ops.push({ op: 'rect', x: SHARE_PAD, y: top, w: innerW, h: 2, r: 0, fill: '--border' });
+        const base = top + rowH / 2 + 13 * k;
+        ops.push({ op: 'text', text: r.label, x: SHARE_PAD, y: base - 2 * k, font: m.lFont, fill: '--text-dim', spacing: 3 * k });
+        ops.push({ op: 'text', text: r.value, x: W - SHARE_PAD, y: base, align: 'right', font: r.vFont, fill: '--text' });
+      });
+    }
+    y += m.h + (i < n - 1 ? gap : 0);
+  });
+  return { w: W, h: F.h, ops: ops.concat(footer), omitted, radius: R };
+}
+
+// ── Canvas renderer + share ────────────────────────────────────
+function shareFontStacks() {
+  return { headline: cssVar('--font-headline'), display: cssVar('--font-display'), body: cssVar('--font-body') };
+}
+
+let shareLogoPromise = null;
+function loadShareLogo() {
+  if (!shareLogoPromise) {
+    shareLogoPromise = new Promise(res => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => res(null);
+      img.src = 'assets/hopprint-hop.svg';
+    });
+  }
+  return shareLogoPromise;
+}
+
+function drawShareText(ctx, o) {
+  ctx.font = o.font;
+  ctx.fillStyle = o.fill.startsWith('--') ? cssVar(o.fill) : o.fill;
+  ctx.textBaseline = 'alphabetic';
+  if (!o.spacing) {
+    ctx.textAlign = o.align || 'left';
+    ctx.fillText(o.text, o.x, o.y);
+    return;
+  }
+  // Letter spacing drawn glyph by glyph (canvas letterSpacing isn't universal).
+  const chars = [...o.text];
+  const widths = chars.map(ch => ctx.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + o.spacing * (chars.length - 1);
+  let x = o.align === 'right' ? o.x - total : o.align === 'center' ? o.x - total / 2 : o.x;
+  ctx.textAlign = 'left';
+  chars.forEach((ch, i) => { ctx.fillText(ch, x, o.y); x += widths[i] + o.spacing; });
+}
+
+function drawShareRadar(ctx, o) {
+  const g = hopprintGeometry(o.cx, o.cy, o.R);
+  const path = pts => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
+  ctx.lineWidth = o.lineScale;
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  g.rings.forEach(r => { path(r); ctx.stroke(); });
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  g.spokes.forEach(([x, y]) => { ctx.beginPath(); ctx.moveTo(o.cx, o.cy); ctx.lineTo(x, y); ctx.stroke(); });
+  path(g.shape(o.vector));
+  ctx.fillStyle = 'rgba(233,115,36,0.18)';
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 2 * o.lineScale;
+  ctx.strokeStyle = cssVar('--orange');
+  ctx.stroke();
+  ctx.font = o.labelFont;
+  ctx.fillStyle = cssVar('--text-muted');
+  ctx.textBaseline = 'alphabetic';
+  const size = parseFloat(o.labelFont.split(' ')[1]);
+  g.labels.forEach(l => {
+    ctx.textAlign = l.anchor === 'middle' ? 'center' : l.anchor === 'start' ? 'left' : 'right';
+    ctx.fillText(l.text, l.x, l.y + l.dyEm * size);
+  });
+}
+
+function drawShareOps(ctx, layout, logo) {
+  ctx.fillStyle = cssVar('--charcoal');
+  ctx.fillRect(0, 0, layout.w, layout.h);
+  for (const o of layout.ops) {
+    if (o.op === 'glow') {
+      const grad = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
+      grad.addColorStop(0, 'rgba(233,115,36,0.16)');
+      grad.addColorStop(1, 'rgba(233,115,36,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, layout.w, layout.h);
+    } else if (o.op === 'rect') {
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(o.x, o.y, o.w, o.h, o.r); else ctx.rect(o.x, o.y, o.w, o.h);
+      ctx.fillStyle = cssVar(o.fill);
+      ctx.fill();
+      if (o.stroke) { ctx.lineWidth = 2; ctx.strokeStyle = o.stroke; ctx.stroke(); }
+    } else if (o.op === 'text') {
+      drawShareText(ctx, o);
+    } else if (o.op === 'radar') {
+      drawShareRadar(ctx, o);
+    } else if (o.op === 'image' && o.key === 'logo' && logo) {
+      ctx.drawImage(logo, o.x, o.y, o.w, o.h);
+    }
+  }
+}
+
+// Every face/weight a card can use, loaded explicitly before drawing (DE5).
+function shareFontFaces(fonts) {
+  return [
+    shareFont(fonts, 'headline', 700, 48), shareFont(fonts, 'headline', 800, 48),
+    shareFont(fonts, 'display', 400, 48),
+    shareFont(fonts, 'body', 400, 48), shareFont(fonts, 'body', 700, 48),
+  ];
+}
+
+async function renderShareCard(spec, format) {
+  const fonts = shareFontStacks();
+  await Promise.all(shareFontFaces(fonts).map(f => document.fonts.load(f).catch(() => null)));
+  const logo = await loadShareLogo();
+  const F = SHARE_FORMATS[format];
+  const canvas = document.createElement('canvas');
+  canvas.width = F.w;
+  canvas.height = F.h;
+  const ctx = canvas.getContext('2d');
+  const measure = (text, font) => { ctx.font = font; return ctx.measureText(text).width; };
+  const aspect = logo && logo.naturalWidth && logo.naturalHeight ? logo.naturalWidth / logo.naturalHeight : undefined;
+  const layout = layoutShareCard(spec, format, measure, fonts, aspect);
+  drawShareOps(ctx, layout, logo);
+  return new Promise((res, rej) => canvas.toBlob(b => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/png'));
+}
+
+function shareFileName(kind, format, year) {
+  return kind === 'wrapped' ? `hopprint-wrapped-${year}-${format}.png` : `hopprint-print-${format}.png`;
+}
+
+function downloadShareFile(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// DE6: native share sheet when it accepts the file, else download. Must be
+// called straight from the tap with an already-rendered file (DE12). Resolves
+// 'shared' | 'cancelled' | 'downloaded'; a user cancel (AbortError) is silent.
+function shareOrDownload(file) {
+  const data = { files: [file] };
+  let canShare = false;
+  try { canShare = !!(navigator.share && navigator.canShare && navigator.canShare(data)); } catch (e) { canShare = false; }
+  if (!canShare) { downloadShareFile(file); return Promise.resolve('downloaded'); }
+  return navigator.share(data).then(
+    () => 'shared',
+    e => {
+      if (e && e.name === 'AbortError') return 'cancelled';
+      downloadShareFile(file);
+      return 'downloaded';
+    }
+  );
+}
+
+// ── Preview → share (DE12) ─────────────────────────────────────
+// A consumer opens the preview with { kind, year?, buildSpec(format, toggles),
+// toggles?: [{ key, label }] }. The image renders as soon as the preview opens
+// and again on every format/toggle change; the Share button only hands the
+// already-rendered file to shareOrDownload(), with no await in between, so the
+// tap's user activation is always fresh. Toggles start off (venues default
+// off, DE3). A newer render always wins over a slower older one.
+let shareState = null;
+
+function sharePreviewHTML(st) {
+  const fmtBtn = (f, label) => `<div class="seg-btn ${st.format === f ? 'active' : ''}" role="button" data-fmt="${f}" aria-pressed="${st.format === f}" onclick="setShareFormat('${f}')">${label}</div>`;
+  const toggles = (st.consumer.toggles || []).map(t =>
+    `<label class="share-toggle"><input type="checkbox" data-toggle="${t.key}" ${st.toggles[t.key] ? 'checked' : ''} onchange="setShareToggle('${t.key}', this.checked)"><span>${esc(t.label)}</span></label>`).join('');
+  const stage = st.error
+    ? `<div class="share-status err">${SHARE_COPY.renderFailed}</div>`
+    : st.url
+      ? `<img class="share-img" src="${st.url}" alt="">`
+      : `<div class="share-status">${SHARE_COPY.rendering}</div>`;
+  const ready = !!st.file && !st.busy;
+  return `
+    <div class="share-formats"><div class="seg-toggle">${fmtBtn('story', SHARE_COPY.formatStory)}${fmtBtn('portrait', SHARE_COPY.formatPortrait)}</div></div>
+    <div class="share-stage" id="shareStage">${stage}</div>
+    ${toggles}
+    <button class="btn-save has-icon" id="shareGo" onclick="shareNow()" ${ready ? '' : 'disabled'}>${icon('share', 16, 2.4)}<span>${st.canShare === false ? SHARE_COPY.saveButton : SHARE_COPY.shareButton}</span></button>
+    <div class="share-privacy">${SHARE_COPY.privacyLine}</div>`;
+}
+
+// First paint builds the screen; later paints patch it in place so a format
+// or toggle change never blanks the image: the current one dims while the
+// next renders, then they cross-fade. Controls keep their position and focus.
+function paintSharePreview() {
+  const st = shareState;
+  if (!st) return;
+  const body = document.getElementById('shareBody');
+  const stage = document.getElementById('shareStage');
+  if (!stage) {
+    body.innerHTML = sharePreviewHTML(st);
+    st.shownUrl = st.url;
+    return;
+  }
+  body.querySelectorAll('[data-fmt]').forEach(b => {
+    const on = b.dataset.fmt === st.format;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  body.querySelectorAll('[data-toggle]').forEach(i => { i.checked = !!st.toggles[i.dataset.toggle]; });
+  const go = document.getElementById('shareGo');
+  go.disabled = !(st.file && !st.busy);
+  go.querySelector('span').textContent = st.canShare === false ? SHARE_COPY.saveButton : SHARE_COPY.shareButton;
+  if (st.error) {
+    stage.innerHTML = `<div class="share-status err">${SHARE_COPY.renderFailed}</div>`;
+    st.shownUrl = null;
+    return;
+  }
+  const current = stage.querySelector('.share-img:not(.leaving)');
+  if (st.url && st.url !== st.shownUrl) {
+    const url = st.url;
+    st.shownUrl = url;
+    const img = new Image();
+    img.className = 'share-img entering';
+    img.alt = '';
+    img.src = url;
+    const swap = () => {
+      if (shareState !== st || st.shownUrl !== url) return; // a newer image took over
+      stage.querySelectorAll('.share-status').forEach(n => n.remove());
+      stage.appendChild(img);
+      requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('entering')));
+      stage.querySelectorAll('.share-img').forEach(old => {
+        if (old === img) return;
+        old.classList.add('leaving');
+        setTimeout(() => old.remove(), 300);
+      });
+    };
+    (img.decode ? img.decode() : Promise.resolve()).then(swap, swap);
+  } else if (current) {
+    current.classList.toggle('stale', !!st.busy);
+  }
+}
+
+async function renderSharePreview() {
+  const st = shareState;
+  if (!st) return;
+  const token = ++st.token;
+  st.busy = true; st.error = false;
+  paintSharePreview();
+  try {
+    const spec = st.consumer.buildSpec(st.format, { ...st.toggles });
+    const blob = await renderShareCard(spec, st.format);
+    if (shareState !== st || token !== st.token) return; // superseded
+    const file = new File([blob], shareFileName(st.consumer.kind, st.format, st.consumer.year), { type: 'image/png' });
+    if (st.url) URL.revokeObjectURL(st.url);
+    st.file = file;
+    st.url = URL.createObjectURL(blob);
+    try { st.canShare = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { st.canShare = false; }
+  } catch (e) {
+    if (shareState !== st || token !== st.token) return;
+    st.error = true; st.file = null;
+  }
+  st.busy = false;
+  paintSharePreview();
+}
+
+function openSharePreview(consumer) {
+  if (shareState && shareState.url) URL.revokeObjectURL(shareState.url);
+  const toggles = {};
+  (consumer.toggles || []).forEach(t => { toggles[t.key] = false; });
+  shareState = { consumer, format: 'story', toggles, file: null, url: null, token: 0, busy: false, error: false, canShare: null };
+  document.getElementById('shareTitle').textContent = SHARE_COPY.previewTitle;
+  document.getElementById('shareClose').setAttribute('aria-label', SHARE_COPY.close);
+  document.getElementById('shareModal').classList.add('open');
+  renderSharePreview();
+}
+
+function closeSharePreview() {
+  document.getElementById('shareModal').classList.remove('open');
+  if (shareState && shareState.url) URL.revokeObjectURL(shareState.url);
+  shareState = null;
+}
+
+function setShareFormat(format) {
+  if (!shareState || shareState.format === format || !SHARE_FORMATS[format]) return;
+  shareState.format = format;
+  renderSharePreview();
+}
+
+function setShareToggle(key, on) {
+  if (!shareState || !(key in shareState.toggles)) return;
+  shareState.toggles[key] = !!on;
+  renderSharePreview();
+}
+
+// Straight from the tap: no await before share() (DE12).
+function shareNow() {
+  const st = shareState;
+  if (!st || !st.file || st.busy) return;
+  shareOrDownload(st.file).then(result => {
+    if (result === 'downloaded') showToast(SHARE_COPY.savedToast, 'success');
+    else if (result === 'shared' && shareState === st) closeSharePreview();
+  });
+}
+
+// ── Hopprint identity card (DE11, §3.6) ────────────────────────
+// All-time radar (solid shape only, DE-Q6), the identity line from the
+// profile registry's shareSlot candidates, and all-time counts that match the
+// radar (imports included). No venue fields. Null below the radar's own gate
+// (≥4 matched styles): thin-data copy is honest in-app but not a card.
+function buildHopprintCardSpec(allEntries) {
+  const hp = computeHopprint(allEntries);
+  if (hp.matchedStyles < 4) return null;
+  const picked = selectCopy(PROFILE_COPY.filter(c => c.shareSlot), computeProfileContext(allEntries), ['anchor'], { requiredZones: ['anchor'] });
+  const identity = picked.length ? picked[0].html : '';
+  const count = key => new Set(allEntries.map(e => e[key]).filter(Boolean)).size;
+  return {
+    kicker: SHARE_COPY.hopprintKicker,
+    blocks: [
+      { type: 'radar', vector: hp.vector },
+      ...(identity ? [{ type: 'text', role: 'identity', html: `“${identity}”` }] : []),
+      { type: 'stats', items: [
+        { value: allEntries.length.toLocaleString('en-US'), label: SHARE_COPY.statCheckins },
+        { value: count('beer_type').toLocaleString('en-US'), label: SHARE_COPY.statStyles },
+        { value: count('brewery_name').toLocaleString('en-US'), label: SHARE_COPY.statBreweries },
+      ] },
+    ],
+  };
+}
+
+function shareHopprint() {
+  if (!buildHopprintCardSpec(entries)) return;
+  openSharePreview({ kind: 'print', buildSpec: () => buildHopprintCardSpec(entries), toggles: [] });
+}
+
+// ── Wrapped card (DE3, §3.6) ───────────────────────────────────
+// Year radar (solo, behind the panel's own ≥4-style gate), check-ins as the
+// hero number, the other headline stats that cleared zero, and one copy line:
+// selectCopy over the shareSlot candidates only, capped at one (it can differ
+// from the panel's first line when that one isn't shareable). Story adds the
+// favorites block (rev. Oct 19); top venue only ever appears when its toggle
+// is on — a fourth favorites row on story, a single row on portrait.
+// Favorites drop before the copy line when space runs short.
+function buildWrappedCardSpec(c, format, toggles = {}) {
+  const n = v => v.toLocaleString('en-US');
+  const picked = selectCopy(WRAPPED_COPY.filter(x => x.shareSlot), c, WRAPPED_ZONE_ORDER, { maxEarned: 1 });
+  const line = wrappedSentences(picked);
+  const venue = toggles.venue && c.topVenue ? { label: SHARE_COPY.topVenue, value: c.topVenue.name } : null;
+  const favorites = format === 'story'
+    ? [c.topBrewery && { label: SHARE_COPY.topBrewery, value: c.topBrewery.name },
+       c.topStyle && { label: SHARE_COPY.topStyle, value: c.topStyle.name },
+       c.topBeer && { label: SHARE_COPY.topBeer, value: c.topBeer.name },
+       venue].filter(Boolean)
+    : (venue ? [venue] : []);
+  const stats = [
+    [c.breweries, SHARE_COPY.statBreweries],
+    [c.styles, SHARE_COPY.statStyles],
+    [c.newBreweryCount, SHARE_COPY.statNewBreweries],
+  ].filter(([v]) => v > 0).map(([v, label]) => ({ value: n(v), label }));
+  return {
+    kicker: SHARE_COPY.wrappedKicker(c.year),
+    blocks: [
+      { type: 'hero', value: n(c.total), label: SHARE_COPY.heroBeersLogged },
+      ...(c.showRadar ? [{ type: 'radar', vector: c.hpVector }] : []),
+      ...(stats.length ? [{ type: 'stats', items: stats }] : []),
+      ...(favorites.length ? [{ type: 'rows', items: favorites, optional: 2 }] : []),
+      ...(line ? [{ type: 'text', role: 'body', html: line, optional: 1 }] : []),
+    ],
+  };
+}
+
+function shareWrapped(year) {
+  const inYear = y => entries.filter(e => new Date(e.created_at).getFullYear() === y);
+  const c = computeWrappedContext(inYear(year), inYear(year - 1), year);
+  openSharePreview({
+    kind: 'wrapped', year,
+    toggles: c.topVenue ? [{ key: 'venue', label: SHARE_COPY.toggleVenue }] : [],
+    buildSpec: (format, toggles) => buildWrappedCardSpec(c, format, toggles),
+  });
 }
 
 let profileDirty = true;   // PT1 — entries changed since Print was built
@@ -4602,7 +5345,7 @@ function renderProfile() {
 
   inner.innerHTML = `
   <div class="profile-hero fade-up">
-    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin-bottom:6px;">YOUR HOPPRINT</div>
+    <div class="hero-kicker-row"><div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);">YOUR HOPPRINT</div>${allTimeHP.matchedStyles >= 4 ? `<button class="share-pill" onclick="shareHopprint()">${icon('share', 13, 2.4)}<span>${SHARE_COPY.shareButton}</span></button>` : ''}</div>
     ${hopprintSVG ? `<div class="hopprint-radar">${hopprintSVG}</div><div class="hopprint-legend">${hopprintNote}</div>` : (hopprintNote ? `<div class="hopprint-legend" style="margin-bottom:10px">${hopprintNote}</div>` : '')}
     <div class="profile-identity">"${identity}"</div>
     ${heroDesc ? `<div class="profile-desc">${heroDesc}</div>` : ''}
