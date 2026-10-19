@@ -182,6 +182,8 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     line('HOPPRINT_DIMS'), extractBlock('GAP_REGIONS'), extractBlock('GAP_LABELS'),
     ...['GAP_HIGH_MIN', 'GAP_LOW_MAX', 'GAP_THIN_SHARE', 'GAP_DISLIKE_MIN_RATED', 'GAP_MIN_STYLES', 'GAP_PICKS', 'GAP_MIN_PICKS'].map(line),
     extractBlock('STYLE_FAMILY'),
+    ...['REDISCOVERY_ZONES', 'GAP_ZONES', 'BREWERY_ZONES', 'OCCASION_ZONES'].map(line),
+    ...['REDISCOVERY_COPY', 'GAP_COPY', 'BREWERY_COPY', 'OCCASION_COPY'].map(extractBlock),
     ...['BREWERY_MIN_CHECKINS', 'BREWERY_MIN_RATED', 'BREWERY_NARROW_SHARE', 'BREWERY_ORBIT_DAYS', 'BREWERY_ELSEWHERE_MIN_RATED', 'BREWERY_SUGGESTIONS'].map(line),
     line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
     line('REDISCOVERY_MIN_AGE_DAYS'), line('REDISCOVERY_BATCH'), line('REDISCOVERY_RETIRED_KEY'),
@@ -196,7 +198,7 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
       'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard',
       'computeHopprint', 'inGapRegion', 'dimensionGaps', 'gapsGate', 'buildGaps', 'gapRationale', 'renderGapCard',
       'breweryKeyOf', 'familyOf', 'familyAffinity', 'breweryGaps', 'breweryGapsGate', 'buildBreweryGaps', 'breweryRationale',
-      'renderBreweryGapCard', 'rediscoveryStyleTag'].map(extractFunction),
+      'renderBreweryGapCard', 'rediscoveryStyleTag', 'selectCopy', 'discoverRationale', 'nearestContributor'].map(extractFunction),
   ].join('\n'), ctx);
   const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
   return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
@@ -858,6 +860,82 @@ test('Separate keys: a pick hidden under Out can still show under a fallback occ
   const hidden = ['out', 'bar-taproom'].map(k => ({ mode: 'occasion', key: `${first}|${k}`, timestamp: now }));
   const app = occasionApp(list, 'event', { store: { hopprint_rec_suppression: JSON.stringify(hidden) } });
   assert.equal(app.ctx.buildOccasion(list).cards[0].style, first);
+});
+
+// ── §9 battery: cross-mode guards ──────────────────────────────
+
+test('D1: no copy candidate in any Discover registry leaks a raw 0–100 rating', () => {
+  // Every rating is 77 — a value no count, label or date in these fixtures produces.
+  const r = 77;
+  const list = [
+    ...times(6, () => br('Trillium', 'IPA - New England / Hazy', r)), ...lovedElsewhere('Stout - Imperial / Double', 3, r),
+    ...times(6, () => out('Pilsner - German', r)), ...times(6, () => home('Porter - English', r)),
+    ...times(3, () => oc('Pilsner - German', r, { occasion: 'bar-taproom' })),
+    ci('Old Love', 500, r), ci('Old Import', 600, r, { source: 'import', rating_mode: 'import' }),
+  ];
+  const { ctx, get } = gridCtx(list);
+  const cards = {
+    REDISCOVERY_COPY: ctx.rediscoveryCandidates(list),
+    GAP_COPY: ctx.dimensionGaps(list).gaps,
+    BREWERY_COPY: ctx.breweryGaps(list),
+  };
+  vm.runInContext("discoverContext = 'out'", ctx);
+  const occ = ctx.buildOccasion(list).cards.map(c => ({ ...c, place: ctx.occasionPlace(c.context, c.label), cites: ['Lager - Helles'], derived: c.rated - c.stated }));
+  cards.OCCASION_COPY = [...occ, ...occ.map(c => ({ ...c, fallback: true, result: { ...c.result, source: 'direct' } }))];
+  let rendered = 0;
+  Object.entries(cards).forEach(([reg, cs]) => {
+    assert.ok(cs.length > 0, `${reg} has fixtures`);
+    cs.forEach(c => get(reg).forEach(k => {
+      if (!k.condition(c)) return;
+      const html = k.render(c);
+      rendered++;
+      assert.doesNotMatch(html, /\b77\b/, `${reg}.${k.id}`);
+    }));
+  });
+  assert.ok(rendered > 20);
+});
+
+test('D1: every registry candidate has the engine shape — id, zone in its zone list, priority, condition, render', () => {
+  const { get } = gridCtx();
+  [['REDISCOVERY_COPY', 'REDISCOVERY_ZONES'], ['GAP_COPY', 'GAP_ZONES'], ['BREWERY_COPY', 'BREWERY_ZONES'], ['OCCASION_COPY', 'OCCASION_ZONES']].forEach(([reg, zones]) => {
+    const ids = new Set();
+    get(reg).forEach(k => {
+      assert.ok(k.id && !ids.has(k.id), `${reg}: unique id ${k.id}`);
+      ids.add(k.id);
+      assert.ok(get(zones).includes(k.zone), `${reg}.${k.id} zone`);
+      assert.equal(typeof k.priority, 'number');
+      assert.equal(typeof k.condition, 'function');
+      assert.equal(typeof k.render, 'function');
+    });
+  });
+});
+
+test('OF1: non-recommendable styles still count — coverage, the hopprint, and Occasion affinity', () => {
+  const { ctx } = gridCtx();
+  // Coverage: 'Stout - Other' check-ins fill the roast region, even though it never renders.
+  const base = [...times(10, () => g('IPA - New England / Hazy')), g('Pilsner - German'), g('IPA - American'), g('Pale Ale - New England / Hazy')];
+  assert.ok(gapByKey(ctx, base, 'roast:high'));
+  assert.equal(gapByKey(ctx, [...base, ...times(4, () => g('Stout - Other'))], 'roast:high'), undefined);
+  // Hopprint: an 'Other' bin moves the vector.
+  assert.notDeepEqual([...ctx.computeHopprint(base).vector], [...ctx.computeHopprint([...base, ...times(4, () => g('Stout - Other'))]).vector]);
+  // Occasion: a 'Porter - Other' rating feeds every transferred prediction out.
+  const list = times(6, () => out('Porter - Other', 95));
+  const cards = occasionApp(list, 'out').ctx.buildOccasion(list).cards;
+  assert.equal(cards.length, 5);
+  cards.forEach(c => assert.ok(c.result.contributors.some(x => x.style === 'Porter - Other'), c.style));
+});
+
+test('Occasion ties on thin data go to the nearest neighbour, not matrix order', () => {
+  const list = times(6, () => out('Porter - Other', 95));
+  const cards = occasionApp(list, 'out').ctx.buildOccasion(list).cards;
+  const d = [...cards.map(c => Math.min(...c.result.contributors.map(x => x.distance)))];
+  assert.deepEqual(d, [...d].sort((a, b) => a - b));
+});
+
+test('Rediscovery is unaffected by the non-recommendable filter, end to end', () => {
+  const { els } = showOne([ci('House Mystery', 400, 90, { beer_type: 'Other' })]);
+  assert.match(els.recResults.innerHTML, /rec-name">House Mystery</);
+  assert.doesNotMatch(els.recResults.innerHTML, /etag style/);
 });
 
 // ── Scorer weights (proximity_engine.js) ───────────────────────

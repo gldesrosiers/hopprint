@@ -2227,6 +2227,17 @@ function saveShownToWishlist(index = 0) {
   if (btn) btn.outerHTML = `<div class="rec-save saved">On Wish List</div>`;
 }
 
+// Card rationales are selectCopy consumers (Phase D engine, unchanged): one
+// registry per mode, one zone per sentence slot. Candidates follow the
+// engine's contract — complete sentences without the final period, entity
+// names through esc(), band language only (D1). The copy pass edits these
+// registries, not the builders. Copy here is placeholder (BP1).
+function discoverRationale(copy, zones, ctx) {
+  const picked = selectCopy(copy, ctx, zones);
+  if (!picked.length) return '';
+  return picked.map(p => p.html.charAt(0).toUpperCase() + p.html.slice(1)).join('. ') + '.';
+}
+
 // ── Rediscovery (§7) ──────────────────────────────────────────
 // RD1–RD6: a beer from the user's own history whose most recent rating is in
 // the Definitely band and which hasn't been logged in the past year.
@@ -2301,10 +2312,18 @@ function buildRediscovery(entriesList) {
   return { cards: takeUnsuppressed(pool, 'rediscovery', c => c.key, REDISCOVERY_BATCH).cards, starved: false };
 }
 
-// Placeholder copy (BP1). Bands, never scores (D1); provenance stays visible.
+// Bands, never scores (D1); provenance stays visible.
+const REDISCOVERY_ZONES = ['reason', 'when'];
+const REDISCOVERY_COPY = [
+  { id: 'rd_definitely', zone: 'reason', priority: 10,
+    condition: () => true,
+    render: c => `your last rating was Definitely${c.imported ? ' (imported)' : ''}` },
+  { id: 'rd_last_logged', zone: 'when', priority: 10,
+    condition: c => Number.isFinite(new Date(c.lastLogged).getTime()),
+    render: c => `last logged ${new Date(c.lastLogged).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}` },
+];
 function rediscoveryRationale(c) {
-  const when = new Date(c.lastLogged).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  return `Your last rating was Definitely${c.imported ? ' (imported)' : ''}. Last logged ${when}.`;
+  return discoverRationale(REDISCOVERY_COPY, REDISCOVERY_ZONES, c);
 }
 
 function renderRediscoveryCard(c) {
@@ -2440,14 +2459,22 @@ function buildGaps(entriesList) {
   return { cards: takeUnsuppressed(gaps, 'gaps', g => g.key, gaps.length).cards, starved: false };
 }
 
-// Placeholder copy (BP1). Counts, never scores (D1).
+// Counts, never scores (D1). DG5: says what changes and what stays;
+// DG6: admits it can't rule out a dislike on thin ratings.
+const GAP_ZONES = ['coverage', 'change', 'caution'];
+const GAP_COPY = [
+  { id: 'gp_coverage', zone: 'coverage', priority: 10,
+    condition: () => true,
+    render: g => `only ${g.count} of your ${g.total} check-ins land here` },
+  { id: 'gp_change', zone: 'change', priority: 10,
+    condition: () => true,
+    render: g => `these move ${g.axis} ${g.end === 'high' ? 'up' : 'down'} and stay close to your usual on everything else` },
+  { id: 'gp_cant_rule_out', zone: 'caution', priority: 10,
+    condition: g => g.rated < GAP_DISLIKE_MIN_RATED,
+    render: () => `you haven't rated enough here yet to rule out a dislike` },
+];
 function gapRationale(g) {
-  const parts = [
-    `Only ${g.count} of your ${g.total} check-ins land here.`,
-    `These move ${g.axis} ${g.end === 'high' ? 'up' : 'down'} and stay close to your usual on everything else.`,
-  ];
-  if (g.rated < GAP_DISLIKE_MIN_RATED) parts.push("You haven't rated enough here yet to rule out a dislike.");
-  return parts.join(' ');
+  return discoverRationale(GAP_COPY, GAP_ZONES, g);
 }
 
 function renderGapCard(g) {
@@ -2461,7 +2488,7 @@ function renderGapCard(g) {
     </div>
     <div class="gap-styles">${styles}
     </div>
-    <div class="rec-why">${esc(gapRationale(g))}</div>`;
+    <div class="rec-why">${gapRationale(g)}</div>`;
 }
 
 // ── Brewery Gaps (§6) — weak form ─────────────────────────────
@@ -2551,11 +2578,19 @@ function buildBreweryGaps(entriesList) {
   return { cards: takeUnsuppressed(list, 'brewery', b => b.key, list.length).cards, starved: false };
 }
 
-// Placeholder copy (BP1). Counts, never scores (D1); never claims the
-// brewery makes the suggested family (BG1).
+// Counts, never scores (D1); never claims the brewery makes the suggested
+// family (BG1).
+const BREWERY_ZONES = ['pattern', 'suggest'];
+const BREWERY_COPY = [
+  { id: 'br_mostly', zone: 'pattern', priority: 10,
+    condition: () => true,
+    render: b => `${b.topCount} of your ${b.famTotal} check-ins here are ${esc(b.topFamily)}` },
+  { id: 'br_loved_elsewhere', zone: 'suggest', priority: 10,
+    condition: b => b.suggestions.length > 0,
+    render: b => `you rate ${b.suggestions.map(x => esc(x.family)).join(' and ')} well at other breweries — worth seeing if they pour one` },
+];
 function breweryRationale(b) {
-  return `${b.topCount} of your ${b.famTotal} check-ins here are ${b.topFamily}. `
-    + `You rate ${b.suggestions.map(x => x.family).join(' and ')} well at other breweries — worth seeing if they pour one.`;
+  return discoverRationale(BREWERY_COPY, BREWERY_ZONES, b);
 }
 
 function renderBreweryGapCard(b) {
@@ -2569,7 +2604,7 @@ function renderBreweryGapCard(b) {
     </div>
     <div class="gap-styles">${rows}
     </div>
-    <div class="rec-why">${esc(breweryRationale(b))}</div>`;
+    <div class="rec-why">${breweryRationale(b)}</div>`;
 }
 
 // ── Occasion (§5) ─────────────────────────────────────────────
@@ -2658,6 +2693,10 @@ function occasionPrecheck(entriesList) {
   return occasionOptions(entriesList).some(o => o.id === discoverContext && o.open) ? '' : 'Pick where you are first';
 }
 
+function nearestContributor(result) {
+  return result.contributors.length ? Math.min(...result.contributors.map(c => c.distance)) : Infinity;
+}
+
 function buildOccasion(entriesList) {
   const opt = occasionOptions(entriesList).find(o => o.id === discoverContext && o.open);
   if (!opt) return { cards: [], starved: false };
@@ -2668,35 +2707,54 @@ function buildOccasion(entriesList) {
     .filter(isRecommendableStyle)                                         // OF3
     .map(style => scoreRecommendation(style, signalData, userAffinityMap, neighborIndex, 'occasion', STYLE_MATRIX))
     .filter(r => r.predictedAffinity >= POSITIVE_AFFINITY_THRESHOLD)      // never suggest a predicted dislike
-    .sort((a, b) => b.score - a.score)
+    // Equal scores are common on thin data (one rated style gives all its
+    // neighbours the same transferred affinity) — nearest neighbour first,
+    // not matrix order.
+    .sort((a, b) => (b.score - a.score) || (nearestContributor(a) - nearestContributor(b)))
     .map(r => ({ style: r.style, result: r, ...ctx }));
   return takeUnsuppressed(ranked, 'occasion', c => `${c.style}|${c.context}`, OCCASION_BATCH);
 }
 
-// Placeholder copy (BP1). Bands and counts, never scores (D1); cites only
-// recommendable styles (OF3); says which signal was used (OC2/OC4/OC6).
-function occasionPlace(c) {
-  if (c.context === 'home') return 'at home';
-  if (c.context === 'out') return "when you're out";
-  return `for ${c.label}`;
+// Bands and counts, never scores (D1); cites only recommendable styles
+// (OF3); says which signal was used (OC2/OC4/OC6).
+function occasionPlace(context, label) {
+  if (context === 'home') return 'at home';
+  if (context === 'out') return "when you're out";
+  return `for ${label}`;
 }
+const OCCASION_ZONES = ['fallback', 'reason', 'provenance', 'nudge'];
+const OCCASION_COPY = [
+  { id: 'oc_fallback', zone: 'fallback', priority: 10,
+    condition: c => c.fallback,
+    render: c => `not enough ${esc(c.label)} check-ins yet, so these are your ${c.parent} picks` },
+  { id: 'oc_direct', zone: 'reason', priority: 30,
+    condition: c => c.result.source === 'direct',
+    render: c => `you rate this well ${esc(c.fallback ? occasionPlace(c.parent) : c.place)}` },
+  { id: 'oc_neighbours', zone: 'reason', priority: 20,
+    condition: c => c.cites.length > 0,
+    render: c => `close to ${c.cites.map(esc).join(' and ')}, which you rate well ${esc(c.place)}` },
+  { id: 'oc_fits', zone: 'reason', priority: 10,
+    condition: () => true,
+    render: c => `fits what you like ${esc(c.place)}` },
+  { id: 'oc_all_tagged', zone: 'provenance', priority: 30,
+    condition: c => c.derived === 0,
+    render: c => `based on ${c.rated} rated check-ins (all tagged with an occasion)` },
+  { id: 'oc_all_venue', zone: 'provenance', priority: 20,
+    condition: c => c.stated === 0,
+    render: c => `based on ${c.rated} rated check-ins (occasion worked out from the venue)` },
+  { id: 'oc_mixed', zone: 'provenance', priority: 10,
+    condition: () => true,
+    render: c => `based on ${c.rated} rated check-ins (${c.stated} tagged, ${c.derived} worked out from the venue)` },
+  { id: 'oc_gets_sharper', zone: 'nudge', priority: 10,
+    condition: c => c.derived / c.rated >= OCCASION_SMARTER_SHARE,
+    render: () => `tag the occasion when you check in and these get sharper` },
+];
 function occasionRationale(c) {
-  const place = occasionPlace(c);
-  const parts = [];
-  if (c.fallback) parts.push(`Not enough ${c.label} check-ins yet, so these are your ${c.parent === 'home' ? 'home' : 'out'} picks.`);
-  if (c.result.source === 'direct') {
-    parts.push(`You rate this well ${c.fallback ? (c.parent === 'home' ? 'at home' : "when you're out") : place}.`);
-  } else {
-    const cites = c.result.contributors
-      .filter(x => x.affinity >= POSITIVE_AFFINITY_THRESHOLD && isRecommendableStyle(x.style))
-      .slice(0, 2).map(x => x.style);
-    parts.push(cites.length ? `Close to ${cites.join(' and ')}, which you rate well ${place}.` : `Fits what you like ${place}.`);
-  }
-  const derived = c.rated - c.stated;
-  const mix = !derived ? 'all tagged with an occasion' : !c.stated ? 'occasion worked out from the venue' : `${c.stated} tagged, ${derived} worked out from the venue`;
-  parts.push(`Based on ${c.rated} rated check-ins (${mix}).`);
-  if (derived / c.rated >= OCCASION_SMARTER_SHARE) parts.push('Tag the occasion when you check in and these get sharper.');
-  return parts.join(' ');
+  const cites = c.result.source === 'direct' ? [] : c.result.contributors
+    .filter(x => x.affinity >= POSITIVE_AFFINITY_THRESHOLD && isRecommendableStyle(x.style))
+    .slice(0, 2).map(x => x.style);
+  return discoverRationale(OCCASION_COPY, OCCASION_ZONES,
+    { ...c, place: occasionPlace(c.context, c.label), cites, derived: c.rated - c.stated });
 }
 
 function renderOccasionCard(c) {
@@ -2707,7 +2765,7 @@ function renderOccasionCard(c) {
       </div>
       ${recSaveButton({ name: c.style, brewery: '' })}
     </div>
-    <div class="rec-why">${esc(occasionRationale(c))}</div>`;
+    <div class="rec-why">${occasionRationale(c)}</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
