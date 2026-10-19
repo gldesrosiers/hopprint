@@ -39,12 +39,12 @@ function filterCtx() {
   return ctx;
 }
 
-test('OF2: the list is the resolved 17 keys, every one a real STYLE_MATRIX key', () => {
+test('OF2: the list is the resolved 18 keys, every one a real STYLE_MATRIX key', () => {
   const ctx = filterCtx();
   const list = [...vm.runInContext('NON_RECOMMENDABLE_STYLES', ctx)];
-  assert.equal(list.length, 17);
+  assert.equal(list.length, 18);
   assert.deepEqual(list.filter(k => !STYLE_MATRIX[k]), []);
-  ['Other', 'Porter - Other', 'Historical Beer - Other', 'Dark Ale', 'Traditional Ale', 'Root Beer', 'Non-Alcoholic - Porter / Stout'].forEach(k => assert.ok(list.includes(k), k));
+  ['Other', 'Porter - Other', 'Historical Beer - Other', 'Dark Ale', 'Traditional Ale', 'Root Beer', 'Non-Alcoholic - IPA', 'Non-Alcoholic - Porter / Stout'].forEach(k => assert.ok(list.includes(k), k));
 });
 
 test('OF2: every "- Other" bin is listed except the orderable Sour - Other Gose', () => {
@@ -56,7 +56,7 @@ test('OF2: every "- Other" bin is listed except the orderable Sour - Other Gose'
 
 test('OF2: reviewed-and-kept styles stay recommendable; unknown or empty input is not', () => {
   const ctx = filterCtx();
-  ['Malt Liquor', 'Hard Ginger Beer', 'Non-Alcoholic - IPA', 'Shandy / Radler', 'Spiced / Herbed Beer', 'Fruit Beer', 'IPA - New England / Hazy']
+  ['Malt Liquor', 'Hard Ginger Beer', 'Shandy / Radler', 'Spiced / Herbed Beer', 'Fruit Beer', 'IPA - New England / Hazy']
     .forEach(k => assert.equal(ctx.isRecommendableStyle(k), true, k));
   [null, '', 'Not A Style'].forEach(k => assert.equal(ctx.isRecommendableStyle(k), false, String(k)));
 });
