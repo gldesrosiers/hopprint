@@ -383,17 +383,17 @@ test('Rediscovery card: imported ratings say so (provenance)', () => {
   assert.match(els.recResults.innerHTML, /You rated it Definitely back on Untappd\./);
 });
 
-test('Rediscovery footer: Show Another and Can\'t Get It Anymore — no Not Interested', () => {
+test('Rediscovery footer: Show Another and Can\'t Find It Anymore — no Not for Me', () => {
   const { els } = showOne([ci('Arthur', 400, 87)]);
-  assert.doesNotMatch(els.recResults.innerHTML, /Not Interested/);
-  assert.match(els.recResults.innerHTML, /id="recRetire" onclick="askRetireShown\(\)">Can't Get It Anymore</);
+  assert.doesNotMatch(els.recResults.innerHTML, /Not for Me/);
+  assert.match(els.recResults.innerHTML, /id="recRetire" onclick="askRetireShown\(\)">Can't Find It Anymore</);
 });
 
 test('RD4: retiring asks first; Cancel puts the button back', () => {
   const app = showOne([ci('Arthur', 400, 87)]);
   const node = fakeNode(app.els, 'recRetire');
   app.ctx.askRetireShown();
-  assert.match(node.innerHTML, /Retire for good\? <span onclick="retireShownBeer\(\)">Yes<\/span>/);
+  assert.match(node.innerHTML, /Stop suggesting it\? <span onclick="retireShownBeer\(\)">Yes<\/span>/);
   assert.equal(app.ctx.loadRetired().length, 0, 'asking does not retire');
   app.ctx.cancelRetireShown();
   assert.match(node.replacedWith, /onclick="askRetireShown\(\)"/);
@@ -889,7 +889,7 @@ test('Occasion card: style headline, context line, Save pill keyed to the style;
   app.ctx.generateRecs();
   const html = app.els.recResults.innerHTML;
   assert.match(html, /rec-brewery">For a night out</);
-  assert.match(html, /Not Interested/);
+  assert.match(html, /✕ Not for Me/);
   const shownStyle = app.get('discoverShownCard').style;
   assert.deepEqual(app.shown(), [[`${shownStyle}|out`, 'occasion']]);
   app.ctx.saveShownToWishlist();

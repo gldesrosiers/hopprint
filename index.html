@@ -1519,7 +1519,7 @@ let discoverMode = '';
 let discoverQueue = [];
 let discoverQueueMode = '';
 let discoverStarved = false;
-// Suppression key of the card on screen. Read by the Not Interested handler
+// Suppression key of the card on screen. Read by the Not for Me handler
 // rather than inlined into it, since keys can be beer names with any quotes.
 let discoverShownKey = '';
 let discoverShownCard = null;
@@ -1572,7 +1572,7 @@ const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','
 //   suppressionKey(c)  -> string; per-mode namespace, see isSuppressed
 //   wishItem(c, i)     -> { name, brewery, style } for Save pill i (cards with several)
 //   actions(c)         -> optional extra footer buttons
-//   notInterested      -> false hides the shared Not Interested button
+//   notInterested      -> false hides the shared Not for Me button
 //   renderOptions(es)  -> optional sub-picker shown under the grid while selected
 //   precheck(es)       -> optional; a message means "not ready", shown as a toast
 // Names and icons are final (Oct 19, 2026); descriptions and reasons are
@@ -2349,13 +2349,13 @@ function renderRediscoveryCard(c) {
 // Inline two-step confirm — retirement is permanent, and browser dialogs
 // are off the table.
 function rediscoveryActions() {
-  return `<div class="rec-footer-btn negative" id="recRetire" onclick="askRetireShown()">Can't Get It Anymore</div>`;
+  return `<div class="rec-footer-btn negative" id="recRetire" onclick="askRetireShown()">Can't Find It Anymore</div>`;
 }
 function askRetireShown() {
   const el = document.getElementById('recRetire');
   el.removeAttribute('onclick');
   el.classList.add('rec-confirm');
-  el.innerHTML = `Retire for good? <span onclick="retireShownBeer()">Yes</span> · <span onclick="cancelRetireShown()">Cancel</span>`;
+  el.innerHTML = `Stop suggesting it? <span onclick="retireShownBeer()">Yes</span> · <span onclick="cancelRetireShown()">Cancel</span>`;
 }
 function cancelRetireShown() {
   document.getElementById('recRetire').outerHTML = rediscoveryActions();
@@ -2370,7 +2370,7 @@ function retireShownBeer() {
     saveRetired(list);
     queueSync('rediscovery_retired', row.id, 'upsert', true);
   }
-  showToast('Retired from Rediscovery', 'success');
+  showToast("Won't suggest that one again", 'success');
   renderNextRec();
 }
 
@@ -6219,7 +6219,7 @@ function generateRecs() {
   const { cards, starved } = m.build(entries);
 
   if (!cards.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Nothing to suggest here yet. Log a few more and check back.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
     discoverQueue = [];
     return;
   }
@@ -6241,7 +6241,7 @@ function renderNextRec() {
   const m = discModeById(discoverQueueMode);
 
   if (!discoverQueue.length || !m) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's all for now. Tap Find My Next Beer to start a fresh round.</p></div>`;
     return;
   }
 
@@ -6252,7 +6252,7 @@ function renderNextRec() {
     ${m.renderCard(c)}
     <div class="rec-footer">
       <div class="rec-footer-btn" onclick="showAnotherRec()"><span class="ico-pair">${icon('refresh', 14, 2.2)}Show Another</span></div>
-      ${m.notInterested === false ? '' : `<div class="rec-footer-btn negative" onclick="notInterestedRec(discoverShownKey, discoverQueueMode)">✕ Not Interested</div>`}
+      ${m.notInterested === false ? '' : `<div class="rec-footer-btn negative" onclick="notInterestedRec(discoverShownKey, discoverQueueMode)">✕ Not for Me</div>`}
       ${m.actions ? m.actions(c) : ''}
     </div>
   </div>`;
@@ -6260,7 +6260,7 @@ function renderNextRec() {
   recordShown([key], m.id);
 
   if (discoverStarved && !discoverQueue.length) {
-    el.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">Your ${m.name} history is still pretty focused — more variety will show up as you explore.</div>`);
+    el.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">Not many picks for this setting yet. Rate a few more here to widen them.</div>`);
   }
 }
 
