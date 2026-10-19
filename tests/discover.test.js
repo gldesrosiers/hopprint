@@ -158,22 +158,32 @@ function el() {
   return { innerHTML: '', disabled: false, insertAdjacentHTML(_, h) { this.innerHTML += h; } };
 }
 
-function gridCtx(entries = [{ id: 1 }], extraModes = '') {
+function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist = [], random = Math.random } = {}) {
   const els = { modeGrid: el(), discoverLocked: el(), discoverGo: el(), recResults: el() };
   const toasts = [];
-  const shown = [];
+  const queued = [];
+  let n = 0;
   const ctx = vm.createContext({
-    entries,
+    entries, wishlist,
     document: { getElementById: id => els[id] || null, querySelectorAll: () => [] },
+    localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; } },
+    Math: Object.assign(Object.create(Math), { random }),
     icon: () => '', renderWishlist() {}, showToast: m => toasts.push(m),
-    recordShown: (keys, mode) => shown.push([...keys, mode]),
+    newId: () => `id-${++n}`, queueSync: (...a) => queued.push(a),
   });
   vm.runInContext([
-    line('discoverMode'), line('discoverQueue'), line('discoverQueueMode'), line('discoverStarved'), line('discoverShownKey'),
+    ...['discoverMode', 'discoverQueue', 'discoverQueueMode', 'discoverStarved', 'discoverShownKey', 'discoverShownCard'].map(line),
+    line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
+    line('REDISCOVERY_MIN_AGE_DAYS'), line('REDISCOVERY_BATCH'), line('REDISCOVERY_RETIRED_KEY'),
     line('DISC_NOT_BUILT'), extractBlock('DISC_MODES'), extraModes,
-    ...['esc', 'discModeById', 'discGates', 'buildModeGrid', 'selectMode', 'enterDiscover', 'generateRecs', 'renderNextRec'].map(extractFunction),
+    ...['esc', 'stubBeerKey', 'loadSuppression', 'saveSuppression', 'isSuppressed', 'recordShown', 'takeUnsuppressed',
+      'discModeById', 'discGates', 'buildModeGrid', 'selectMode', 'enterDiscover', 'generateRecs', 'renderNextRec',
+      'isOnWishlist', 'recSaveButton', 'saveShownToWishlist',
+      'loadRetired', 'saveRetired', 'rediscoveryCandidates', 'rediscoveryGate', 'buildRediscovery', 'rediscoveryRationale',
+      'renderRediscoveryCard', 'rediscoveryActions', 'askRetireShown', 'cancelRetireShown', 'retireShownBeer'].map(extractFunction),
   ].join('\n'), ctx);
-  return { ctx, els, toasts, shown, get: n => vm.runInContext(n, ctx) };
+  const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
+  return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
 }
 
 // Replace one registry entry with a built, open test mode.
@@ -200,7 +210,8 @@ test('DS5: with every mode gated, the tab shows its locked state and the button 
 test('DS4: a gated mode renders greyed with its reason, and cannot be selected', () => {
   const { ctx, els, get } = gridCtx();
   ctx.buildModeGrid();
-  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 4);
+  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 3);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a beer you rated Definitely/);
   ctx.selectMode('gaps');
   assert.equal(get('discoverMode'), '');
 });
@@ -236,10 +247,166 @@ test('DS6: a card renders through its mode, stamps its mode key, and never inlin
   ctx.generateRecs();
   assert.match(els.recResults.innerHTML, /rec-name">It's "Quoted"</);
   assert.match(els.recResults.innerHTML, /onclick="notInterestedRec\(discoverShownKey, discoverQueueMode\)"/);
-  assert.deepEqual(shown, [[`It's "Quoted"`, 'rediscovery']]);
+  assert.deepEqual(shown(), [[`It's "Quoted"`, 'rediscovery']]);
   assert.equal(get('discoverShownKey'), `It's "Quoted"`);
   ctx.renderNextRec();
   assert.equal(get('discoverShownKey'), 'Second');
+});
+
+// ── Rediscovery (§7) ───────────────────────────────────────────
+
+// Wall-clock strings, like real check-ins. ago(400) = 400 days before now.
+const ago = days => new Date(Date.now() - days * DAY).toISOString().slice(0, 16);
+const ci = (beer_name, days, rating, extra = {}) => ({ id: `${beer_name}-${days}`, beer_name, brewery_name: 'Hill Farmstead', beer_type: 'Saison - Traditional', created_at: ago(days), rating, source: 'live', ...extra });
+const names = list => [...list].map(c => c.name).sort();
+
+test('RD2: Definitely on the latest rating and last logged a year or more ago qualifies', () => {
+  const { ctx } = gridCtx();
+  const out = ctx.rediscoveryCandidates([ci('Old Love', 400, 85), ci('Too Recent', 200, 90), ci('Edge', 366, 67), ci('Maybe', 500, 66)]);
+  assert.deepEqual(names(out), ['Edge', 'Old Love']);
+});
+
+test('RD2: the most recent rating wins over earlier ones', () => {
+  const { ctx } = gridCtx();
+  const cooled = [ci('Cooled', 900, 90), ci('Cooled', 500, 50)];
+  const warmed = [ci('Warmed', 900, 40), ci('Warmed', 500, 80)];
+  assert.deepEqual(names(ctx.rediscoveryCandidates([...cooled, ...warmed])), ['Warmed']);
+});
+
+test('RD2: an unrated check-in still counts as "last logged"', () => {
+  const { ctx } = gridCtx();
+  const recentPour = [ci('Recent Pour', 800, 90), ci('Recent Pour', 30, null)];
+  const oldPour = [ci('Old Pour', 800, 90), ci('Old Pour', 400, null)];
+  assert.deepEqual(names(ctx.rediscoveryCandidates([...recentPour, ...oldPour])), ['Old Pour']);
+  assert.deepEqual(names(ctx.rediscoveryCandidates([ci('Never Rated', 800, null)])), []);
+});
+
+test('RD2: imported ratings count — 4 stars (80) qualifies and is marked imported; 3 stars (60) does not', () => {
+  const { ctx } = gridCtx();
+  const imp = (name, rating) => ci(name, 700, rating, { source: 'import', rating_mode: 'import' });
+  const out = ctx.rediscoveryCandidates([imp('Four Star', 80), imp('Three Star', 60)]);
+  assert.deepEqual(names(out), ['Four Star']);
+  assert.equal(out[0].imported, true);
+});
+
+test('RD2: the same beer under case/space drift is one beer', () => {
+  const { ctx } = gridCtx();
+  const out = ctx.rediscoveryCandidates([ci('Ann', 800, 90), ci('  ann ', 20, null, { brewery_name: 'hill  farmstead' })]);
+  assert.deepEqual(names(out), []);
+});
+
+test('OF5/RD6: a beer logged under a non-recommendable bin is still recommended, style as logged', () => {
+  const { ctx } = gridCtx();
+  const [c] = ctx.rediscoveryCandidates([ci('Mystery Porter', 400, 90, { beer_type: 'Porter - Other' })]);
+  assert.equal(c.style, 'Porter - Other');
+});
+
+test('RD5: gated with a reason until one beer qualifies', () => {
+  const { ctx } = gridCtx();
+  const closed = ctx.rediscoveryGate([ci('Recent', 10, 90)]);
+  assert.equal(closed.open, false);
+  assert.ok(closed.reason.length > 0);
+  assert.equal(ctx.rediscoveryGate([ci('Old', 400, 90)]).open, true);
+});
+
+test('RD3: selection is random among qualifiers, five at most', () => {
+  const seven = Array.from({ length: 7 }, (_, i) => ci(`B${i}`, 400 + i, 90));
+  const first = gridCtx(seven, '', { random: () => 0 }).ctx.buildRediscovery(seven).cards.map(c => c.name);
+  const other = gridCtx(seven, '', { random: () => 0.99 }).ctx.buildRediscovery(seven).cards.map(c => c.name);
+  assert.equal(first.length, 5);
+  assert.notDeepEqual(first, other);
+});
+
+test('§8: a beer shown in the last 30 days waits unless nothing else is left', () => {
+  const two = [ci('Shown', 400, 90), ci('Fresh', 400, 90)];
+  const store = { hopprint_rec_suppression: JSON.stringify([{ mode: 'rediscovery', key: 'shown|hill farmstead', timestamp: Date.now() - 20 * DAY }]) };
+  const { ctx } = gridCtx(two, '', { store });
+  // target 5 > pool: the ladder drops to window 0 and both come back
+  assert.deepEqual(names(ctx.buildRediscovery(two).cards), ['Fresh', 'Shown']);
+  const half = gridCtx(two, '', { store: { hopprint_rec_suppression: JSON.stringify([{ mode: 'rediscovery', key: 'shown|hill farmstead', timestamp: Date.now() - 20 * DAY }]) } });
+  const { cards } = half.ctx.takeUnsuppressed(half.ctx.rediscoveryCandidates(two), 'rediscovery', c => c.key, 1);
+  assert.deepEqual(names(cards), ['Fresh']);
+});
+
+function fakeNode(els, id) {
+  const node = { innerHTML: '', classList: { add() {} }, removeAttribute() {}, set outerHTML(h) { node.replacedWith = h; } };
+  els[id] = node;
+  return node;
+}
+
+function showOne(list, opts) {
+  const app = gridCtx(list, '', opts);
+  app.ctx.enterDiscover();
+  app.ctx.selectMode('rediscovery');
+  app.ctx.generateRecs();
+  return app;
+}
+
+test('Rediscovery card: name, brewery, style, band rationale — and no raw score anywhere (D1)', () => {
+  const { els } = showOne([ci('Arthur', 400, 87, { beer_abv: '6.0' })]);
+  const html = els.recResults.innerHTML;
+  assert.match(html, /rec-name">Arthur</);
+  assert.match(html, /Hill Farmstead · 6\.0% ABV/);
+  assert.match(html, /etag style">Saison - Traditional</);
+  assert.match(html, /Definitely/);
+  assert.doesNotMatch(html, /\b87\b/);
+});
+
+test('Rediscovery card: imported ratings say so (provenance)', () => {
+  const { els } = showOne([ci('Imported', 400, 80, { source: 'import', rating_mode: 'import' })]);
+  assert.match(els.recResults.innerHTML, /\(imported\)/);
+});
+
+test('Rediscovery footer: Show Another and Can\'t Get It Anymore — no Not Interested', () => {
+  const { els } = showOne([ci('Arthur', 400, 87)]);
+  assert.doesNotMatch(els.recResults.innerHTML, /Not Interested/);
+  assert.match(els.recResults.innerHTML, /id="recRetire" onclick="askRetireShown\(\)">Can't Get It Anymore</);
+});
+
+test('RD4: retiring asks first; Cancel puts the button back', () => {
+  const app = showOne([ci('Arthur', 400, 87)]);
+  const node = fakeNode(app.els, 'recRetire');
+  app.ctx.askRetireShown();
+  assert.match(node.innerHTML, /Retire for good\? <span onclick="retireShownBeer\(\)">Yes<\/span>/);
+  assert.equal(app.ctx.loadRetired().length, 0, 'asking does not retire');
+  app.ctx.cancelRetireShown();
+  assert.match(node.replacedWith, /onclick="askRetireShown\(\)"/);
+});
+
+test('RD4: Yes retires the beer permanently — it survives a reload and never comes back', () => {
+  const store = {};
+  const list = [ci('Arthur', 400, 87), ci('Anna', 500, 90)];
+  const app = showOne(list, { store, random: () => 0 });
+  const shown = app.get('discoverShownCard');
+  const shownName = shown.name;
+  app.ctx.retireShownBeer();
+  assert.equal(app.ctx.loadRetired().length, 1);
+  app.ctx.discoverShownCard = shown;
+  vm.runInContext('discoverShownCard = globalThis.discoverShownCard', app.ctx);
+  app.ctx.retireShownBeer();   // the same beer again doesn't duplicate
+  assert.deepEqual([...app.ctx.loadRetired().map(r => r.beer_name)], [shownName]);
+  const row = app.ctx.loadRetired()[0];
+  assert.deepEqual(Object.keys(row).sort(), ['brewery_name', 'beer_name', 'id', 'key', 'retired_at'].sort());
+  const reloaded = gridCtx(list, '', { store });   // fresh sandbox, same storage
+  assert.deepEqual(names(reloaded.ctx.rediscoveryCandidates(list)), list.map(e => e.beer_name).filter(n => n !== shownName));
+});
+
+test('Save pill: saves the shown beer once, queues its sync, and flips to saved', () => {
+  const wishlist = [];
+  const app = showOne([ci('Arthur', 400, 87)], { wishlist });
+  assert.match(app.els.recResults.innerHTML, /class="rec-save" id="recSave"/);
+  const pill = fakeNode(app.els, 'recSave');
+  app.ctx.saveShownToWishlist();
+  app.ctx.saveShownToWishlist();
+  assert.equal(wishlist.length, 1);
+  assert.deepEqual({ name: wishlist[0].name, brewery: wishlist[0].brewery, style: wishlist[0].style }, { name: 'Arthur', brewery: 'Hill Farmstead', style: 'Saison - Traditional' });
+  assert.deepEqual(app.queued, [['wishlist', wishlist[0].id, 'upsert', true]]);
+  assert.match(pill.replacedWith, /rec-save saved/);
+});
+
+test('Save pill: a beer already on the wish list renders as saved', () => {
+  const { els } = showOne([ci('Arthur', 400, 87)], { wishlist: [{ id: 'w', name: 'ARTHUR', brewery: 'hill farmstead' }] });
+  assert.match(els.recResults.innerHTML, /rec-save saved">On Wish List</);
 });
 
 // ── Scorer weights (proximity_engine.js) ───────────────────────

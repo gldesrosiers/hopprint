@@ -51,7 +51,7 @@ const ALLOWED_CHANGES = {
   buildHopprintSVG: 'Phase E (c) DE5 geometry moved to hopprintGeometry() for the canvas share card; SVG output identical (SP1)',
   renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years; Phase E (c) Hopprint Share pill in the hero kicker row',
   generateRecs: 'IN1/IN18 empty state + CTA; DS1/DS6 dispatches to the selected mode\'s build()',
-  renderNextRec: 'IN1/IN18 empty state, Show Another; DS6 per-mode card renderer + suppression key',
+  renderNextRec: 'IN1/IN18 empty state, Show Another; DS6 per-mode card renderer, suppression key, footer actions',
   // IT7 — showToast(msg, iconName) (IN8)
   showToast: 'IN8 icon + textContent span',
   submitFeedback: 'IN8 toast iconName',

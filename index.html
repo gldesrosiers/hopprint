@@ -802,6 +802,8 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 .rec-footer-btn:first-child { border-right: 1px solid var(--border); }
 .rec-footer-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
 .rec-footer-btn.negative:hover { color: var(--orange); }
+.rec-footer-btn.rec-confirm { color: var(--text); cursor: default; }
+.rec-footer-btn.rec-confirm span { color: var(--orange); cursor: pointer; padding: 0 4px; }
 .rec-badge {
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
   text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 7px;
@@ -1511,6 +1513,7 @@ let discoverStarved = false;
 // Suppression key of the card on screen. Read by the Not Interested handler
 // rather than inlined into it, since keys can be beer names with any quotes.
 let discoverShownKey = '';
+let discoverShownCard = null;
 let currentPromptIdx = 0;
 let analyticsYear = 'all';
 let analyticsCharts = {};
@@ -1555,6 +1558,9 @@ const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','
 //   build(entries)     -> { cards, starved }
 //   renderCard(card)   -> inner HTML for one card
 //   suppressionKey(c)  -> string; per-mode namespace, see isSuppressed
+//   wishItem(c)        -> { name, brewery, style } for the shared Save pill
+//   actions(c)         -> optional extra footer buttons
+//   notInterested      -> false hides the shared Not Interested button
 // Names, descriptions, and reasons are placeholders until the copy pass (BP1).
 // A mode without build() isn't implemented yet and stays gated.
 const DISC_NOT_BUILT = () => ({ open: false, reason: 'Not built yet' });
@@ -1562,7 +1568,10 @@ const DISC_MODES = [
   { id:'gaps', iconName:'mode-adjacent', name:'Dimension Gaps', desc:'Flavor directions you haven\'t explored', gate: DISC_NOT_BUILT },
   { id:'occasion', iconName:'occasion-bar', name:'Occasion', desc:'Picks for home or out', gate: DISC_NOT_BUILT },
   { id:'brewery', iconName:'trend-loyal', name:'Brewery Gaps', desc:'More from breweries you love', gate: DISC_NOT_BUILT },
-  { id:'rediscovery', iconName:'mode-random', name:'Rediscovery', desc:'Old favorites worth another round', gate: DISC_NOT_BUILT },
+  { id:'rediscovery', iconName:'mode-random', name:'Rediscovery', desc:'Old favorites worth another round',
+    gate: rediscoveryGate, build: buildRediscovery, renderCard: renderRediscoveryCard,
+    suppressionKey: c => c.key, wishItem: c => ({ name: c.name, brewery: c.brewery, style: c.style }),
+    actions: rediscoveryActions, notInterested: false },
 ];
 function discModeById(id) {
   return DISC_MODES.find(m => m.id === id) || null;
@@ -2004,6 +2013,143 @@ function notInterestedRec(key, mode) {
   // shown-at-render entry, so this key is pushed out further than one
   // that was simply shown and cycled past.
   recordShown([key], mode);
+  renderNextRec();
+}
+
+// Shared Save pill (§8: wishlist save on every mode). The mode's wishItem()
+// says what gets saved; a beer already on the wish list shows as saved.
+function isOnWishlist(item) {
+  const k = stubBeerKey({ beer_name: item.name, brewery_name: item.brewery });
+  return wishlist.some(w => stubBeerKey({ beer_name: w.name, brewery_name: w.brewery }) === k);
+}
+function recSaveButton(item) {
+  return isOnWishlist(item)
+    ? `<div class="rec-save saved">On Wish List</div>`
+    : `<div class="rec-save" id="recSave" onclick="saveShownToWishlist()">Save</div>`;
+}
+function saveShownToWishlist() {
+  const m = discModeById(discoverQueueMode);
+  if (!m || !m.wishItem || !discoverShownCard) return;
+  const src = m.wishItem(discoverShownCard);
+  if (isOnWishlist(src)) return;
+  const item = { id: newId(), name: src.name, brewery: src.brewery || '', style: src.style || '', added: new Date().toISOString() };
+  wishlist.push(item);
+  localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+  queueSync('wishlist', item.id, 'upsert', true);
+  renderWishlist();
+  showToast('Added to wish list', 'wishlist');
+  const btn = document.getElementById('recSave');
+  if (btn) btn.outerHTML = `<div class="rec-save saved">On Wish List</div>`;
+}
+
+// ── Rediscovery (§7) ──────────────────────────────────────────
+// RD1–RD6: a beer from the user's own history whose most recent rating is in
+// the Definitely band and which hasn't been logged in the past year.
+// Selection is random among qualifiers (RD3) — no ranking. The
+// non-recommendable style filter doesn't apply (OF5): it's a specific,
+// buyable beer whatever bin it was logged under. Beers are identified the
+// way My Beers stubs are (stubBeerKey: name + brewery, case/space-folded).
+const REDISCOVERY_MIN_AGE_DAYS = 365;
+const REDISCOVERY_BATCH = 5;
+// RD4: "Can't get it anymore" retires a beer from Rediscovery for good.
+// Separate from time-windowed suppression; rows carry an id for sync.
+const REDISCOVERY_RETIRED_KEY = 'hopprint_rediscovery_retired';
+
+function loadRetired() {
+  return JSON.parse(localStorage.getItem(REDISCOVERY_RETIRED_KEY) || '[]');
+}
+function saveRetired(list) {
+  localStorage.setItem(REDISCOVERY_RETIRED_KEY, JSON.stringify(list));
+}
+
+function rediscoveryCandidates(entriesList, now = Date.now()) {
+  const retired = new Set(loadRetired().map(r => r.key));
+  const definitelyMin = RATING_BANDS.find(b => b.id === 'definitely').min;
+  const byBeer = new Map();
+  entriesList.forEach(e => {
+    const t = new Date(e.created_at).getTime();
+    if (!e.beer_name || !Number.isFinite(t)) return;
+    const key = stubBeerKey(e);
+    let b = byBeer.get(key);
+    if (!b) byBeer.set(key, b = { key, last: null, lastT: -Infinity, rated: null, ratedT: -Infinity });
+    if (t > b.lastT) { b.last = e; b.lastT = t; }
+    if (typeof e.rating === 'number' && t > b.ratedT) { b.rated = e; b.ratedT = t; }
+  });
+  const out = [];
+  byBeer.forEach(b => {
+    if (retired.has(b.key) || !b.rated || b.rated.rating < definitelyMin) return;   // latest opinion wins
+    if (now - b.lastT < REDISCOVERY_MIN_AGE_DAYS * 86400000) return;
+    out.push({
+      key: b.key,
+      name: b.last.beer_name,
+      brewery: b.last.brewery_name || '',
+      style: b.last.beer_type || '',   // as logged for now; family once the Brewery Gaps table lands (OF5)
+      abv: b.last.beer_abv || '',
+      lastLogged: b.last.created_at,
+      imported: b.rated.source === 'import' || b.rated.rating_mode === 'import',
+    });
+  });
+  return out;
+}
+
+function rediscoveryGate(entriesList) {
+  return rediscoveryCandidates(entriesList).length
+    ? { open: true, reason: '' }
+    : { open: false, reason: 'Needs a beer you rated Definitely and haven\'t logged in a year' };
+}
+
+function buildRediscovery(entriesList) {
+  const pool = rediscoveryCandidates(entriesList);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  // A small pool isn't a "focused history" — no starvation note here.
+  return { cards: takeUnsuppressed(pool, 'rediscovery', c => c.key, REDISCOVERY_BATCH).cards, starved: false };
+}
+
+// Placeholder copy (BP1). Bands, never scores (D1); provenance stays visible.
+function rediscoveryRationale(c) {
+  const when = new Date(c.lastLogged).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return `Your last rating was Definitely${c.imported ? ' (imported)' : ''}. Last logged ${when}.`;
+}
+
+function renderRediscoveryCard(c) {
+  const sub = `${esc(c.brewery)}${c.abv ? ` · ${esc(c.abv)}% ABV` : ''}`;
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(c.name)}</div>
+        ${sub ? `<div class="rec-brewery">${sub}</div>` : ''}
+      </div>
+      ${recSaveButton({ name: c.name, brewery: c.brewery })}
+    </div>
+    ${c.style ? `<div class="rec-tags"><span class="etag style">${esc(c.style)}</span></div>` : ''}
+    <div class="rec-why">${rediscoveryRationale(c)}</div>`;
+}
+
+// Inline two-step confirm — retirement is permanent, and browser dialogs
+// are off the table.
+function rediscoveryActions() {
+  return `<div class="rec-footer-btn negative" id="recRetire" onclick="askRetireShown()">Can't Get It Anymore</div>`;
+}
+function askRetireShown() {
+  const el = document.getElementById('recRetire');
+  el.removeAttribute('onclick');
+  el.classList.add('rec-confirm');
+  el.innerHTML = `Retire for good? <span onclick="retireShownBeer()">Yes</span> · <span onclick="cancelRetireShown()">Cancel</span>`;
+}
+function cancelRetireShown() {
+  document.getElementById('recRetire').outerHTML = rediscoveryActions();
+}
+function retireShownBeer() {
+  const c = discoverShownCard;
+  if (!c) return;
+  const list = loadRetired();
+  if (!list.some(r => r.key === c.key)) {
+    list.push({ id: newId(), key: c.key, beer_name: c.name, brewery_name: c.brewery, retired_at: new Date().toISOString() });
+    saveRetired(list);
+  }
+  showToast('Retired from Rediscovery', 'success');
   renderNextRec();
 }
 
@@ -5451,11 +5597,13 @@ function renderNextRec() {
 
   const c = discoverQueue.shift();
   const key = discoverShownKey = m.suppressionKey(c);
+  discoverShownCard = c;
   el.innerHTML = `<div class="rec-card fade-up">
     ${m.renderCard(c)}
     <div class="rec-footer">
       <div class="rec-footer-btn" onclick="showAnotherRec()"><span class="ico-pair">${icon('refresh', 14, 2.2)}Show Another</span></div>
-      <div class="rec-footer-btn negative" onclick="notInterestedRec(discoverShownKey, discoverQueueMode)">✕ Not Interested</div>
+      ${m.notInterested === false ? '' : `<div class="rec-footer-btn negative" onclick="notInterestedRec(discoverShownKey, discoverQueueMode)">✕ Not Interested</div>`}
+      ${m.actions ? m.actions(c) : ''}
     </div>
   </div>`;
 
