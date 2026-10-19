@@ -183,6 +183,7 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     ...['GAP_HIGH_MIN', 'GAP_LOW_MAX', 'GAP_THIN_SHARE', 'GAP_HALF_LIFE_DAYS', 'GAP_DISLIKE_MIN_RATED', 'GAP_MIN_STYLES', 'GAP_PICKS', 'GAP_MIN_PICKS'].map(line),
     extractBlock('STYLE_FAMILY'),
     ...['REDISCOVERY_ZONES', 'GAP_ZONES', 'BREWERY_ZONES', 'OCCASION_ZONES'].map(line),
+    extractBlock('GAP_AXIS_WORDS'), extractBlock('OCCASION_PLACES'),
     ...['REDISCOVERY_COPY', 'GAP_COPY', 'BREWERY_COPY', 'OCCASION_COPY'].map(extractBlock),
     ...['BREWERY_MIN_CHECKINS', 'BREWERY_MIN_RATED', 'BREWERY_NARROW_SHARE', 'BREWERY_ORBIT_DAYS', 'BREWERY_ELSEWHERE_MIN_RATED', 'BREWERY_SUGGESTIONS'].map(line),
     line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
@@ -198,7 +199,7 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
       'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard',
       'computeHopprint', 'inGapRegion', 'dimensionGaps', 'gapsGate', 'buildGaps', 'gapRationale', 'renderGapCard',
       'breweryKeyOf', 'familyOf', 'familyAffinity', 'breweryGaps', 'breweryGapsGate', 'buildBreweryGaps', 'breweryRationale',
-      'renderBreweryGapCard', 'rediscoveryStyleTag', 'selectCopy', 'discoverRationale', 'nearestContributor', 'clearDiscoverResults'].map(extractFunction),
+      'renderBreweryGapCard', 'rediscoveryStyleTag', 'selectCopy', 'discoverRationale', 'nearestContributor', 'clearDiscoverResults', 'occasionFor', 'likedBefore'].map(extractFunction),
   ].join('\n'), ctx);
   const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
   return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
@@ -229,10 +230,10 @@ test('DS4: a gated mode renders greyed with its reason, and cannot be selected',
   const { ctx, els, get } = gridCtx();
   ctx.buildModeGrid();
   assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 0);
-  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a favorite brewery/);
-  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 4 different styles logged</);
-  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 5 rated check-ins at home or out</);
-  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a beer you rated Definitely/);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Unlocks when you have a go-to brewery/);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Log 4 different styles to unlock</);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Rate 5 beers at home or out to unlock</);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Unlocks when a beer you loved/);
   ctx.selectMode('gaps');
   assert.equal(get('discoverMode'), '');
 });
@@ -379,7 +380,7 @@ test('Rediscovery card: name, brewery, style, band rationale — and no raw scor
 
 test('Rediscovery card: imported ratings say so (provenance)', () => {
   const { els } = showOne([ci('Imported', 400, 80, { source: 'import', rating_mode: 'import' })]);
-  assert.match(els.recResults.innerHTML, /\(imported\)/);
+  assert.match(els.recResults.innerHTML, /You rated it Definitely back on Untappd\./);
 });
 
 test('Rediscovery footer: Show Another and Can\'t Get It Anymore — no Not Interested', () => {
@@ -501,7 +502,7 @@ test('DG1: the card counts the past year; with nothing logged this year it says 
   assert.equal(roast.yearCount, 0);
   const allOld = list.map(e => ({ ...e, created_at: ago(800) }));
   const stale = gapByKey(ctx, allOld, 'roast:high');
-  assert.match(ctx.gapRationale(stale), /^Not much of your drinking has landed here lately\./);
+  assert.match(ctx.gapRationale(stale), /^Not much of your drinking has gone this way lately\. These turn up the roast and keep the rest close to your usual\./);
 });
 
 test('DG8: when every style in a gap has been tried, the least-logged come first', () => {
@@ -552,14 +553,14 @@ test('Order: thinnest first, ties to the smallest step', () => {
 test('Gate: 4 matched styles needed; locked with its own reason when nothing is a gap', () => {
   const { ctx, get } = gridCtx();
   const three = ['IPA - American', 'Pilsner - German', 'Stout - American'].map(t => g(t));
-  assert.match(ctx.gapsGate(three).reason, /Needs 4 different styles/);
+  assert.match(ctx.gapsGate(three).reason, /Log 4 different styles/);
   assert.equal(ctx.gapsGate(hazyDrinker()).open, true);
   // One check-in per region's first recommendable style: every region holds ≥ 1/9.
   const regions = [...get('GAP_REGIONS')];
   const broad = regions.map(r => g(Object.keys(STYLE_MATRIX).find(st => ctx.isRecommendableStyle(st) && ctx.inGapRegion(r, STYLE_MATRIX[st]))));
   const gate = ctx.gapsGate(broad);
   assert.equal(gate.open, false);
-  assert.match(gate.reason, /explored every flavor direction/);
+  assert.match(gate.reason, /all over the map lately/);
 });
 
 test('Gaps card: direction headline, three styles each with its own Save pill, counts not scores', () => {
@@ -584,10 +585,9 @@ test('DG6: the rationale admits it can\'t rule out a dislike until 3 ratings lan
   const { ctx } = gridCtx();
   const big = [...hazyDrinker(), ...times(60, () => g('IPA - New England / Hazy'))];
   const few = gapByKey(ctx, [...big, ...times(2, () => g('Stout - American', 90))], 'roast:high');
-  assert.match(ctx.gapRationale(few), /rule out a dislike/);
-  assert.match(ctx.gapRationale(few), /^Only 2 of your 85 check-ins this past year land here\. These move roast up/);
+  assert.equal(ctx.gapRationale(few), "Just 2 of your 85 check-ins this past year went this way. These turn up the roast and keep the rest close to your usual. Fair warning: you haven't rated much here, so it may not be your thing.");
   const enough = gapByKey(ctx, [...big, ...times(3, () => g('Stout - American', 90))], 'roast:high');
-  assert.doesNotMatch(ctx.gapRationale(enough), /rule out/);
+  assert.doesNotMatch(ctx.gapRationale(enough), /Fair warning/);
 });
 
 test('Gaps suppression: each region rotates on its own key for 7 days', () => {
@@ -694,7 +694,7 @@ test('Brewery names match across case and spacing; deepest relationship first', 
 test('Gate: locked with a reason until a brewery qualifies', () => {
   const { ctx } = gridCtx();
   assert.equal(ctx.breweryGapsGate(loyal(4)).open, false);
-  assert.match(ctx.breweryGapsGate(loyal(4)).reason, /favorite brewery/);
+  assert.match(ctx.breweryGapsGate(loyal(4)).reason, /go-to brewery/);
   assert.equal(ctx.breweryGapsGate([...loyal(6), ...lovedElsewhere()]).open, true);
 });
 
@@ -707,10 +707,10 @@ test('BG1 card: brewery headline, families with Save pills, never a specific bee
   app.ctx.generateRecs();
   const html = app.els.recResults.innerHTML;
   assert.match(html, /rec-name">Trillium</);
-  assert.match(html, /Mostly Hazy IPA so far/);
+  assert.match(html, /You mostly drink their Hazy IPA/);
   assert.match(html, /gap-style-name">Imperial Stout<.*recSave-0/s);
   assert.match(html, /gap-style-name">Pilsner<.*recSave-1/s);
-  assert.match(html, /6 of your 6 check-ins here are Hazy IPA\./);
+  assert.match(html, /All 6 of your check-ins here are Hazy IPA\. You love Imperial Stout and Pilsner elsewhere, so it's worth asking if they pour one\./);
   assert.doesNotMatch(html, /Beer \d+/, 'no beer names');
   assert.doesNotMatch(html, /\d\.\d/);
   assert.deepEqual(app.shown(), [['trillium', 'brewery']]);
@@ -756,7 +756,7 @@ test('Gate: opens when either side has 5 rated check-ins, with a reason until th
   const four = [...times(4, () => home('Stout - American')), ...times(4, () => out('Pilsner - German'))];
   const closed = ctx.occasionGate(four);
   assert.equal(closed.open, false);
-  assert.match(closed.reason, /5 rated check-ins/);
+  assert.match(closed.reason, /Rate 5 beers/);
   assert.equal(ctx.occasionGate([...four, out('Pilsner - German')]).open, true);
 });
 
@@ -847,18 +847,18 @@ test('Rationale: names the context, the stated/derived mix, and no raw score (D1
   const direct = { style: 'Pilsner - German', context: 'out', label: 'Out', parent: 'out', fallback: false, rated: 8, stated: 3,
     result: { source: 'direct', predictedAffinity: 4.6, contributors: [] } };
   const text = ctx.occasionRationale(direct);
-  assert.match(text, /You rate this well when you're out\./);
-  assert.match(text, /Based on 8 rated check-ins \(3 tagged, 5 worked out from the venue\)\./);
+  assert.match(text, /^You've liked this one before when you're out\./);
+  assert.match(text, /Based on 8 rated check-ins: 3 you tagged, 5 placed by venue\./);
   assert.doesNotMatch(text, /\d\.\d/);
 });
 
 test('OC6: the "gets sharper" line shows at half or more derived, and not below', () => {
   const half = [...times(3, () => out('Pilsner - German')), ...times(3, () => oc('Pilsner - German', 90, { occasion: 'bar-taproom' }))];
   const a = occasionApp(half, 'out');
-  assert.match(a.ctx.occasionRationale(a.ctx.buildOccasion(half).cards[0]), /get sharper/);
+  assert.match(a.ctx.occasionRationale(a.ctx.buildOccasion(half).cards[0]), /to sharpen these/);
   const mostlyTagged = [...times(2, () => out('Pilsner - German')), ...times(4, () => oc('Pilsner - German', 90, { occasion: 'bar-taproom' }))];
   const b = occasionApp(mostlyTagged, 'out');
-  assert.doesNotMatch(b.ctx.occasionRationale(b.ctx.buildOccasion(mostlyTagged).cards[0]), /get sharper/);
+  assert.doesNotMatch(b.ctx.occasionRationale(b.ctx.buildOccasion(mostlyTagged).cards[0]), /to sharpen these/);
   const allTagged = times(5, () => oc('Pilsner - German', 90, { occasion: 'bar-taproom' }));
   const c = occasionApp(allTagged, 'out');
   assert.match(c.ctx.occasionRationale(c.ctx.buildOccasion(allTagged).cards[0]), /all tagged with an occasion/);
@@ -870,7 +870,7 @@ test('Six-way fallback cards say they are the parent side\'s picks', () => {
   const app = occasionApp(list, 'event');
   const [card] = app.ctx.buildOccasion(list).cards;
   assert.equal(card.context, 'event');
-  assert.match(app.ctx.occasionRationale(card), /^Not enough Event check-ins yet, so these are your out picks\./);
+  assert.match(app.ctx.occasionRationale(card), /^Not much logged at events yet, so these lean on everything you drink out\. .* at events\./);
 });
 
 test('Occasion card: style headline, context line, Save pill keyed to the style; suppression is per context', () => {
@@ -879,7 +879,7 @@ test('Occasion card: style headline, context line, Save pill keyed to the style;
   const app = occasionApp(list, 'out', { wishlist });
   app.ctx.generateRecs();
   const html = app.els.recResults.innerHTML;
-  assert.match(html, /rec-brewery">Out</);
+  assert.match(html, /rec-brewery">For a night out</);
   assert.match(html, /Not Interested/);
   const shownStyle = app.get('discoverShownCard').style;
   assert.deepEqual(app.shown(), [[`${shownStyle}|out`, 'occasion']]);
@@ -914,7 +914,24 @@ test('Switching mode or context clears the previous card', () => {
 test('Counts in copy get thousands separators', () => {
   const { ctx } = gridCtx();
   const g2 = { yearCount: 74, yearTotal: 2838, axis: 'sweetness', end: 'high', rated: 3 };
-  assert.match(ctx.gapRationale(g2), /^Only 74 of your 2,838 check-ins this past year land here\./);
+  assert.match(ctx.gapRationale(g2), /^Just 74 of your 2,838 check-ins this past year went this way\./);
+});
+
+test('Copy: every zone that should speak does — a render error would drop its sentence silently', () => {
+  const { ctx } = gridCtx();
+  const gap = { yearCount: 3, yearTotal: 90, axis: 'carbonation', end: 'high', rated: 1 };
+  assert.equal(ctx.gapRationale(gap).split('. ').length, 3);
+  assert.match(ctx.gapRationale(gap), /turn up the sparkle/);
+  assert.match(ctx.gapRationale({ ...gap, axis: 'alcohol', end: 'low' }), /dial the strength down/);
+  const occ = { style: 'Kölsch', context: 'traveling', label: 'Traveling', parent: 'out', fallback: true, rated: 6, stated: 2,
+    result: { source: 'direct', predictedAffinity: 4, contributors: [] } };
+  assert.equal(ctx.occasionRationale(occ),
+    "Not much logged on the road yet, so these lean on everything you drink out. You've liked this one before when you're out. Based on 6 rated check-ins: 2 you tagged, 4 placed by venue. Tag the occasion when you check in to sharpen these.");
+  assert.equal(ctx.occasionFor(occ), 'For Traveling');
+  assert.equal(ctx.likedBefore('at home'), 'at home before');
+  const br = { topCount: 7, famTotal: 9, topFamily: 'Hazy IPA', suggestions: [{ family: 'Stout' }] };
+  assert.equal(ctx.breweryRationale(br), "7 of your 9 check-ins here are Hazy IPA. You love Stout elsewhere, so it's worth asking if they pour one.");
+  assert.equal(ctx.rediscoveryRationale({ imported: false, lastLogged: '2025-03-14T20:00' }), "You rated it Definitely last time. You haven't had one since March 2025.");
 });
 
 // ── §9 battery: cross-mode guards ──────────────────────────────
@@ -935,7 +952,7 @@ test('D1: no copy candidate in any Discover registry leaks a raw 0–100 rating'
     BREWERY_COPY: ctx.breweryGaps(list),
   };
   vm.runInContext("discoverContext = 'out'", ctx);
-  const occ = ctx.buildOccasion(list).cards.map(c => ({ ...c, place: ctx.occasionPlace(c.context, c.label), cites: ['Lager - Helles'], derived: c.rated - c.stated }));
+  const occ = ctx.buildOccasion(list).cards.map(c => ({ ...c, place: ctx.occasionPlace(c.context), cites: ['Lager - Helles'], derived: c.rated - c.stated }));
   cards.OCCASION_COPY = [...occ, ...occ.map(c => ({ ...c, fallback: true, result: { ...c.result, source: 'direct' } }))];
   let rendered = 0;
   Object.entries(cards).forEach(([reg, cs]) => {

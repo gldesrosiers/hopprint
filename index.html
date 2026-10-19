@@ -1236,7 +1236,7 @@ body.first-sync .first-sync-hint { display: block; }
   <div id="discoverLocked"></div>
 
   <div class="discover-step">
-    <div class="discover-step-title">What kind of recommendation?</div>
+    <div class="discover-step-title">What are you in the mood for?</div>
     <div class="mode-grid" id="modeGrid"></div>
     <div id="discoverOptions"></div>
   </div>
@@ -1580,17 +1580,17 @@ const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','
 // A mode without build() isn't implemented yet and stays gated.
 const DISC_NOT_BUILT = () => ({ open: false, reason: 'Not built yet' });
 const DISC_MODES = [
-  { id:'gaps', iconName:'mode-branch-out', name:'Branch Out', desc:'Flavor directions you haven\'t explored',
+  { id:'gaps', iconName:'mode-branch-out', name:'Branch Out', desc:'One step off your usual',
     gate: gapsGate, build: buildGaps, renderCard: renderGapCard,
     suppressionKey: g => g.key, wishItem: (g, i) => ({ name: g.picks[i].style, brewery: '', style: g.picks[i].style }) },
-  { id:'occasion', iconName:'mode-occasion', name:'Occasion', desc:'Picks for home or out',
+  { id:'occasion', iconName:'mode-occasion', name:'Occasion', desc:'The right pick for where you are',
     gate: occasionGate, build: buildOccasion, renderCard: renderOccasionCard,
     suppressionKey: c => `${c.style}|${c.context}`, wishItem: c => ({ name: c.style, brewery: '', style: c.style }),
     renderOptions: renderOccasionOptions, precheck: occasionPrecheck },
-  { id:'brewery', iconName:'mode-brewery', name:'Same Brewery, New Style', desc:'More from breweries you love',
+  { id:'brewery', iconName:'mode-brewery', name:'Same Brewery, New Style', desc:'Something new from a favorite',
     gate: breweryGapsGate, build: buildBreweryGaps, renderCard: renderBreweryGapCard,
     suppressionKey: b => b.key, wishItem: (b, i) => ({ name: b.suggestions[i].family, brewery: b.brewery, style: '' }) },
-  { id:'rediscovery', iconName:'mode-rediscovery', name:'Rediscovery', desc:'Old favorites worth another round',
+  { id:'rediscovery', iconName:'mode-rediscovery', name:'Rediscovery', desc:'An old favorite, due another round',
     gate: rediscoveryGate, build: buildRediscovery, renderCard: renderRediscoveryCard,
     suppressionKey: c => c.key, wishItem: c => ({ name: c.name, brewery: c.brewery, style: c.style }),
     actions: rediscoveryActions, notInterested: false },
@@ -2306,7 +2306,7 @@ function rediscoveryStyleTag(rawStyle) {
 function rediscoveryGate(entriesList) {
   return rediscoveryCandidates(entriesList).length
     ? { open: true, reason: '' }
-    : { open: false, reason: 'Needs a beer you rated Definitely and haven\'t logged in a year' };
+    : { open: false, reason: 'Unlocks when a beer you loved hasn\'t been in your glass for a year' };
 }
 
 function buildRediscovery(entriesList) {
@@ -2324,10 +2324,10 @@ const REDISCOVERY_ZONES = ['reason', 'when'];
 const REDISCOVERY_COPY = [
   { id: 'rd_definitely', zone: 'reason', priority: 10,
     condition: () => true,
-    render: c => `your last rating was Definitely${c.imported ? ' (imported)' : ''}` },
+    render: c => (c.imported ? `you rated it Definitely back on Untappd` : `you rated it Definitely last time`) },
   { id: 'rd_last_logged', zone: 'when', priority: 10,
     condition: c => Number.isFinite(new Date(c.lastLogged).getTime()),
-    render: c => `last logged ${new Date(c.lastLogged).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}` },
+    render: c => `you haven't had one since ${new Date(c.lastLogged).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}` },
 ];
 function rediscoveryRationale(c) {
   return discoverRationale(REDISCOVERY_COPY, REDISCOVERY_ZONES, c);
@@ -2469,8 +2469,8 @@ function dimensionGaps(entriesList) {
 
 function gapsGate(entriesList) {
   const { gaps, matchedStyles } = dimensionGaps(entriesList);
-  if (matchedStyles < GAP_MIN_STYLES) return { open: false, reason: `Needs ${GAP_MIN_STYLES} different styles logged` };
-  return gaps.length ? { open: true, reason: '' } : { open: false, reason: "You've explored every flavor direction" };
+  if (matchedStyles < GAP_MIN_STYLES) return { open: false, reason: `Log ${GAP_MIN_STYLES} different styles to unlock` };
+  return gaps.length ? { open: true, reason: '' } : { open: false, reason: "You've been all over the map lately. Check back soon" };
 }
 
 function buildGaps(entriesList) {
@@ -2482,19 +2482,26 @@ function buildGaps(entriesList) {
 // Counts, never scores (D1). DG5: says what changes and what stays;
 // DG6: admits it can't rule out a dislike on thin ratings.
 const GAP_ZONES = ['coverage', 'change', 'caution'];
+const GAP_AXIS_WORDS = {
+  bitterness: 'bitterness', sweetness: 'sweetness', roast: 'roast', body: 'body',
+  fruit: 'fruit', carbonation: 'sparkle', alcohol: 'strength', haze: 'haze',
+};
 const GAP_COPY = [
   { id: 'gp_coverage_year', zone: 'coverage', priority: 20,
     condition: g => g.yearTotal > 0,
-    render: g => `only ${g.yearCount.toLocaleString()} of your ${g.yearTotal.toLocaleString()} check-ins this past year land here` },
+    render: g => `just ${g.yearCount.toLocaleString()} of your ${g.yearTotal.toLocaleString()} check-ins this past year went this way` },
   { id: 'gp_coverage_lately', zone: 'coverage', priority: 10,
     condition: () => true,
-    render: () => `not much of your drinking has landed here lately` },
-  { id: 'gp_change', zone: 'change', priority: 10,
+    render: () => `not much of your drinking has gone this way lately` },
+  { id: 'gp_change_down', zone: 'change', priority: 20,
+    condition: g => g.end === 'low',
+    render: () => `these dial the strength down and keep the rest close to your usual` },
+  { id: 'gp_change_up', zone: 'change', priority: 10,
     condition: () => true,
-    render: g => `these move ${g.axis} ${g.end === 'high' ? 'up' : 'down'} and stay close to your usual on everything else` },
+    render: g => `these turn up the ${GAP_AXIS_WORDS[g.axis]} and keep the rest close to your usual` },
   { id: 'gp_cant_rule_out', zone: 'caution', priority: 10,
     condition: g => g.rated < GAP_DISLIKE_MIN_RATED,
-    render: () => `you haven't rated enough here yet to rule out a dislike` },
+    render: () => `fair warning: you haven't rated much here, so it may not be your thing` },
 ];
 function gapRationale(g) {
   return discoverRationale(GAP_COPY, GAP_ZONES, g);
@@ -2593,7 +2600,7 @@ function breweryGaps(entriesList, now = Date.now()) {
 function breweryGapsGate(entriesList) {
   return breweryGaps(entriesList).length
     ? { open: true, reason: '' }
-    : { open: false, reason: 'Needs a favorite brewery you mostly drink one style from' };
+    : { open: false, reason: 'Unlocks when you have a go-to brewery and a go-to style there' };
 }
 
 function buildBreweryGaps(entriesList) {
@@ -2605,12 +2612,15 @@ function buildBreweryGaps(entriesList) {
 // family (BG1).
 const BREWERY_ZONES = ['pattern', 'suggest'];
 const BREWERY_COPY = [
+  { id: 'br_all', zone: 'pattern', priority: 20,
+    condition: b => b.topCount === b.famTotal,
+    render: b => `all ${b.famTotal.toLocaleString()} of your check-ins here are ${esc(b.topFamily)}` },
   { id: 'br_mostly', zone: 'pattern', priority: 10,
     condition: () => true,
     render: b => `${b.topCount.toLocaleString()} of your ${b.famTotal.toLocaleString()} check-ins here are ${esc(b.topFamily)}` },
   { id: 'br_loved_elsewhere', zone: 'suggest', priority: 10,
     condition: b => b.suggestions.length > 0,
-    render: b => `you rate ${b.suggestions.map(x => esc(x.family)).join(' and ')} well at other breweries — worth seeing if they pour one` },
+    render: b => `you love ${b.suggestions.map(x => esc(x.family)).join(' and ')} elsewhere, so it's worth asking if they pour one` },
 ];
 function breweryRationale(b) {
   return discoverRationale(BREWERY_COPY, BREWERY_ZONES, b);
@@ -2622,7 +2632,7 @@ function renderBreweryGapCard(b) {
   return `<div class="rec-top">
       <div>
         <div class="rec-name">${esc(b.brewery)}</div>
-        <div class="rec-brewery">Mostly ${esc(b.topFamily)} so far</div>
+        <div class="rec-brewery">You mostly drink their ${esc(b.topFamily)}</div>
       </div>
     </div>
     <div class="gap-styles">${rows}
@@ -2691,7 +2701,7 @@ function occasionGate(entriesList) {
   const { sides } = occasionContexts(entriesList);
   return Object.values(sides).some(s => s.entries.length >= OCCASION_MIN_RATED)
     ? { open: true, reason: '' }
-    : { open: false, reason: `Needs ${OCCASION_MIN_RATED} rated check-ins at home or out` };
+    : { open: false, reason: `Rate ${OCCASION_MIN_RATED} beers at home or out to unlock` };
 }
 
 function renderOccasionOptions(entriesList) {
@@ -2701,7 +2711,7 @@ function renderOccasionOptions(entriesList) {
     <div class="occ-pill${!o.open ? ' gated' : discoverContext === o.id ? ' sel' : ''}" onclick="selectDiscoverContext('${o.id}')"${o.open ? '' : ' aria-disabled="true"'}>
       <span class="occ-icon">${icon(o.iconName, 15, 2.2)}</span>${o.label}
     </div>`).join('');
-  const note = opts.some(o => !o.open) ? `<div class="mode-reason">Greyed options need ${OCCASION_MIN_RATED} rated check-ins.</div>` : '';
+  const note = opts.some(o => !o.open) ? `<div class="mode-reason">Rate ${OCCASION_MIN_RATED} beers in a setting to unlock it.</div>` : '';
   return `<div class="discover-step-title discover-sub-title">Where are you?</div><div class="occasion-grid">${pills}</div>${note}`;
 }
 
@@ -2741,51 +2751,66 @@ function buildOccasion(entriesList) {
 
 // Bands and counts, never scores (D1); cites only recommendable styles
 // (OF3); says which signal was used (OC2/OC4/OC6).
-function occasionPlace(context, label) {
-  if (context === 'home') return 'at home';
-  if (context === 'out') return "when you're out";
-  return `for ${label}`;
+// Where-phrases per context, written to read in "which you rate well …",
+// "you've liked this one …" and "what you like …".
+const OCCASION_PLACES = {
+  home: 'at home', out: "when you're out",
+  'home-solo': 'on solo nights in', 'home-social': 'with friends at home', 'bar-taproom': 'at bars and taprooms',
+  event: 'at events', dining: 'when dining out', traveling: 'on the road',
+};
+function occasionPlace(context) {
+  return OCCASION_PLACES[context] || '';
+}
+// Card subtitle: the setting the picks are for.
+function occasionFor(c) {
+  if (c.context === 'home') return 'For home';
+  if (c.context === 'out') return 'For a night out';
+  return `For ${c.label}`;
+}
+// "you've liked this one at home before" / "…before when you're out"
+function likedBefore(place) {
+  return place.startsWith('when ') ? `before ${place}` : `${place} before`;
 }
 const OCCASION_ZONES = ['fallback', 'reason', 'provenance', 'nudge'];
 const OCCASION_COPY = [
   { id: 'oc_fallback', zone: 'fallback', priority: 10,
     condition: c => c.fallback,
-    render: c => `not enough ${esc(c.label)} check-ins yet, so these are your ${c.parent} picks` },
+    render: c => `not much logged ${occasionPlace(c.context)} yet, so these lean on everything you drink ${c.parent === 'home' ? 'at home' : 'out'}` },
   { id: 'oc_direct', zone: 'reason', priority: 30,
     condition: c => c.result.source === 'direct',
-    render: c => `you rate this well ${esc(c.fallback ? occasionPlace(c.parent) : c.place)}` },
+    render: c => `you've liked this one ${likedBefore(c.fallback ? occasionPlace(c.parent) : c.place)}` },
   { id: 'oc_neighbours', zone: 'reason', priority: 20,
     condition: c => c.cites.length > 0,
     render: c => `close to ${c.cites.map(esc).join(' and ')}, which you rate well ${esc(c.place)}` },
   { id: 'oc_fits', zone: 'reason', priority: 10,
     condition: () => true,
-    render: c => `fits what you like ${esc(c.place)}` },
+    render: c => `right in line with what you like ${c.place}` },
   { id: 'oc_all_tagged', zone: 'provenance', priority: 30,
     condition: c => c.derived === 0,
-    render: c => `based on ${c.rated.toLocaleString()} rated check-ins (all tagged with an occasion)` },
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins, all tagged with an occasion` },
   { id: 'oc_all_venue', zone: 'provenance', priority: 20,
     condition: c => c.stated === 0,
-    render: c => `based on ${c.rated.toLocaleString()} rated check-ins (occasion worked out from the venue)` },
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins, all placed by venue` },
   { id: 'oc_mixed', zone: 'provenance', priority: 10,
     condition: () => true,
-    render: c => `based on ${c.rated.toLocaleString()} rated check-ins (${c.stated.toLocaleString()} tagged, ${c.derived.toLocaleString()} worked out from the venue)` },
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins: ${c.stated.toLocaleString()} you tagged, ${c.derived.toLocaleString()} placed by venue` },
   { id: 'oc_gets_sharper', zone: 'nudge', priority: 10,
     condition: c => c.derived / c.rated >= OCCASION_SMARTER_SHARE,
-    render: () => `tag the occasion when you check in and these get sharper` },
+    render: () => `tag the occasion when you check in to sharpen these` },
 ];
 function occasionRationale(c) {
   const cites = c.result.source === 'direct' ? [] : c.result.contributors
     .filter(x => x.affinity >= POSITIVE_AFFINITY_THRESHOLD && isRecommendableStyle(x.style))
     .slice(0, 2).map(x => x.style);
   return discoverRationale(OCCASION_COPY, OCCASION_ZONES,
-    { ...c, place: occasionPlace(c.context, c.label), cites, derived: c.rated - c.stated });
+    { ...c, place: occasionPlace(c.context), cites, derived: c.rated - c.stated });
 }
 
 function renderOccasionCard(c) {
   return `<div class="rec-top">
       <div>
         <div class="rec-name">${esc(c.style)}</div>
-        <div class="rec-brewery">${esc(c.label)}</div>
+        <div class="rec-brewery">${esc(occasionFor(c))}</div>
       </div>
       ${recSaveButton({ name: c.style, brewery: '' })}
     </div>
@@ -6145,7 +6170,7 @@ function buildModeGrid() {
   }).join('');
   const allGated = DISC_MODES.every(m => !gates[m.id].open);
   document.getElementById('discoverLocked').innerHTML = allGated
-    ? `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Discover opens up as your history grows. Each mode below says what it needs.</p></div>`
+    ? `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Discover grows with your log. Each card shows what it needs to unlock.</p></div>`
     : '';
   document.getElementById('discoverGo').disabled = allGated;
   renderDiscoverOptions();
