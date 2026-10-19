@@ -153,7 +153,7 @@ function statsApp(src, entries, { year = 'all' } = {}) {
     localStorage: { setItem() {} },
     // What a pull or a tab switch touches outside Stats.
     buildLiveLists: stub('buildLiveLists'), updateHeaderMeta: stub('updateHeaderMeta'),
-    enterDiscover: stub('enterDiscover'), renderWishlist: stub('renderWishlist'), enterProfile: stub('enterProfile'), refreshProfile: stub('refreshProfile'),
+    enterDiscover: stub('enterDiscover'), renderWishlist: stub('renderWishlist'), buildModeGrid: stub('buildModeGrid'), enterProfile: stub('enterProfile'), refreshProfile: stub('refreshProfile'),
     enterHistory: stub('enterHistory'), refreshHistory: stub('refreshHistory'),
   });
   const code = resolved.get(src) || [];

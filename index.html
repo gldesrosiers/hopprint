@@ -2146,8 +2146,10 @@ function retireShownBeer() {
   if (!c) return;
   const list = loadRetired();
   if (!list.some(r => r.key === c.key)) {
-    list.push({ id: newId(), key: c.key, beer_name: c.name, brewery_name: c.brewery, retired_at: new Date().toISOString() });
+    const row = { id: newId(), key: c.key, beer_name: c.name, brewery_name: c.brewery, retired_at: new Date().toISOString() };
+    list.push(row);
     saveRetired(list);
+    queueSync('rediscovery_retired', row.id, 'upsert', true);
   }
   showToast('Retired from Rediscovery', 'success');
   renderNextRec();
@@ -6336,6 +6338,30 @@ function shapeWishlistRow(w, userId) {
   };
 }
 
+// RD4: Rediscovery retirements. The local key is derived, not stored, so a
+// change to stubBeerKey can't strand old rows.
+function shapeRetiredRow(r, userId) {
+  if (!r || !r.beer_name) return null;
+  return {
+    id: r.id,
+    user_id: userId,
+    beer_name: r.beer_name,
+    brewery_name: r.brewery_name || null,
+    retired_at: r.retired_at || new Date().toISOString(),
+  };
+}
+
+// Synced tables in upload/pull order, and where each lives locally.
+const SYNC_TABLES = ['check_ins', 'wishlist', 'rediscovery_retired'];
+function syncLocalRows(table) {
+  if (table === 'check_ins') return entries;
+  if (table === 'wishlist') return wishlist;
+  return loadRetired();
+}
+function syncShapeFor(table) {
+  return { check_ins: shapeCheckInRow, wishlist: shapeWishlistRow, rediscovery_retired: shapeRetiredRow }[table];
+}
+
 // Stop the whole flush (vs. skipping one bad row): no network, or the
 // session is no longer accepted.
 function isStopError(err) {
@@ -6401,7 +6427,7 @@ async function flushPending() {
   syncing = true;
   updateSyncPill();
   try {
-    for (const table of ['check_ins', 'wishlist']) {
+    for (const table of SYNC_TABLES) {
       const res = await flushTable(table, mine.filter(o => o.table === table), uid);
       if (res.stopped) { stopped = true; break; }
     }
@@ -6418,8 +6444,8 @@ async function flushPending() {
 }
 
 async function flushTable(table, ops, uid) {
-  const src = table === 'check_ins' ? entries : wishlist;
-  const shape = table === 'check_ins' ? shapeCheckInRow : shapeWishlistRow;
+  const src = syncLocalRows(table);
+  const shape = syncShapeFor(table);
   const byId = new Map(src.map(r => [r.id, r]));
   const done = op => {
     const key = pendingKey(op.table, op.id);
@@ -6538,6 +6564,11 @@ function wishFromRow(r) {
   return { id: r.id, name: r.beer_name, brewery: r.brewery_name ?? '', style: r.beer_type ?? '', added: r.added_at };
 }
 
+function retiredFromRow(r) {
+  const brewery_name = r.brewery_name ?? '';
+  return { id: r.id, key: stubBeerKey({ beer_name: r.beer_name, brewery_name }), beer_name: r.beer_name, brewery_name, retired_at: r.retired_at };
+}
+
 // SY6 "pending wins": a row with a queued local write keeps the local copy.
 function mergePulled(local, rows, table, pending, fromRow) {
   const out = local.slice();
@@ -6621,6 +6652,7 @@ async function pullChanges(opts = {}) {
   const tables = [
     { table: 'check_ins', fromRow: checkInFromRow },
     { table: 'wishlist', fromRow: wishFromRow },
+    { table: 'rediscovery_retired', fromRow: retiredFromRow },
   ];
 
   pulling = true;
@@ -6646,7 +6678,7 @@ async function pullChanges(opts = {}) {
 
     // Everything fetched — merge synchronously against the current cache.
     tables.forEach(t => {
-      const current = t.table === 'check_ins' ? entries : wishlist;
+      const current = syncLocalRows(t.table);
       const merged = mergePulled(current, t.rows, t.table, pendingOps, t.fromRow);
       let list = merged.list, n = merged.changed;
       if (t.ids) { const pruned = pruneMissing(list, t.ids, t.table, pendingOps); list = pruned.list; n += pruned.removed; }
@@ -6656,9 +6688,11 @@ async function pullChanges(opts = {}) {
       if (t.table === 'check_ins') {
         entries = list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         save();
-      } else {
+      } else if (t.table === 'wishlist') {
         wishlist = list.sort((a, b) => String(a.added).localeCompare(String(b.added)));
         localStorage.setItem('hopprint_wishlist', JSON.stringify(wishlist));
+      } else {
+        saveRetired(list.sort((a, b) => String(a.retired_at).localeCompare(String(b.retired_at))));
       }
     });
     if (idCheckDue) st.lastIdCheck = today;
@@ -6681,6 +6715,7 @@ function refreshAfterPull() {
   if (currentTab === 'history') refreshHistory();
   else if (currentTab === 'analytics') refreshAnalytics();
   else if (currentTab === 'profile') refreshProfile();
+  else if (currentTab === 'discover') buildModeGrid();   // DS4: pulled rows can open or close a gate
 }
 
 // Part 2 "App open": upload what's pending, then pull. Also run on the
@@ -6769,10 +6804,10 @@ function preSyncMessage(nCheckIns, nWishes) {
 
 // Resolves when the person taps Continue (right away if nothing would drop).
 function confirmDropUnsyncedLocal(tables) {
+  // Retirements are only made while signed in, so none predate sign-in.
   const byTable = {};
-  tables.forEach(t => {
-    const current = t.table === 'check_ins' ? entries : wishlist;
-    byTable[t.table] = rowsMissingFromServer(current, t.ids, t.table, pendingOps);
+  tables.filter(t => t.table === 'check_ins' || t.table === 'wishlist').forEach(t => {
+    byTable[t.table] = rowsMissingFromServer(syncLocalRows(t.table), t.ids, t.table, pendingOps);
   });
   const nCheckIns = byTable.check_ins.length, nWishes = byTable.wishlist.length;
   if (!nCheckIns && !nWishes) return Promise.resolve();

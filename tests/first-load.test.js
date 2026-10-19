@@ -48,10 +48,10 @@ function makeApp({ uid = 'u', owner = 'u', syncState, entries = [], wishlist = [
   vm.createContext(ctx);
   vm.runInContext([
     extractConst('PROFILE_OK_KEY'), extractConst('CACHE_OWNER_KEY'), extractConst('SYNC_STATE_KEY'),
-    extractConst('FIRST_SYNC_RETRY_MAX_MS'),
+    extractConst('FIRST_SYNC_RETRY_MAX_MS'), extractConst('REDISCOVERY_RETIRED_KEY'),
     ...['currentUserId', 'syncPaused', 'loadSyncState', 'pendingKey', 'firstPullDone', 'firstSyncPending',
         'enterFirstSyncMode', 'setFirstSyncNote', 'afterSyncAttempt', 'maybeShowWelcome', 'rowsMissingFromServer',
-        'preSyncMessage', 'confirmDropUnsyncedLocal', 'exportPreSync', 'continuePreSync'].map(extractFunction),
+        'preSyncMessage', 'confirmDropUnsyncedLocal', 'exportPreSync', 'continuePreSync', 'syncLocalRows', 'loadRetired'].map(extractFunction),
     'var authUser, entries, wishlist, pendingOps = {}, firstSyncRetryMs = 5000, firstSyncTimer = null, preSyncRows = null, preSyncResolve = null;',
     'function refreshAfterPull() { calls.refresh++; }',
     'function syncNow() {}',
@@ -170,6 +170,14 @@ test('preSyncMessage: counts and plurals', () => {
 test('pre-sync prompt: nothing to drop → no modal, resolves at once', async () => {
   const s = makeApp({ entries: [{ id: 'a' }] });
   await s.confirmDropUnsyncedLocal([{ table: 'check_ins', ids: new Set(['a']) }, { table: 'wishlist', ids: new Set() }]);
+  assert.equal(s.document.byId.preSyncModal._c.has('open'), false);
+});
+
+test('pre-sync prompt: the retired table rides along in the pull but never counts toward the prompt (RD4)', async () => {
+  const s = makeApp({ entries: [{ id: 'a' }], store: { hopprint_rediscovery_retired: JSON.stringify([{ id: 'r-local', beer_name: 'Arthur' }]) } });
+  await s.confirmDropUnsyncedLocal([
+    { table: 'check_ins', ids: new Set(['a']) }, { table: 'wishlist', ids: new Set() }, { table: 'rediscovery_retired', ids: new Set() },
+  ]);
   assert.equal(s.document.byId.preSyncModal._c.has('open'), false);
 });
 

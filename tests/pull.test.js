@@ -20,9 +20,10 @@ const FUNCTIONS = [
   'flushPending', 'flushTable', 'savePendingOps', 'loadPendingOps', 'updateSyncPill',
   'loadSyncState', 'saveSyncState', 'localDateKey', 'normalizeVenue', 'checkInFromRow', 'wishFromRow', 'mergePulled',
   'pruneMissing', 'pullTable', 'fetchServerIds', 'takeOverCache', 'pullChanges', 'syncNow',
+  'shapeRetiredRow', 'syncLocalRows', 'syncShapeFor', 'loadRetired', 'saveRetired', 'retiredFromRow', 'stubBeerKey',
 ];
 const CONSTS = ['PROFILE_OK_KEY', 'PENDING_KEY', 'CACHE_OWNER_KEY', 'UPSERT_CHUNK', 'DELETE_CHUNK',
-  'FLUSH_DEBOUNCE_MS', 'SYNC_STATE_KEY', 'PULL_PAGE', 'HOME_VENUE', 'UNTAPPD_HOME'];
+  'FLUSH_DEBOUNCE_MS', 'SYNC_STATE_KEY', 'PULL_PAGE', 'HOME_VENUE', 'UNTAPPD_HOME', 'SYNC_TABLES', 'REDISCOVERY_RETIRED_KEY'];
 
 // ── In-memory PostgREST stand-in ────────────────────────────────
 // Understands exactly the filters the app sends. Rows are the server truth;
@@ -267,7 +268,41 @@ test('second pull only asks for changes since the bookmark; id check once a day 
   assert.equal(server.calls.filter(c => c.cols === 'id').length, 0); // id check already done today
   server.calls.length = 0;
   await s.pullChanges({ forceIdCheck: true });                     // Sync Now
-  assert.equal(server.calls.filter(c => c.cols === 'id').length, 2); // check_ins + wishlist
+  assert.equal(server.calls.filter(c => c.cols === 'id').length, 3); // check_ins + wishlist + rediscovery_retired
+});
+
+test('RD4: retirements pull into local storage with a derived key, and survive as Rediscovery exclusions', async () => {
+  const row = { id: uuid(), user_id: 'u', beer_name: 'Arthur', brewery_name: 'Hill  Farmstead', retired_at: '2026-10-01T00:00:00+00:00', updated_at: '2026-10-01T00:00:00.000001+00:00' };
+  const server = fakeServer({ check_ins: [], wishlist: [], rediscovery_retired: [row] });
+  const s = makeApp({ uid: 'u', owner: 'u', server });
+  await s.pullChanges();
+  const local = s.loadRetired();
+  assert.equal(local.length, 1);
+  assert.equal(local[0].key, 'arthur|hill farmstead');
+  assert.equal(s.refreshCount, 1);
+});
+
+test('RD4: a retirement made on this device round-trips once', async () => {
+  const server = fakeServer({ check_ins: [], wishlist: [], rediscovery_retired: [] });
+  const s = makeApp({ uid: 'u', owner: 'u', server });
+  await s.pullChanges();
+  const r = { id: uuid(), key: 'arthur|hill farmstead', beer_name: 'Arthur', brewery_name: 'Hill Farmstead', retired_at: '2026-10-19T12:00:00.000Z' };
+  s.saveRetired([r]);
+  s.queueSync('rediscovery_retired', r.id, 'upsert', true);
+  await s.syncNow();
+  assert.equal(server.tables.rediscovery_retired.length, 1);
+  assert.equal(server.tables.rediscovery_retired[0].user_id, 'u');
+  assert.equal(s.loadRetired().length, 1);
+});
+
+test('RD4: a retirement removed on the server disappears at the next id check', async () => {
+  const row = { id: uuid(), user_id: 'u', beer_name: 'Arthur', brewery_name: null, retired_at: 't', updated_at: '2026-10-01T00:00:00.000001+00:00' };
+  const server = fakeServer({ check_ins: [], wishlist: [], rediscovery_retired: [row] });
+  const s = makeApp({ uid: 'u', owner: 'u', server });
+  await s.pullChanges();
+  server.tables.rediscovery_retired = [];
+  await s.pullChanges({ forceIdCheck: true });
+  assert.equal(s.loadRetired().length, 0);
 });
 
 test('a check-in deleted on another device disappears at the next id check (SY2)', async () => {

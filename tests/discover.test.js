@@ -381,6 +381,7 @@ test('RD4: Yes retires the beer permanently — it survives a reload and never c
   const shownName = shown.name;
   app.ctx.retireShownBeer();
   assert.equal(app.ctx.loadRetired().length, 1);
+  assert.deepEqual(app.queued.map(q => [...q]), [['rediscovery_retired', app.ctx.loadRetired()[0].id, 'upsert', true]]);
   app.ctx.discoverShownCard = shown;
   vm.runInContext('discoverShownCard = globalThis.discoverShownCard', app.ctx);
   app.ctx.retireShownBeer();   // the same beer again doesn't duplicate

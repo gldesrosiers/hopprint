@@ -18,8 +18,10 @@ const SYNC_FUNCTIONS = [
   'shapeCheckInRow', 'shapeWishlistRow', 'isStopError', 'currentUserId', 'claimCacheOwner',
   'syncPaused', 'queueSync', 'queueSyncMany', 'myPendingCount', 'flushPending', 'flushTable',
   'savePendingOps', 'loadPendingOps', 'updateSyncPill',
+  'shapeRetiredRow', 'syncLocalRows', 'syncShapeFor', 'loadRetired',
 ];
-const SYNC_CONSTS = ['PROFILE_OK_KEY', 'PENDING_KEY', 'CACHE_OWNER_KEY', 'UPSERT_CHUNK', 'DELETE_CHUNK', 'FLUSH_DEBOUNCE_MS'];
+const SYNC_CONSTS = ['PROFILE_OK_KEY', 'PENDING_KEY', 'CACHE_OWNER_KEY', 'UPSERT_CHUNK', 'DELETE_CHUNK', 'FLUSH_DEBOUNCE_MS',
+  'SYNC_TABLES', 'REDISCOVERY_RETIRED_KEY'];
 
 // A fake supabase client. `plan(table, kind, payload)` returns { error } or
 // a promise of one; every call is recorded.
@@ -272,6 +274,27 @@ test('flush: wish list rows upload with the table field names', async () => {
   await s.flushPending();
   assert.equal(sb.calls[0].table, 'wishlist');
   assert.equal(sb.calls[0].rows[0].beer_name, 'Pliny');
+});
+
+test('RD4: shapeRetiredRow maps a retirement to the table (no local key column)', () => {
+  const s = makeSync();
+  const id = uuid();
+  const row = s.shapeRetiredRow({ id, key: 'arthur|hill farmstead', beer_name: 'Arthur', brewery_name: '', retired_at: '2026-10-19T12:00:00.000Z' }, 'u1');
+  assert.deepEqual({ ...row }, { id, user_id: 'u1', beer_name: 'Arthur', brewery_name: null, retired_at: '2026-10-19T12:00:00.000Z' });
+  assert.equal(s.shapeRetiredRow({ id, beer_name: '' }, 'u1'), null);
+});
+
+test('RD4: a queued retirement uploads to rediscovery_retired, after check-ins and wish list', async () => {
+  const r = { id: uuid(), key: 'arthur|hill farmstead', beer_name: 'Arthur', brewery_name: 'Hill Farmstead', retired_at: '2026-10-19T12:00:00.000Z' };
+  const w = { id: uuid(), name: 'Pliny', brewery: 'Russian River', style: 'IPA', added: '2026-09-01T00:00:00.000Z' };
+  const sb = fakeSb();
+  const s = makeSync({ owner: 'user-a', wishlist: [w], sb, store: { hopprint_rediscovery_retired: JSON.stringify([r]) } });
+  s.queueSync('rediscovery_retired', r.id, 'upsert', true);
+  s.queueSync('wishlist', w.id, 'upsert', true);
+  await s.flushPending();
+  assert.deepEqual(sb.calls.map(c => c.table), ['wishlist', 'rediscovery_retired']);
+  assert.equal(sb.calls[1].rows[0].beer_name, 'Arthur');
+  assert.equal(s.myPendingCount(), 0);
 });
 
 test('owner guard: first account claims the cache; another account is paused and uploads nothing', async () => {
