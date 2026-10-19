@@ -993,6 +993,21 @@ test('Rediscovery is unaffected by the non-recommendable filter, end to end', ()
   assert.doesNotMatch(els.recResults.innerHTML, /etag style/);
 });
 
+test('Mode names and icons are the final set; every icon resolves, and the app matches design/icons/icons.js', () => {
+  const fs = require('fs');
+  const { html } = require('./helpers');
+  const { get } = gridCtx();
+  assert.deepEqual([...get('DISC_MODES').map(m => [m.name, m.iconName])], [
+    ['Branch Out', 'mode-branch-out'], ['Occasion', 'mode-occasion'],
+    ['Same Brewery, New Style', 'mode-brewery'], ['Rediscovery', 'mode-rediscovery'],
+  ]);
+  const grab = src => src.slice(src.indexOf('const ICON_PATHS = {'), src.indexOf('};', src.indexOf('const ICON_PATHS = {')) + 2);
+  const app = grab(html);
+  assert.equal(app, grab(fs.readFileSync(require('path').join(__dirname, '..', 'design', 'icons', 'icons.js'), 'utf8')));
+  get('DISC_MODES').forEach(m => assert.match(app, new RegExp(`'${m.iconName}':`), m.iconName));
+  ['mode-wheelhouse', 'mode-adjacent', 'mode-random'].forEach(k => assert.doesNotMatch(app, new RegExp(`'${k}':`), k));
+});
+
 // ── Scorer weights (proximity_engine.js) ───────────────────────
 
 test('The engine script tag carries a cache-busting version (a stale engine has no occasion weights)', () => {
