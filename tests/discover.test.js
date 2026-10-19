@@ -198,7 +198,7 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
       'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard',
       'computeHopprint', 'inGapRegion', 'dimensionGaps', 'gapsGate', 'buildGaps', 'gapRationale', 'renderGapCard',
       'breweryKeyOf', 'familyOf', 'familyAffinity', 'breweryGaps', 'breweryGapsGate', 'buildBreweryGaps', 'breweryRationale',
-      'renderBreweryGapCard', 'rediscoveryStyleTag', 'selectCopy', 'discoverRationale', 'nearestContributor'].map(extractFunction),
+      'renderBreweryGapCard', 'rediscoveryStyleTag', 'selectCopy', 'discoverRationale', 'nearestContributor', 'clearDiscoverResults'].map(extractFunction),
   ].join('\n'), ctx);
   const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
   return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
@@ -862,6 +862,26 @@ test('Separate keys: a pick hidden under Out can still show under a fallback occ
   assert.equal(app.ctx.buildOccasion(list).cards[0].style, first);
 });
 
+test('Switching mode or context clears the previous card', () => {
+  const list = [...times(6, () => out('Pilsner - German', 95)), ...times(6, () => home('Stout - American', 95)), ci('Old Love', 400, 90)];
+  const app = occasionApp(list, 'out');
+  app.ctx.generateRecs();
+  assert.match(app.els.recResults.innerHTML, /rec-card/);
+  app.ctx.selectDiscoverContext('home');
+  assert.equal(app.els.recResults.innerHTML, '');
+  assert.equal(app.get('discoverQueue').length, 0);
+  app.ctx.generateRecs();
+  assert.match(app.els.recResults.innerHTML, /rec-card/);
+  app.ctx.selectMode('rediscovery');
+  assert.equal(app.els.recResults.innerHTML, '');
+});
+
+test('Counts in copy get thousands separators', () => {
+  const { ctx } = gridCtx();
+  const g2 = { count: 74, total: 2838, axis: 'sweetness', end: 'high', rated: 3 };
+  assert.match(ctx.gapRationale(g2), /^Only 74 of your 2,838 check-ins land here\./);
+});
+
 // ── §9 battery: cross-mode guards ──────────────────────────────
 
 test('D1: no copy candidate in any Discover registry leaks a raw 0–100 rating', () => {
@@ -939,6 +959,10 @@ test('Rediscovery is unaffected by the non-recommendable filter, end to end', ()
 });
 
 // ── Scorer weights (proximity_engine.js) ───────────────────────
+
+test('The engine script tag carries a cache-busting version (a stale engine has no occasion weights)', () => {
+  assert.match(require('./helpers').html, /<script src="proximity_engine\.js\?v=\d+"><\/script>/);
+});
 
 test('§5/§8: MODE_WEIGHTS holds only the Occasion posture (0.75 / 0.25)', () => {
   const ctx = vm.createContext({});

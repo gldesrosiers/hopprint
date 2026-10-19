@@ -15,7 +15,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
 <script src="style_matrix.js"></script>
-<script src="proximity_engine.js"></script>
+<!-- ?v= busts the HTTP cache when the engine changes, so a new index.html never runs a stale engine (Discover redesign: MODE_WEIGHTS.occasion). Bump it with every proximity_engine.js change. -->
+<script src="proximity_engine.js?v=2"></script>
 <style>
 /* ── FONTS ─────────────────────────────────────────────────── */
 @font-face {
@@ -2465,7 +2466,7 @@ const GAP_ZONES = ['coverage', 'change', 'caution'];
 const GAP_COPY = [
   { id: 'gp_coverage', zone: 'coverage', priority: 10,
     condition: () => true,
-    render: g => `only ${g.count} of your ${g.total} check-ins land here` },
+    render: g => `only ${g.count.toLocaleString()} of your ${g.total.toLocaleString()} check-ins land here` },
   { id: 'gp_change', zone: 'change', priority: 10,
     condition: () => true,
     render: g => `these move ${g.axis} ${g.end === 'high' ? 'up' : 'down'} and stay close to your usual on everything else` },
@@ -2584,7 +2585,7 @@ const BREWERY_ZONES = ['pattern', 'suggest'];
 const BREWERY_COPY = [
   { id: 'br_mostly', zone: 'pattern', priority: 10,
     condition: () => true,
-    render: b => `${b.topCount} of your ${b.famTotal} check-ins here are ${esc(b.topFamily)}` },
+    render: b => `${b.topCount.toLocaleString()} of your ${b.famTotal.toLocaleString()} check-ins here are ${esc(b.topFamily)}` },
   { id: 'br_loved_elsewhere', zone: 'suggest', priority: 10,
     condition: b => b.suggestions.length > 0,
     render: b => `you rate ${b.suggestions.map(x => esc(x.family)).join(' and ')} well at other breweries — worth seeing if they pour one` },
@@ -2687,6 +2688,7 @@ function selectDiscoverContext(id) {
   if (!opt || !opt.open) return;
   discoverContext = discoverContext === id ? '' : id;
   renderDiscoverOptions();
+  clearDiscoverResults();
 }
 
 function occasionPrecheck(entriesList) {
@@ -2738,13 +2740,13 @@ const OCCASION_COPY = [
     render: c => `fits what you like ${esc(c.place)}` },
   { id: 'oc_all_tagged', zone: 'provenance', priority: 30,
     condition: c => c.derived === 0,
-    render: c => `based on ${c.rated} rated check-ins (all tagged with an occasion)` },
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins (all tagged with an occasion)` },
   { id: 'oc_all_venue', zone: 'provenance', priority: 20,
     condition: c => c.stated === 0,
-    render: c => `based on ${c.rated} rated check-ins (occasion worked out from the venue)` },
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins (occasion worked out from the venue)` },
   { id: 'oc_mixed', zone: 'provenance', priority: 10,
     condition: () => true,
-    render: c => `based on ${c.rated} rated check-ins (${c.stated} tagged, ${c.derived} worked out from the venue)` },
+    render: c => `based on ${c.rated.toLocaleString()} rated check-ins (${c.stated.toLocaleString()} tagged, ${c.derived.toLocaleString()} worked out from the venue)` },
   { id: 'oc_gets_sharper', zone: 'nudge', priority: 10,
     condition: c => c.derived / c.rated >= OCCASION_SMARTER_SHARE,
     render: () => `tag the occasion when you check in and these get sharper` },
@@ -6139,6 +6141,14 @@ function selectMode(id) {
   discoverMode = discoverMode === id ? '' : id;
   document.querySelectorAll('.mode-card').forEach(c => c.classList.toggle('sel', c.id === `mode-${id}` && discoverMode === id));
   renderDiscoverOptions();
+  clearDiscoverResults();
+}
+
+// A card from another mode or context would read as an answer to the new
+// choice — clear it until Find My Next Beer is tapped again.
+function clearDiscoverResults() {
+  discoverQueue = [];
+  document.getElementById('recResults').innerHTML = '';
 }
 
 function enterDiscover() {
