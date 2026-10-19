@@ -760,6 +760,9 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 .occ-pill.gated { opacity: 0.45; cursor: not-allowed; }
 .occ-pill.gated:hover { border-color: var(--border); color: var(--text-muted); }
 .discover-sub-title { margin: 16px 0 10px; }
+.gap-styles { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.gap-style { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.gap-style-name { font-size: 15px; font-weight: 600; color: var(--text); }
 .mode-card.gated:hover { border-color: var(--border); }
 .mode-reason { font-size: 11px; color: var(--text-dim); margin-top: 6px; font-style: italic; font-weight: 300; line-height: 1.3; }
 .btn-discover:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1565,7 +1568,7 @@ const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','
 //   build(entries)     -> { cards, starved }
 //   renderCard(card)   -> inner HTML for one card
 //   suppressionKey(c)  -> string; per-mode namespace, see isSuppressed
-//   wishItem(c)        -> { name, brewery, style } for the shared Save pill
+//   wishItem(c, i)     -> { name, brewery, style } for Save pill i (cards with several)
 //   actions(c)         -> optional extra footer buttons
 //   notInterested      -> false hides the shared Not Interested button
 //   renderOptions(es)  -> optional sub-picker shown under the grid while selected
@@ -1574,7 +1577,9 @@ const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','
 // A mode without build() isn't implemented yet and stays gated.
 const DISC_NOT_BUILT = () => ({ open: false, reason: 'Not built yet' });
 const DISC_MODES = [
-  { id:'gaps', iconName:'mode-adjacent', name:'Dimension Gaps', desc:'Flavor directions you haven\'t explored', gate: DISC_NOT_BUILT },
+  { id:'gaps', iconName:'mode-adjacent', name:'Dimension Gaps', desc:'Flavor directions you haven\'t explored',
+    gate: gapsGate, build: buildGaps, renderCard: renderGapCard,
+    suppressionKey: g => g.key, wishItem: (g, i) => ({ name: g.picks[i].style, brewery: '', style: g.picks[i].style }) },
   { id:'occasion', iconName:'occasion-bar', name:'Occasion', desc:'Picks for home or out',
     gate: occasionGate, build: buildOccasion, renderCard: renderOccasionCard,
     suppressionKey: c => `${c.style}|${c.context}`, wishItem: c => ({ name: c.style, brewery: '', style: c.style }),
@@ -2001,14 +2006,19 @@ function recordShown(keys, mode) {
 }
 // Starvation ladder shared by every mode's build(): full window, then half,
 // then none — so a mode with a small candidate pool still fills its batch
-// rather than going blank because everything was shown recently. candidates
-// arrive ranked (or shuffled, for Rediscovery); keyOf maps one to its key.
+// rather than going blank because everything was shown recently. Each step
+// only appends, so recently shown items fill the back of a batch and never
+// jump ahead of fresh ones. candidates arrive ranked (or shuffled, for
+// Rediscovery); keyOf maps one to its key.
 function takeUnsuppressed(candidates, mode, keyOf, target) {
   const baseWindow = SUPPRESSION_WINDOWS[mode];
   const suppressionList = loadSuppression();
-  let picked = [];
+  const picked = [];
   for (const windowDays of [baseWindow, baseWindow / 2, 0]) {
-    picked = candidates.filter(c => !isSuppressed(keyOf(c), mode, windowDays, suppressionList)).slice(0, target);
+    for (const c of candidates) {
+      if (picked.length >= target) break;
+      if (!picked.includes(c) && !isSuppressed(keyOf(c), mode, windowDays, suppressionList)) picked.push(c);
+    }
     if (picked.length >= target) break;
   }
   return { cards: picked, starved: picked.length < target };
@@ -2034,15 +2044,15 @@ function isOnWishlist(item) {
   const k = stubBeerKey({ beer_name: item.name, brewery_name: item.brewery });
   return wishlist.some(w => stubBeerKey({ beer_name: w.name, brewery_name: w.brewery }) === k);
 }
-function recSaveButton(item) {
+function recSaveButton(item, index = 0) {
   return isOnWishlist(item)
     ? `<div class="rec-save saved">On Wish List</div>`
-    : `<div class="rec-save" id="recSave" onclick="saveShownToWishlist()">Save</div>`;
+    : `<div class="rec-save" id="recSave-${index}" onclick="saveShownToWishlist(${index})">Save</div>`;
 }
-function saveShownToWishlist() {
+function saveShownToWishlist(index = 0) {
   const m = discModeById(discoverQueueMode);
   if (!m || !m.wishItem || !discoverShownCard) return;
-  const src = m.wishItem(discoverShownCard);
+  const src = m.wishItem(discoverShownCard, index);
   if (isOnWishlist(src)) return;
   const item = { id: newId(), name: src.name, brewery: src.brewery || '', style: src.style || '', added: new Date().toISOString() };
   wishlist.push(item);
@@ -2050,7 +2060,7 @@ function saveShownToWishlist() {
   queueSync('wishlist', item.id, 'upsert', true);
   renderWishlist();
   showToast('Added to wish list', 'wishlist');
-  const btn = document.getElementById('recSave');
+  const btn = document.getElementById(`recSave-${index}`);
   if (btn) btn.outerHTML = `<div class="rec-save saved">On Wish List</div>`;
 }
 
@@ -2165,6 +2175,122 @@ function retireShownBeer() {
   }
   showToast('Retired from Rediscovery', 'success');
   renderNextRec();
+}
+
+// ── Dimension Gaps (§4) ───────────────────────────────────────
+// DG1: project every matched check-in (rated or not) onto the axes through
+// STYLE_MATRIX; a region holding under 5% of them is a gap. Regions are the
+// high end (≥ 4) of every axis, plus low alcohol (= 1) — DG4; low haze and
+// low carbonation are not discoveries. DG3: a region with ≥ 3 rated check-ins
+// whose recency-weighted average is in the Never band is a known dislike and
+// never shown. DG2: picks sit in the gap on the target axis and as close as
+// possible to the hopprint on the other seven; untried styles first.
+const GAP_REGIONS = [
+  { axis: 'bitterness', end: 'high' }, { axis: 'sweetness', end: 'high' }, { axis: 'roast', end: 'high' },
+  { axis: 'body', end: 'high' }, { axis: 'fruit', end: 'high' }, { axis: 'carbonation', end: 'high' },
+  { axis: 'alcohol', end: 'high' }, { axis: 'haze', end: 'high' }, { axis: 'alcohol', end: 'low' },
+];
+// Placeholder copy (BP1).
+const GAP_LABELS = {
+  'bitterness:high': 'More bitter', 'sweetness:high': 'Sweeter', 'roast:high': 'Roast-forward',
+  'body:high': 'Fuller-bodied', 'fruit:high': 'Fruit-forward', 'carbonation:high': 'More carbonated',
+  'alcohol:high': 'Stronger', 'haze:high': 'Hazier', 'alcohol:low': 'Sessionable',
+};
+const GAP_HIGH_MIN = 4;
+const GAP_LOW_MAX = 1;
+const GAP_THIN_SHARE = 0.05;
+const GAP_DISLIKE_MIN_RATED = 3;
+const GAP_MIN_STYLES = 4;      // the hopprint's own gate (DG6)
+const GAP_PICKS = 3;
+const GAP_MIN_PICKS = 2;
+
+function inGapRegion(region, vec) {
+  return region.end === 'high' ? vec[region.axis] >= GAP_HIGH_MIN : vec[region.axis] <= GAP_LOW_MAX;
+}
+
+// Gaps ordered thinnest first; equal shares go to the smallest step (the
+// gap whose picks sit nearest the hopprint on the other seven axes).
+function dimensionGaps(entriesList) {
+  const hp = computeHopprint(entriesList);
+  if (hp.matchedStyles < GAP_MIN_STYLES) return { gaps: [], matchedStyles: hp.matchedStyles };
+  const center = Object.fromEntries(HOPPRINT_DIMS.map((d, i) => [d, hp.vector[i]]));
+  const neverMax = RATING_BANDS.find(b => b.id === 'never').max;
+  const now = Date.now();
+  const matched = [];
+  entriesList.forEach(e => {
+    const style = resolveMatrixStyle(e.beer_type);
+    if (style) matched.push({ e, style });
+  });
+  const tried = new Set(matched.map(m => m.style));
+  const gaps = [];
+  GAP_REGIONS.forEach(region => {
+    const inside = matched.filter(m => inGapRegion(region, STYLE_MATRIX[m.style]));
+    const share = inside.length / matched.length;
+    if (share >= GAP_THIN_SHARE) return;
+    let rated = 0, sumW = 0, sumWR = 0;
+    inside.forEach(({ e }) => {
+      if (typeof e.rating !== 'number') return;
+      rated++;
+      const days = (now - new Date(e.created_at).getTime()) / 86400000;
+      if (!Number.isFinite(days)) return;
+      const w = Math.pow(0.5, days / 180);
+      sumW += w;
+      sumWR += w * e.rating;
+    });
+    if (rated >= GAP_DISLIKE_MIN_RATED && sumW > 0 && sumWR / sumW <= neverMax) return;   // known dislike
+    const others = HOPPRINT_DIMS.filter(d => d !== region.axis);
+    const distance = style => Math.sqrt(others.reduce((sum, d) => sum + (STYLE_MATRIX[style][d] - center[d]) ** 2, 0));
+    const picks = Object.keys(STYLE_MATRIX)
+      .filter(style => isRecommendableStyle(style) && inGapRegion(region, STYLE_MATRIX[style]))   // OF3
+      .map(style => ({ style, distance: distance(style), tried: tried.has(style) }))
+      .sort((a, b) => (a.tried - b.tried) || (a.distance - b.distance))
+      .slice(0, GAP_PICKS);
+    if (picks.length < GAP_MIN_PICKS) return;
+    const key = `${region.axis}:${region.end}`;
+    gaps.push({
+      key, axis: region.axis, end: region.end, label: GAP_LABELS[key],
+      share, count: inside.length, total: matched.length, rated, picks,
+      step: picks.reduce((sum, p) => sum + p.distance, 0) / picks.length,
+    });
+  });
+  gaps.sort((a, b) => (a.share - b.share) || (a.step - b.step));
+  return { gaps, matchedStyles: hp.matchedStyles };
+}
+
+function gapsGate(entriesList) {
+  const { gaps, matchedStyles } = dimensionGaps(entriesList);
+  if (matchedStyles < GAP_MIN_STYLES) return { open: false, reason: `Needs ${GAP_MIN_STYLES} different styles logged` };
+  return gaps.length ? { open: true, reason: '' } : { open: false, reason: "You've explored every flavor direction" };
+}
+
+function buildGaps(entriesList) {
+  const { gaps } = dimensionGaps(entriesList);
+  // Fewer gaps means broader drinking, not a focused history — no starvation note.
+  return { cards: takeUnsuppressed(gaps, 'gaps', g => g.key, gaps.length).cards, starved: false };
+}
+
+// Placeholder copy (BP1). Counts, never scores (D1).
+function gapRationale(g) {
+  const parts = [
+    `Only ${g.count} of your ${g.total} check-ins land here.`,
+    `These move ${g.axis} ${g.end === 'high' ? 'up' : 'down'} and stay close to your usual on everything else.`,
+  ];
+  if (g.rated < GAP_DISLIKE_MIN_RATED) parts.push("You haven't rated enough here yet to rule out a dislike.");
+  return parts.join(' ');
+}
+
+function renderGapCard(g) {
+  const styles = g.picks.map((p, i) => `
+      <div class="gap-style"><span class="gap-style-name">${esc(p.style)}</span>${recSaveButton({ name: p.style, brewery: '' }, i)}</div>`).join('');
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(g.label)}</div>
+        <div class="rec-brewery">A direction you haven't explored much</div>
+      </div>
+    </div>
+    <div class="gap-styles">${styles}
+    </div>
+    <div class="rec-why">${esc(gapRationale(g))}</div>`;
 }
 
 // ── Occasion (§5) ─────────────────────────────────────────────

@@ -135,7 +135,7 @@ test('§8: prune keeps a 30-day Rediscovery row and drops a 32-day one', () => {
   assert.deepEqual(ctx.rows().map(r => r.key), ['a', 'c']);
 });
 
-test('§8: takeUnsuppressed walks full window → half → none and flags starvation', () => {
+test('§8: takeUnsuppressed walks full window → half → none, fresh first, and flags starvation', () => {
   const now = Date.now();
   const ctx = suppressionCtx([
     { mode: 'brewery', key: 'A', timestamp: now - 1 * DAY },   // inside half (7) and full (14)
@@ -145,10 +145,10 @@ test('§8: takeUnsuppressed walks full window → half → none and flags starva
   const id = x => x;
   assert.deepEqual([...ctx.takeUnsuppressed(cands, 'brewery', id, 1).cards], ['C']);
   const two = ctx.takeUnsuppressed(cands, 'brewery', id, 2);
-  assert.deepEqual([...two.cards], ['B', 'C']);   // half window frees B
+  assert.deepEqual([...two.cards], ['C', 'B']);   // half window frees B — behind the fresh C
   assert.equal(two.starved, false);
   const three = ctx.takeUnsuppressed(cands, 'brewery', id, 3);
-  assert.deepEqual([...three.cards], ['A', 'B', 'C']); // window 0 frees everything
+  assert.deepEqual([...three.cards], ['C', 'B', 'A']); // window 0 frees A last
   const four = ctx.takeUnsuppressed(cands, 'brewery', id, 4);
   assert.equal(four.starved, true);
 });
@@ -179,6 +179,8 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     line('HOME_VENUE'), line('UNTAPPD_HOME'), extractBlock('OCCASIONS'), extractBlock('NON_RECOMMENDABLE_STYLES'),
     line('STYLE_KEY_INDEX'), line('NEIGHBOR_INDEX'), line('OCCASION_SIDE'), extractBlock('OCCASION_SIDES'),
     line('OCCASION_MIN_RATED'), line('OCCASION_SIX_UNLOCKED'), line('OCCASION_SMARTER_SHARE'), line('OCCASION_BATCH'),
+    line('HOPPRINT_DIMS'), extractBlock('GAP_REGIONS'), extractBlock('GAP_LABELS'),
+    ...['GAP_HIGH_MIN', 'GAP_LOW_MAX', 'GAP_THIN_SHARE', 'GAP_DISLIKE_MIN_RATED', 'GAP_MIN_STYLES', 'GAP_PICKS', 'GAP_MIN_PICKS'].map(line),
     line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
     line('REDISCOVERY_MIN_AGE_DAYS'), line('REDISCOVERY_BATCH'), line('REDISCOVERY_RETIRED_KEY'),
     line('DISC_NOT_BUILT'), extractBlock('DISC_MODES'), extraModes,
@@ -189,7 +191,8 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
       'renderRediscoveryCard', 'rediscoveryActions', 'askRetireShown', 'cancelRetireShown', 'retireShownBeer',
       'normalizeVenue', 'normalizeStyleKey', 'resolveMatrixStyle', 'isRecommendableStyle', 'computeSignalModel', 'getNeighborIndex',
       'renderDiscoverOptions', 'occasionSideOf', 'occasionContexts', 'occasionOptions', 'occasionGate', 'renderOccasionOptions',
-      'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard'].map(extractFunction),
+      'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard',
+      'computeHopprint', 'inGapRegion', 'dimensionGaps', 'gapsGate', 'buildGaps', 'gapRationale', 'renderGapCard'].map(extractFunction),
   ].join('\n'), ctx);
   const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
   return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
@@ -219,7 +222,8 @@ test('DS5: with every mode gated, the tab shows its locked state and the button 
 test('DS4: a gated mode renders greyed with its reason, and cannot be selected', () => {
   const { ctx, els, get } = gridCtx();
   ctx.buildModeGrid();
-  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 2);
+  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 1);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 4 different styles logged</);
   assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 5 rated check-ins at home or out</);
   assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a beer you rated Definitely/);
   ctx.selectMode('gaps');
@@ -405,8 +409,8 @@ test('RD4: Yes retires the beer permanently — it survives a reload and never c
 test('Save pill: saves the shown beer once, queues its sync, and flips to saved', () => {
   const wishlist = [];
   const app = showOne([ci('Arthur', 400, 87)], { wishlist });
-  assert.match(app.els.recResults.innerHTML, /class="rec-save" id="recSave"/);
-  const pill = fakeNode(app.els, 'recSave');
+  assert.match(app.els.recResults.innerHTML, /class="rec-save" id="recSave-0" onclick="saveShownToWishlist\(0\)"/);
+  const pill = fakeNode(app.els, 'recSave-0');
   app.ctx.saveShownToWishlist();
   app.ctx.saveShownToWishlist();
   assert.equal(wishlist.length, 1);
@@ -418,6 +422,134 @@ test('Save pill: saves the shown beer once, queues its sync, and flips to saved'
 test('Save pill: a beer already on the wish list renders as saved', () => {
   const { els } = showOne([ci('Arthur', 400, 87)], { wishlist: [{ id: 'w', name: 'ARTHUR', brewery: 'hill farmstead' }] });
   assert.match(els.recResults.innerHTML, /rec-save saved">On Wish List</);
+});
+
+// ── Dimension Gaps (§4) ────────────────────────────────────────
+
+let gapN = 0;
+const g = (beer_type, rating = null, days = 20) => ({ id: `g${++gapN}`, beer_name: `G ${gapN}`, brewery_name: 'B', beer_type, rating, created_at: ago(days) });
+const hazyDrinker = (extra = []) => [
+  ...times(20, () => g('IPA - New England / Hazy', 85)),
+  ...['IPA - American', 'Pale Ale - New England / Hazy', 'Pilsner - German'].map(t => g(t, 80)),
+  ...extra,
+];
+const gapByKey = (ctx, list, key) => ctx.dimensionGaps(list).gaps.find(x => x.key === key);
+
+test('DG4: nine regions — every high end plus low alcohol; no low haze or low carbonation', () => {
+  const { get } = gridCtx();
+  const keys = [...get('GAP_REGIONS')].map(r => `${r.axis}:${r.end}`);
+  assert.equal(keys.length, 9);
+  assert.ok(keys.includes('alcohol:low'));
+  assert.ok(!keys.includes('haze:low') && !keys.includes('carbonation:low'));
+  keys.forEach(k => assert.ok(get('GAP_LABELS')[k], k));
+});
+
+test('DG1: under 5% of matched check-ins is a gap; exactly 5% is not', () => {
+  const { ctx } = gridCtx();
+  const base = hazyDrinker();                                   // 23 matched, no roast
+  assert.ok(gapByKey(ctx, base, 'roast:high'));
+  const one = [...base.slice(0, 19), g('Stout - American')];   // 1 of 20 = 5%
+  assert.equal(gapByKey(ctx, [...one, g('IPA - American'), g('Pilsner - German'), g('Pale Ale - New England / Hazy')].slice(0, 20), 'roast:high'), undefined);
+});
+
+test('DG1: coverage counts unrated check-ins too', () => {
+  const { ctx } = gridCtx();
+  const unrated = [...times(10, () => g('Stout - American')), ...times(10, () => g('IPA - New England / Hazy')), g('Pilsner - German'), g('IPA - American')];
+  assert.equal(gapByKey(ctx, unrated, 'roast:high'), undefined);
+});
+
+test('DG3: 2 rated Never in a thin region is still a gap; 3 makes it a known dislike', () => {
+  const { ctx } = gridCtx();
+  const big = [...hazyDrinker(), ...times(60, () => g('IPA - New England / Hazy'))];   // 83 matched
+  assert.ok(gapByKey(ctx, [...big, ...times(2, () => g('Stout - American', 10))], 'roast:high'));
+  assert.equal(gapByKey(ctx, [...big, ...times(3, () => g('Stout - American', 10))], 'roast:high'), undefined);
+});
+
+test('DG3: the dislike average is recency-weighted — a recent love outweighs old Nevers', () => {
+  const { ctx } = gridCtx();
+  const big = [...hazyDrinker(), ...times(60, () => g('IPA - New England / Hazy'))];
+  const oldNevers = times(3, () => g('Stout - American', 5, 1500));
+  assert.ok(gapByKey(ctx, [...big, ...oldNevers, g('Stout - American', 95, 5)], 'roast:high'));
+});
+
+test('DG2: picks sit in the gap and near the hopprint elsewhere — Baltic Porter, not Russian Imperial Stout', () => {
+  const { ctx } = gridCtx();
+  const roast = gapByKey(ctx, hazyDrinker(), 'roast:high');
+  assert.equal(roast.picks.length, 3);
+  roast.picks.forEach(p => assert.ok(STYLE_MATRIX[p.style].roast >= 4, p.style));
+  assert.ok(!roast.picks.some(p => p.style === 'Stout - Russian Imperial'));
+  const d = [...roast.picks.map(p => p.distance)];
+  assert.deepEqual(d, [...d].sort((a, b) => a - b));
+});
+
+test('DG2: untried styles come first; a tried one only fills', () => {
+  const { ctx } = gridCtx();
+  const bitter = gapByKey(ctx, hazyDrinker(), 'bitterness:high');   // IPA - American is tried
+  assert.ok(!bitter.picks.some(p => p.style === 'IPA - American'));
+  assert.ok(bitter.picks.every(p => !p.tried));
+});
+
+test('OF3: centroid styles never appear under a gap', () => {
+  const { ctx } = gridCtx();
+  ctx.dimensionGaps(hazyDrinker()).gaps.forEach(gap => gap.picks.forEach(p => assert.equal(ctx.isRecommendableStyle(p.style), true, p.style)));
+});
+
+test('Order: thinnest first, ties to the smallest step', () => {
+  const { ctx } = gridCtx();
+  const gaps = ctx.dimensionGaps(hazyDrinker()).gaps;
+  for (let i = 1; i < gaps.length; i++) {
+    assert.ok(gaps[i - 1].share < gaps[i].share || (gaps[i - 1].share === gaps[i].share && gaps[i - 1].step <= gaps[i].step), `${gaps[i - 1].key} before ${gaps[i].key}`);
+  }
+  assert.equal(gaps[gaps.length - 1].key, 'bitterness:high');   // the only non-zero share
+});
+
+test('Gate: 4 matched styles needed; locked with its own reason when nothing is a gap', () => {
+  const { ctx, get } = gridCtx();
+  const three = ['IPA - American', 'Pilsner - German', 'Stout - American'].map(t => g(t));
+  assert.match(ctx.gapsGate(three).reason, /Needs 4 different styles/);
+  assert.equal(ctx.gapsGate(hazyDrinker()).open, true);
+  // One check-in per region's first recommendable style: every region holds ≥ 1/9.
+  const regions = [...get('GAP_REGIONS')];
+  const broad = regions.map(r => g(Object.keys(STYLE_MATRIX).find(st => ctx.isRecommendableStyle(st) && ctx.inGapRegion(r, STYLE_MATRIX[st]))));
+  const gate = ctx.gapsGate(broad);
+  assert.equal(gate.open, false);
+  assert.match(gate.reason, /explored every flavor direction/);
+});
+
+test('Gaps card: direction headline, three styles each with its own Save pill, counts not scores', () => {
+  const wishlist = [];
+  const app = gridCtx(hazyDrinker(), '', { wishlist });
+  app.ctx.enterDiscover();
+  app.ctx.selectMode('gaps');
+  app.ctx.generateRecs();
+  const shown = app.get('discoverShownCard');
+  const html = app.els.recResults.innerHTML;
+  assert.match(html, new RegExp(`rec-name">${shown.label}<`));
+  [0, 1, 2].forEach(i => assert.match(html, new RegExp(`id="recSave-${i}" onclick="saveShownToWishlist\\(${i}\\)"`)));
+  assert.doesNotMatch(html, /\d\.\d/);
+  assert.deepEqual(app.shown(), [[shown.key, 'gaps']]);
+  fakeNode(app.els, 'recSave-1');
+  app.ctx.saveShownToWishlist(1);
+  assert.equal(wishlist[0].name, shown.picks[1].style);
+  assert.equal(wishlist[0].brewery, '');
+});
+
+test('DG6: the rationale admits it can\'t rule out a dislike until 3 ratings land in the region', () => {
+  const { ctx } = gridCtx();
+  const big = [...hazyDrinker(), ...times(60, () => g('IPA - New England / Hazy'))];
+  const few = gapByKey(ctx, [...big, ...times(2, () => g('Stout - American', 90))], 'roast:high');
+  assert.match(ctx.gapRationale(few), /rule out a dislike/);
+  assert.match(ctx.gapRationale(few), /^Only 2 of your 85 check-ins land here\. These move roast up/);
+  const enough = gapByKey(ctx, [...big, ...times(3, () => g('Stout - American', 90))], 'roast:high');
+  assert.doesNotMatch(ctx.gapRationale(enough), /rule out/);
+});
+
+test('Gaps suppression: each region rotates on its own key for 7 days', () => {
+  const now = Date.now();
+  const { ctx } = gridCtx(undefined, '', { store: { hopprint_rec_suppression: JSON.stringify([{ mode: 'gaps', key: 'alcohol:high', timestamp: now }]) } });
+  const keys = [...ctx.buildGaps(hazyDrinker()).cards.map(c => c.key)];
+  assert.ok(keys.includes('alcohol:low'));
+  assert.equal(keys[keys.length - 1], 'alcohol:high');   // recently shown: back of the batch, not first
 });
 
 // ── Occasion (§5) ──────────────────────────────────────────────
