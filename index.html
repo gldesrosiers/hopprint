@@ -757,6 +757,9 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 .mode-card:hover { border-color: var(--border-orange); }
 .mode-card.sel { background: var(--orange-glow); border-color: var(--orange); }
 .mode-card.gated { opacity: 0.45; cursor: not-allowed; }
+.occ-pill.gated { opacity: 0.45; cursor: not-allowed; }
+.occ-pill.gated:hover { border-color: var(--border); color: var(--text-muted); }
+.discover-sub-title { margin: 16px 0 10px; }
 .mode-card.gated:hover { border-color: var(--border); }
 .mode-reason { font-size: 11px; color: var(--text-dim); margin-top: 6px; font-style: italic; font-weight: 300; line-height: 1.3; }
 .btn-discover:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1231,6 +1234,7 @@ body.first-sync .first-sync-hint { display: block; }
   <div class="discover-step">
     <div class="discover-step-title">What kind of recommendation?</div>
     <div class="mode-grid" id="modeGrid"></div>
+    <div id="discoverOptions"></div>
   </div>
 
   <button class="btn-discover" id="discoverGo" onclick="generateRecs()">Find My Next Beer</button>
@@ -1514,6 +1518,9 @@ let discoverStarved = false;
 // rather than inlined into it, since keys can be beer names with any quotes.
 let discoverShownKey = '';
 let discoverShownCard = null;
+// Occasion's chosen context: 'home' / 'out', or an OCCASIONS id in the
+// six-occasion picker. Cleared whenever it stops being a valid choice.
+let discoverContext = '';
 let currentPromptIdx = 0;
 let analyticsYear = 'all';
 let analyticsCharts = {};
@@ -1561,12 +1568,17 @@ const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','
 //   wishItem(c)        -> { name, brewery, style } for the shared Save pill
 //   actions(c)         -> optional extra footer buttons
 //   notInterested      -> false hides the shared Not Interested button
+//   renderOptions(es)  -> optional sub-picker shown under the grid while selected
+//   precheck(es)       -> optional; a message means "not ready", shown as a toast
 // Names, descriptions, and reasons are placeholders until the copy pass (BP1).
 // A mode without build() isn't implemented yet and stays gated.
 const DISC_NOT_BUILT = () => ({ open: false, reason: 'Not built yet' });
 const DISC_MODES = [
   { id:'gaps', iconName:'mode-adjacent', name:'Dimension Gaps', desc:'Flavor directions you haven\'t explored', gate: DISC_NOT_BUILT },
-  { id:'occasion', iconName:'occasion-bar', name:'Occasion', desc:'Picks for home or out', gate: DISC_NOT_BUILT },
+  { id:'occasion', iconName:'occasion-bar', name:'Occasion', desc:'Picks for home or out',
+    gate: occasionGate, build: buildOccasion, renderCard: renderOccasionCard,
+    suppressionKey: c => `${c.style}|${c.context}`, wishItem: c => ({ name: c.style, brewery: '', style: c.style }),
+    renderOptions: renderOccasionOptions, precheck: occasionPrecheck },
   { id:'brewery', iconName:'trend-loyal', name:'Brewery Gaps', desc:'More from breweries you love', gate: DISC_NOT_BUILT },
   { id:'rediscovery', iconName:'mode-random', name:'Rediscovery', desc:'Old favorites worth another round',
     gate: rediscoveryGate, build: buildRediscovery, renderCard: renderRediscoveryCard,
@@ -1914,7 +1926,7 @@ function dlRecompute() {
 
 // ═══════════════════════════════════════════════════════════════
 // RECOMMENDATION ENGINE — signal model, suppression, orchestration
-// (uses STYLE_MATRIX + buildNeighborIndex/scoreRecommendation/generateRationale
+// (uses STYLE_MATRIX + buildNeighborIndex/scoreRecommendation
 // from style_matrix.js and proximity_engine.js, loaded via <script> above)
 // ═══════════════════════════════════════════════════════════════
 
@@ -2155,40 +2167,142 @@ function retireShownBeer() {
   renderNextRec();
 }
 
-// Styles the user has actually logged, weighted by log-damped frequency —
-// used ONLY as a last-resort ranking signal when there isn't a single rated
-// check-in anywhere to build real taste affinity from (computeSignalModel
-// returns an empty userAffinityMap in that case). Without this, Discover's
-// wheelhouse/adjacent/wildcard modes go completely silent for a "log
-// everything, rate nothing" user — which contradicts the locked "rating
-// sparsity is the norm, not an edge case" principle. This must never claim
-// to know a *preference*, only a *habit*: pseudo-affinity stays clamped to a
-// narrow, neutral-or-above band (3.0–4.2) — frequency is evidence of a
-// habit, not evidence of dislike — and callers must render an honestly
-// distinct rationale for it (see rationaleFor), never the taste-confidence
-// copy real ratings earn.
-function buildFamiliarityFallbackSignal(entriesList) {
-  const counts = {};
-  entriesList.forEach(e => {
-    const style = resolveMatrixStyle(e.beer_type);
-    if (!style) return;
-    counts[style] = (counts[style] || 0) + 1;
-  });
-  const styles = Object.keys(counts);
-  if (!styles.length) return null; // genuinely no matched-style history — nothing to fall back to
+// ── Occasion (§5) ─────────────────────────────────────────────
+// OC1: computeSignalModel + scoreRecommendation on an occasion-filtered
+// entry list. Each rated check-in gets a side from its stated occasion if
+// it has one (OC4/OC5), else from its venue (OC2/OC3: Home → home, any other
+// venue → out, no venue → left out). Only rated, style-matched check-ins
+// count — they're the ones the signal model can learn from.
+const OCCASION_SIDE = { 'home-solo': 'home', 'home-social': 'home', 'bar-taproom': 'out', event: 'out', dining: 'out', traveling: 'out' };
+const OCCASION_SIDES = [
+  { id: 'home', iconName: 'occasion-home-solo', label: 'Home' },
+  { id: 'out', iconName: 'occasion-bar', label: 'Out' },
+];
+const OCCASION_MIN_RATED = 5;        // per side, and per stated occasion for the six-way picker
+const OCCASION_SIX_UNLOCKED = 3;     // six-way picker once this many occasions qualify
+const OCCASION_SMARTER_SHARE = 0.5;  // OC6: "gets smarter" line at ≥ half derived
+const OCCASION_BATCH = 5;
 
-  const signalData = {};
-  const userAffinityMap = {};
-  const maxCount = Math.max(...styles.map(s => counts[s]));
-  styles.forEach(style => {
-    const count = counts[style];
-    const familiarity = Math.min(5, Math.log(1 + count) * 1.5);
-    const pseudoAffinity = 3.0 + 1.2 * (Math.log(1 + count) / Math.log(1 + maxCount));
-    const novelty = Math.max(0, 1 - count / 8);
-    signalData[style] = { affinity: pseudoAffinity, familiarity, novelty, count };
-    userAffinityMap[style] = pseudoAffinity;
+function occasionSideOf(e) {
+  if (OCCASION_SIDE[e.occasion]) return { side: OCCASION_SIDE[e.occasion], stated: true };
+  const venue = normalizeVenue(e.venue_name);
+  if (!venue) return null;
+  return { side: venue === HOME_VENUE ? 'home' : 'out', stated: false };
+}
+
+function occasionContexts(entriesList) {
+  const sides = { home: { entries: [], stated: 0 }, out: { entries: [], stated: 0 } };
+  const six = Object.fromEntries(OCCASIONS.map(o => [o.id, []]));
+  entriesList.forEach(e => {
+    if (typeof e.rating !== 'number' || !resolveMatrixStyle(e.beer_type)) return;
+    const r = occasionSideOf(e);
+    if (!r) return;
+    sides[r.side].entries.push(e);
+    if (r.stated) { sides[r.side].stated++; six[e.occasion].push(e); }
   });
-  return { signalData, userAffinityMap };
+  const sixMode = OCCASIONS.filter(o => six[o.id].length >= OCCASION_MIN_RATED).length >= OCCASION_SIX_UNLOCKED;
+  return { sides, six, sixMode };
+}
+
+// The picker's options. Home/Out until three stated occasions qualify, then
+// all six; a six-way occasion short of data borrows its parent side's
+// entries (fallback) and says so on the card.
+function occasionOptions(entriesList) {
+  const { sides, six, sixMode } = occasionContexts(entriesList);
+  const sideOpt = (o, extra = {}) => {
+    const s = sides[o.id];
+    return { ...o, open: s.entries.length >= OCCASION_MIN_RATED, entries: s.entries, stated: s.stated, fallback: false, parent: o.id, ...extra };
+  };
+  if (!sixMode) return OCCASION_SIDES.map(o => sideOpt(o));
+  return OCCASIONS.map(o => {
+    const parent = OCCASION_SIDE[o.id];
+    if (six[o.id].length >= OCCASION_MIN_RATED) {
+      return { ...o, open: true, entries: six[o.id], stated: six[o.id].length, fallback: false, parent };
+    }
+    const p = sideOpt(OCCASION_SIDES.find(x => x.id === parent));
+    return { ...o, open: p.open, entries: p.entries, stated: p.stated, fallback: true, parent };
+  });
+}
+
+function occasionGate(entriesList) {
+  const { sides } = occasionContexts(entriesList);
+  return Object.values(sides).some(s => s.entries.length >= OCCASION_MIN_RATED)
+    ? { open: true, reason: '' }
+    : { open: false, reason: `Needs ${OCCASION_MIN_RATED} rated check-ins at home or out` };
+}
+
+function renderOccasionOptions(entriesList) {
+  const opts = occasionOptions(entriesList);
+  if (!opts.some(o => o.id === discoverContext && o.open)) discoverContext = '';
+  const pills = opts.map(o => `
+    <div class="occ-pill${!o.open ? ' gated' : discoverContext === o.id ? ' sel' : ''}" onclick="selectDiscoverContext('${o.id}')"${o.open ? '' : ' aria-disabled="true"'}>
+      <span class="occ-icon">${icon(o.iconName, 15, 2.2)}</span>${o.label}
+    </div>`).join('');
+  const note = opts.some(o => !o.open) ? `<div class="mode-reason">Greyed options need ${OCCASION_MIN_RATED} rated check-ins.</div>` : '';
+  return `<div class="discover-step-title discover-sub-title">Where are you?</div><div class="occasion-grid">${pills}</div>${note}`;
+}
+
+function selectDiscoverContext(id) {
+  const opt = occasionOptions(entries).find(o => o.id === id);
+  if (!opt || !opt.open) return;
+  discoverContext = discoverContext === id ? '' : id;
+  renderDiscoverOptions();
+}
+
+function occasionPrecheck(entriesList) {
+  return occasionOptions(entriesList).some(o => o.id === discoverContext && o.open) ? '' : 'Pick where you are first';
+}
+
+function buildOccasion(entriesList) {
+  const opt = occasionOptions(entriesList).find(o => o.id === discoverContext && o.open);
+  if (!opt) return { cards: [], starved: false };
+  const { signalData, userAffinityMap } = computeSignalModel(opt.entries);
+  const neighborIndex = getNeighborIndex();
+  const ctx = { context: opt.id, label: opt.label, parent: opt.parent, fallback: opt.fallback, rated: opt.entries.length, stated: opt.stated };
+  const ranked = Object.keys(STYLE_MATRIX)
+    .filter(isRecommendableStyle)                                         // OF3
+    .map(style => scoreRecommendation(style, signalData, userAffinityMap, neighborIndex, 'occasion', STYLE_MATRIX))
+    .filter(r => r.predictedAffinity >= POSITIVE_AFFINITY_THRESHOLD)      // never suggest a predicted dislike
+    .sort((a, b) => b.score - a.score)
+    .map(r => ({ style: r.style, result: r, ...ctx }));
+  return takeUnsuppressed(ranked, 'occasion', c => `${c.style}|${c.context}`, OCCASION_BATCH);
+}
+
+// Placeholder copy (BP1). Bands and counts, never scores (D1); cites only
+// recommendable styles (OF3); says which signal was used (OC2/OC4/OC6).
+function occasionPlace(c) {
+  if (c.context === 'home') return 'at home';
+  if (c.context === 'out') return "when you're out";
+  return `for ${c.label}`;
+}
+function occasionRationale(c) {
+  const place = occasionPlace(c);
+  const parts = [];
+  if (c.fallback) parts.push(`Not enough ${c.label} check-ins yet, so these are your ${c.parent === 'home' ? 'home' : 'out'} picks.`);
+  if (c.result.source === 'direct') {
+    parts.push(`You rate this well ${c.fallback ? (c.parent === 'home' ? 'at home' : "when you're out") : place}.`);
+  } else {
+    const cites = c.result.contributors
+      .filter(x => x.affinity >= POSITIVE_AFFINITY_THRESHOLD && isRecommendableStyle(x.style))
+      .slice(0, 2).map(x => x.style);
+    parts.push(cites.length ? `Close to ${cites.join(' and ')}, which you rate well ${place}.` : `Fits what you like ${place}.`);
+  }
+  const derived = c.rated - c.stated;
+  const mix = !derived ? 'all tagged with an occasion' : !c.stated ? 'occasion worked out from the venue' : `${c.stated} tagged, ${derived} worked out from the venue`;
+  parts.push(`Based on ${c.rated} rated check-ins (${mix}).`);
+  if (derived / c.rated >= OCCASION_SMARTER_SHARE) parts.push('Tag the occasion when you check in and these get sharper.');
+  return parts.join(' ');
+}
+
+function renderOccasionCard(c) {
+  return `<div class="rec-top">
+      <div>
+        <div class="rec-name">${esc(c.style)}</div>
+        <div class="rec-brewery">${esc(c.label)}</div>
+      </div>
+      ${recSaveButton({ name: c.style, brewery: '' })}
+    </div>
+    <div class="rec-why">${esc(occasionRationale(c))}</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -5547,6 +5661,13 @@ function buildModeGrid() {
     ? `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Discover opens up as your history grows. Each mode below says what it needs.</p></div>`
     : '';
   document.getElementById('discoverGo').disabled = allGated;
+  renderDiscoverOptions();
+}
+
+// The selected mode's sub-picker (Occasion's Where are you?), if it has one.
+function renderDiscoverOptions() {
+  const m = discModeById(discoverMode);
+  document.getElementById('discoverOptions').innerHTML = m && m.renderOptions ? m.renderOptions(entries) : '';
 }
 
 function selectMode(id) {
@@ -5554,6 +5675,7 @@ function selectMode(id) {
   if (!m || !m.build || !m.gate(entries).open) return;
   discoverMode = discoverMode === id ? '' : id;
   document.querySelectorAll('.mode-card').forEach(c => c.classList.toggle('sel', c.id === `mode-${id}` && discoverMode === id));
+  renderDiscoverOptions();
 }
 
 function enterDiscover() {
@@ -5568,6 +5690,8 @@ function generateRecs() {
 
   const m = discModeById(discoverMode);
   if (!m) { showToast('Pick a recommendation type first', 'warning'); return; }
+  const notReady = m.precheck ? m.precheck(entries) : '';
+  if (notReady) { showToast(notReady, 'warning'); return; }
   const { cards, starved } = m.build(entries);
 
   if (!cards.length) {

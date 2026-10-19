@@ -50,7 +50,7 @@ const ALLOWED_CHANGES = {
   buildAnalyticsInsightCard: 'IN1 insight icon',
   buildHopprintSVG: 'Phase E (c) DE5 geometry moved to hopprintGeometry() for the canvas share card; SVG output identical (SP1)',
   renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years; Phase E (c) Hopprint Share pill in the hero kicker row',
-  generateRecs: 'IN1/IN18 empty state + CTA; DS1/DS6 dispatches to the selected mode\'s build()',
+  generateRecs: 'IN1/IN18 empty state + CTA; DS1/DS6 dispatches to the selected mode\'s build(), after its precheck()',
   renderNextRec: 'IN1/IN18 empty state, Show Another; DS6 per-mode card renderer, suppression key, footer actions',
   // IT7 — showToast(msg, iconName) (IN8)
   showToast: 'IN8 icon + textContent span',
@@ -72,7 +72,7 @@ const ALLOWED_CHANGES = {
   // Discover redesign (DISCOVER_REDESIGN_HANDOFF.md) — per-mode suppression keys (§8), gating (DS4)
   recordShown: '§8 rows are { mode, key, timestamp }; 31-day prune',
   notInterestedRec: '§8 param renamed style → key (body unchanged in behavior)',
-  selectMode: 'DS4 gated modes cannot be selected',
+  selectMode: 'DS4 gated modes cannot be selected; renders the mode\'s sub-picker',
 };
 
 // Original functions deliberately deleted, each with the decision that removed it.
@@ -80,6 +80,7 @@ const ALLOWED_REMOVALS = {
   // (listed in source order — the test compares against the baseline's order)
   // Discover redesign — DS1 retires Wheelhouse / Slightly Outside / Way Outside / Random (§8)
   isStyleSuppressed: '§8 replaced by isSuppressed(key, mode, …)',
+  buildFamiliarityFallbackSignal: 'Occasion task — unused once the old modes went; Occasion is gated on rated check-ins',
   pickStyleRanking: 'DS1 retired with the old modes',
   buildAffinityRecs: 'DS1 retired with the old modes',
   wildcardConfidence: 'DS1 retired with the old modes',

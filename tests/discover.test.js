@@ -12,6 +12,7 @@ const vm = require('vm');
 
 const { script, extractFunction } = require('./helpers');
 const STYLE_MATRIX = require('../style_matrix.js');
+const STYLE_MATRIX_SRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'style_matrix.js'), 'utf8');
 const ENGINE_SRC = require('fs').readFileSync(require('path').join(__dirname, '..', 'proximity_engine.js'), 'utf8');
 
 const DAY = 86400000;
@@ -159,7 +160,7 @@ function el() {
 }
 
 function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist = [], random = Math.random } = {}) {
-  const els = { modeGrid: el(), discoverLocked: el(), discoverGo: el(), recResults: el() };
+  const els = { modeGrid: el(), discoverLocked: el(), discoverGo: el(), recResults: el(), discoverOptions: el() };
   const toasts = [];
   const queued = [];
   let n = 0;
@@ -171,8 +172,13 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     icon: () => '', renderWishlist() {}, showToast: m => toasts.push(m),
     newId: () => `id-${++n}`, queueSync: (...a) => queued.push(a),
   });
+  vm.runInContext(STYLE_MATRIX_SRC, ctx);
+  vm.runInContext(ENGINE_SRC, ctx);
   vm.runInContext([
-    ...['discoverMode', 'discoverQueue', 'discoverQueueMode', 'discoverStarved', 'discoverShownKey', 'discoverShownCard'].map(line),
+    ...['discoverMode', 'discoverQueue', 'discoverQueueMode', 'discoverStarved', 'discoverShownKey', 'discoverShownCard', 'discoverContext'].map(line),
+    line('HOME_VENUE'), line('UNTAPPD_HOME'), extractBlock('OCCASIONS'), extractBlock('NON_RECOMMENDABLE_STYLES'),
+    line('STYLE_KEY_INDEX'), line('NEIGHBOR_INDEX'), line('OCCASION_SIDE'), extractBlock('OCCASION_SIDES'),
+    line('OCCASION_MIN_RATED'), line('OCCASION_SIX_UNLOCKED'), line('OCCASION_SMARTER_SHARE'), line('OCCASION_BATCH'),
     line('SUPPRESSION_WINDOWS'), line('SUPPRESSION_PRUNE_DAYS'), extractBlock('RATING_BANDS'),
     line('REDISCOVERY_MIN_AGE_DAYS'), line('REDISCOVERY_BATCH'), line('REDISCOVERY_RETIRED_KEY'),
     line('DISC_NOT_BUILT'), extractBlock('DISC_MODES'), extraModes,
@@ -180,7 +186,10 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
       'discModeById', 'discGates', 'buildModeGrid', 'selectMode', 'enterDiscover', 'generateRecs', 'renderNextRec',
       'isOnWishlist', 'recSaveButton', 'saveShownToWishlist',
       'loadRetired', 'saveRetired', 'rediscoveryCandidates', 'rediscoveryGate', 'buildRediscovery', 'rediscoveryRationale',
-      'renderRediscoveryCard', 'rediscoveryActions', 'askRetireShown', 'cancelRetireShown', 'retireShownBeer'].map(extractFunction),
+      'renderRediscoveryCard', 'rediscoveryActions', 'askRetireShown', 'cancelRetireShown', 'retireShownBeer',
+      'normalizeVenue', 'normalizeStyleKey', 'resolveMatrixStyle', 'isRecommendableStyle', 'computeSignalModel', 'getNeighborIndex',
+      'renderDiscoverOptions', 'occasionSideOf', 'occasionContexts', 'occasionOptions', 'occasionGate', 'renderOccasionOptions',
+      'selectDiscoverContext', 'occasionPrecheck', 'buildOccasion', 'occasionPlace', 'occasionRationale', 'renderOccasionCard'].map(extractFunction),
   ].join('\n'), ctx);
   const shown = () => JSON.parse(store.hopprint_rec_suppression || '[]').map(r => [r.key, r.mode]);
   return { ctx, els, toasts, queued, store, shown, get: n => vm.runInContext(n, ctx) };
@@ -210,7 +219,8 @@ test('DS5: with every mode gated, the tab shows its locked state and the button 
 test('DS4: a gated mode renders greyed with its reason, and cannot be selected', () => {
   const { ctx, els, get } = gridCtx();
   ctx.buildModeGrid();
-  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 3);
+  assert.equal((els.modeGrid.innerHTML.match(/class="mode-reason">Not built yet</g) || []).length, 2);
+  assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs 5 rated check-ins at home or out</);
   assert.match(els.modeGrid.innerHTML, /class="mode-reason">Needs a beer you rated Definitely/);
   ctx.selectMode('gaps');
   assert.equal(get('discoverMode'), '');
@@ -408,6 +418,184 @@ test('Save pill: saves the shown beer once, queues its sync, and flips to saved'
 test('Save pill: a beer already on the wish list renders as saved', () => {
   const { els } = showOne([ci('Arthur', 400, 87)], { wishlist: [{ id: 'w', name: 'ARTHUR', brewery: 'hill farmstead' }] });
   assert.match(els.recResults.innerHTML, /rec-save saved">On Wish List</);
+});
+
+// ── Occasion (§5) ──────────────────────────────────────────────
+
+let occN = 0;
+const oc = (beer_type, rating, extra = {}) => ({ id: `o${++occN}`, beer_name: `Beer ${occN}`, brewery_name: 'B', beer_type, rating, created_at: ago(30), ...extra });
+const home = (style, rating = 90, extra = {}) => oc(style, rating, { venue_name: 'Home', ...extra });
+const out = (style, rating = 90, extra = {}) => oc(style, rating, { venue_name: 'Tired Hands', ...extra });
+const times = (n, f) => Array.from({ length: n }, f);
+
+test('OC3: Home and "Untappd at Home" derive home, any other venue out, no venue is left out', () => {
+  const { ctx } = gridCtx();
+  assert.deepEqual({ ...ctx.occasionSideOf({ venue_name: 'Home' }) }, { side: 'home', stated: false });
+  assert.deepEqual({ ...ctx.occasionSideOf({ venue_name: 'Untappd at Home' }) }, { side: 'home', stated: false });
+  assert.deepEqual({ ...ctx.occasionSideOf({ venue_name: 'Monk’s Café' }) }, { side: 'out', stated: false });
+  assert.equal(ctx.occasionSideOf({ venue_name: '' }), null);
+  assert.equal(ctx.occasionSideOf({}), null);
+});
+
+test('OC4/OC5: a stated occasion wins over the venue; traveling and the rest map to out', () => {
+  const { ctx } = gridCtx();
+  assert.deepEqual({ ...ctx.occasionSideOf({ occasion: 'bar-taproom', venue_name: 'Home' }) }, { side: 'out', stated: true });
+  assert.deepEqual({ ...ctx.occasionSideOf({ occasion: 'home-social', venue_name: 'Tired Hands' }) }, { side: 'home', stated: true });
+  ['traveling', 'event', 'dining', 'bar-taproom'].forEach(o => assert.equal(ctx.occasionSideOf({ occasion: o }).side, 'out', o));
+  ['home-solo', 'home-social'].forEach(o => assert.equal(ctx.occasionSideOf({ occasion: o }).side, 'home', o));
+});
+
+test('OC1: only rated, style-matched check-ins feed a side', () => {
+  const { ctx } = gridCtx();
+  const { sides } = ctx.occasionContexts([home('Stout - American'), home('Stout - American', null), home('Not A Style'), out('Pilsner - German')]);
+  assert.equal(sides.home.entries.length, 1);
+  assert.equal(sides.out.entries.length, 1);
+});
+
+test('Gate: opens when either side has 5 rated check-ins, with a reason until then', () => {
+  const { ctx } = gridCtx();
+  const four = [...times(4, () => home('Stout - American')), ...times(4, () => out('Pilsner - German'))];
+  const closed = ctx.occasionGate(four);
+  assert.equal(closed.open, false);
+  assert.match(closed.reason, /5 rated check-ins/);
+  assert.equal(ctx.occasionGate([...four, out('Pilsner - German')]).open, true);
+});
+
+test('Picker: Home / Out, the thin side greyed and unselectable; no choice means a toast, not picks', () => {
+  const list = [...times(6, () => out('Pilsner - German')), home('Stout - American')];
+  const { ctx, els, toasts, get } = gridCtx(list);
+  ctx.enterDiscover();
+  ctx.selectMode('occasion');
+  assert.match(els.discoverOptions.innerHTML, /Where are you\?/);
+  assert.match(els.discoverOptions.innerHTML, /occ-pill gated"[^>]*onclick="selectDiscoverContext\('home'\)"/);
+  ctx.selectDiscoverContext('home');
+  assert.equal(get('discoverContext'), '');
+  ctx.generateRecs();
+  assert.deepEqual(toasts, ['Pick where you are first']);
+  assert.equal(els.recResults.innerHTML, '');
+  ctx.selectDiscoverContext('out');
+  assert.equal(get('discoverContext'), 'out');
+  assert.match(els.discoverOptions.innerHTML, /occ-pill sel"[^>]*onclick="selectDiscoverContext\('out'\)"/);
+});
+
+test('Six-way: switches once 3 stated occasions have 5 each; short ones borrow the parent side', () => {
+  const { ctx } = gridCtx();
+  const stated = (occasion, style, n = 5) => times(n, () => oc(style, 90, { occasion }));
+  const two = [...stated('home-solo', 'Stout - American'), ...stated('bar-taproom', 'Pilsner - German')];
+  assert.deepEqual([...ctx.occasionOptions(two).map(o => o.id)], ['home', 'out']);
+  const three = [...two, ...stated('dining', 'Farmhouse Ale - Saison'), ...stated('event', 'Pilsner - German', 2)];
+  const opts = ctx.occasionOptions(three);
+  assert.deepEqual([...opts.map(o => o.id)], ['home-solo', 'home-social', 'bar-taproom', 'event', 'dining', 'traveling']);
+  const by = id => opts.find(o => o.id === id);
+  assert.equal(by('dining').fallback, false);
+  assert.equal(by('event').fallback, true);
+  assert.equal(by('event').parent, 'out');
+  assert.equal(by('event').open, true);                 // out has 12 rated
+  assert.equal(by('home-social').fallback, true);
+  assert.equal(by('home-social').open, true);           // home has 5 (home-solo)
+});
+
+test('Six-way: venue-derived check-ins never unlock a specific occasion', () => {
+  const { ctx } = gridCtx();
+  const list = [...times(20, () => out('Pilsner - German')), ...times(5, () => oc('Stout - American', 90, { occasion: 'home-solo' }))];
+  assert.equal(ctx.occasionContexts(list).sixMode, false);
+});
+
+function occasionApp(list, context, opts) {
+  const app = gridCtx(list, '', opts);
+  app.ctx.enterDiscover();
+  app.ctx.selectMode('occasion');
+  app.ctx.selectDiscoverContext(context);
+  return app;
+}
+
+test('Picks follow the context: home and out give different styles from different data', () => {
+  const list = [
+    ...times(6, () => home('Stout - Imperial / Double', 95)), ...times(6, () => home('Pilsner - German', 10)),
+    ...times(6, () => out('Pilsner - German', 95)), ...times(6, () => out('Stout - Imperial / Double', 10)),
+  ];
+  const homeCards = occasionApp(list, 'home').ctx.buildOccasion(list).cards.map(c => c.style);
+  const outCards = occasionApp(list, 'out').ctx.buildOccasion(list).cards.map(c => c.style);
+  // The 25% novelty weight lets untried neighbours of a favourite outrank it,
+  // so assert the property that matters: the two contexts don't overlap.
+  assert.equal(homeCards.length, 5);
+  assert.deepEqual([...homeCards.filter(st => outCards.includes(st))], []);
+  assert.ok(!homeCards.includes('Pilsner - German'), 'a home dislike never shows at home');
+  assert.ok(!outCards.includes('Stout - Imperial / Double'), 'an out dislike never shows out');
+});
+
+test('OF3: never recommends or cites a non-recommendable style, even a well-loved one', () => {
+  const list = [...times(8, () => out('Porter - Other', 95)), ...times(3, () => out('Porter - English', 90))];
+  const app = occasionApp(list, 'out');
+  const cards = app.ctx.buildOccasion(list).cards;
+  assert.ok(cards.length > 0);
+  cards.forEach(c => {
+    assert.equal(app.ctx.isRecommendableStyle(c.style), true, c.style);
+    assert.doesNotMatch(app.ctx.occasionRationale(c), /Porter - Other/);
+  });
+});
+
+test('Rationale: transferred picks cite loved, recommendable neighbours by name', () => {
+  const { ctx } = gridCtx();
+  const card = { style: 'Kölsch', context: 'home', label: 'Home', parent: 'home', fallback: false, rated: 6, stated: 6,
+    result: { source: 'transferred', predictedAffinity: 4.1, contributors: [
+      { style: 'Lager - Other', affinity: 4.9 }, { style: 'Pilsner - German', affinity: 4.5 }, { style: 'Lager - Helles', affinity: 1.2 }, { style: 'Cream Ale', affinity: 4.0 }] } };
+  assert.match(ctx.occasionRationale(card), /^Close to Pilsner - German and Cream Ale, which you rate well at home\./);
+});
+
+test('Rationale: names the context, the stated/derived mix, and no raw score (D1)', () => {
+  const { ctx } = gridCtx();
+  const direct = { style: 'Pilsner - German', context: 'out', label: 'Out', parent: 'out', fallback: false, rated: 8, stated: 3,
+    result: { source: 'direct', predictedAffinity: 4.6, contributors: [] } };
+  const text = ctx.occasionRationale(direct);
+  assert.match(text, /You rate this well when you're out\./);
+  assert.match(text, /Based on 8 rated check-ins \(3 tagged, 5 worked out from the venue\)\./);
+  assert.doesNotMatch(text, /\d\.\d/);
+});
+
+test('OC6: the "gets sharper" line shows at half or more derived, and not below', () => {
+  const half = [...times(3, () => out('Pilsner - German')), ...times(3, () => oc('Pilsner - German', 90, { occasion: 'bar-taproom' }))];
+  const a = occasionApp(half, 'out');
+  assert.match(a.ctx.occasionRationale(a.ctx.buildOccasion(half).cards[0]), /get sharper/);
+  const mostlyTagged = [...times(2, () => out('Pilsner - German')), ...times(4, () => oc('Pilsner - German', 90, { occasion: 'bar-taproom' }))];
+  const b = occasionApp(mostlyTagged, 'out');
+  assert.doesNotMatch(b.ctx.occasionRationale(b.ctx.buildOccasion(mostlyTagged).cards[0]), /get sharper/);
+  const allTagged = times(5, () => oc('Pilsner - German', 90, { occasion: 'bar-taproom' }));
+  const c = occasionApp(allTagged, 'out');
+  assert.match(c.ctx.occasionRationale(c.ctx.buildOccasion(allTagged).cards[0]), /all tagged with an occasion/);
+});
+
+test('Six-way fallback cards say they are the parent side\'s picks', () => {
+  const stated = (occasion, style) => times(5, () => oc(style, 90, { occasion }));
+  const list = [...stated('home-solo', 'Stout - American'), ...stated('bar-taproom', 'Pilsner - German'), ...stated('dining', 'Farmhouse Ale - Saison')];
+  const app = occasionApp(list, 'event');
+  const [card] = app.ctx.buildOccasion(list).cards;
+  assert.equal(card.context, 'event');
+  assert.match(app.ctx.occasionRationale(card), /^Not enough Event check-ins yet, so these are your out picks\./);
+});
+
+test('Occasion card: style headline, context line, Save pill keyed to the style; suppression is per context', () => {
+  const list = times(6, () => out('Pilsner - German', 95));
+  const wishlist = [];
+  const app = occasionApp(list, 'out', { wishlist });
+  app.ctx.generateRecs();
+  const html = app.els.recResults.innerHTML;
+  assert.match(html, /rec-brewery">Out</);
+  assert.match(html, /Not Interested/);
+  const shownStyle = app.get('discoverShownCard').style;
+  assert.deepEqual(app.shown(), [[`${shownStyle}|out`, 'occasion']]);
+  app.ctx.saveShownToWishlist();
+  assert.deepEqual({ name: wishlist[0].name, brewery: wishlist[0].brewery, style: wishlist[0].style }, { name: shownStyle, brewery: '', style: shownStyle });
+});
+
+test('Separate keys: a pick hidden under Out can still show under a fallback occasion', () => {
+  const stated = (occasion, style) => times(5, () => oc(style, 90, { occasion }));
+  const list = [...stated('home-solo', 'Stout - American'), ...stated('bar-taproom', 'Pilsner - German'), ...stated('dining', 'Farmhouse Ale - Saison')];
+  const first = occasionApp(list, 'event').ctx.buildOccasion(list).cards[0].style;
+  const now = Date.now();
+  const hidden = ['out', 'bar-taproom'].map(k => ({ mode: 'occasion', key: `${first}|${k}`, timestamp: now }));
+  const app = occasionApp(list, 'event', { store: { hopprint_rec_suppression: JSON.stringify(hidden) } });
+  assert.equal(app.ctx.buildOccasion(list).cards[0].style, first);
 });
 
 // ── Scorer weights (proximity_engine.js) ───────────────────────
