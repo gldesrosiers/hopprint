@@ -180,7 +180,7 @@ function gridCtx(entries = [{ id: 1 }], extraModes = '', { store = {}, wishlist 
     line('STYLE_KEY_INDEX'), line('NEIGHBOR_INDEX'), line('OCCASION_SIDE'), extractBlock('OCCASION_SIDES'),
     line('OCCASION_MIN_RATED'), line('OCCASION_SIX_UNLOCKED'), line('OCCASION_SMARTER_SHARE'), line('OCCASION_BATCH'),
     line('HOPPRINT_DIMS'), extractBlock('GAP_REGIONS'), extractBlock('GAP_LABELS'),
-    ...['GAP_HIGH_MIN', 'GAP_LOW_MAX', 'GAP_THIN_SHARE', 'GAP_DISLIKE_MIN_RATED', 'GAP_MIN_STYLES', 'GAP_PICKS', 'GAP_MIN_PICKS'].map(line),
+    ...['GAP_HIGH_MIN', 'GAP_LOW_MAX', 'GAP_THIN_SHARE', 'GAP_HALF_LIFE_DAYS', 'GAP_DISLIKE_MIN_RATED', 'GAP_MIN_STYLES', 'GAP_PICKS', 'GAP_MIN_PICKS'].map(line),
     extractBlock('STYLE_FAMILY'),
     ...['REDISCOVERY_ZONES', 'GAP_ZONES', 'BREWERY_ZONES', 'OCCASION_ZONES'].map(line),
     ...['REDISCOVERY_COPY', 'GAP_COPY', 'BREWERY_COPY', 'OCCASION_COPY'].map(extractBlock),
@@ -483,6 +483,41 @@ test('DG3: the dislike average is recency-weighted — a recent love outweighs o
   assert.ok(gapByKey(ctx, [...big, ...oldNevers, g('Stout - American', 95, 5)], 'roast:high'));
 });
 
+test('DG1: coverage is recency-weighted — old drinking in a region fades and the gap reopens', () => {
+  const { ctx } = gridCtx();
+  const recent = times(40, () => g('IPA - New England / Hazy', 85, 20));
+  const oldRoast = times(10, () => g('Stout - American', null, 1500));   // 20% all-time, ~0% weighted
+  assert.ok(gapByKey(ctx, [...recent, g('Pilsner - German'), g('IPA - American'), ...oldRoast], 'roast:high'));
+  const recentRoast = times(10, () => g('Stout - American', null, 20));
+  assert.equal(gapByKey(ctx, [...recent, g('Pilsner - German'), g('IPA - American'), ...recentRoast], 'roast:high'), undefined);
+});
+
+test('DG1: the card counts the past year; with nothing logged this year it says so without numbers', () => {
+  const { ctx } = gridCtx();
+  const list = [...times(30, () => g('IPA - New England / Hazy', 85, 100)), ...times(5, () => g('IPA - New England / Hazy', 85, 500)),
+    g('Pilsner - German', null, 100), g('IPA - American', null, 100), g('Stout - American', null, 600)];
+  const roast = gapByKey(ctx, list, 'roast:high');
+  assert.equal(roast.yearTotal, 32);
+  assert.equal(roast.yearCount, 0);
+  const allOld = list.map(e => ({ ...e, created_at: ago(800) }));
+  const stale = gapByKey(ctx, allOld, 'roast:high');
+  assert.match(ctx.gapRationale(stale), /^Not much of your drinking has landed here lately\./);
+});
+
+test('DG8: when every style in a gap has been tried, the least-logged come first', () => {
+  const { ctx } = gridCtx();
+  const regionStyles = Object.keys(STYLE_MATRIX).filter(st => ctx.isRecommendableStyle(st) && STYLE_MATRIX[st].roast >= 4);
+  // Every roast style tried; all but two tried a lot.
+  const [rare1, rare2, ...rest] = regionStyles;
+  const list = [
+    ...times(400, () => g('IPA - New England / Hazy', 85)), g('Pilsner - German'), g('IPA - American'),
+    g(rare1, null, 900), g(rare2, null, 900), ...rest.flatMap(st => times(3, () => g(st, null, 900))),
+  ];
+  const roast = gapByKey(ctx, list, 'roast:high');
+  assert.ok(roast.picks.every(p => p.tried));
+  assert.deepEqual([...roast.picks.slice(0, 2).map(p => p.style)].sort(), [rare1, rare2].sort());
+});
+
 test('DG2: picks sit in the gap and near the hopprint elsewhere — Baltic Porter, not Russian Imperial Stout', () => {
   const { ctx } = gridCtx();
   const roast = gapByKey(ctx, hazyDrinker(), 'roast:high');
@@ -550,7 +585,7 @@ test('DG6: the rationale admits it can\'t rule out a dislike until 3 ratings lan
   const big = [...hazyDrinker(), ...times(60, () => g('IPA - New England / Hazy'))];
   const few = gapByKey(ctx, [...big, ...times(2, () => g('Stout - American', 90))], 'roast:high');
   assert.match(ctx.gapRationale(few), /rule out a dislike/);
-  assert.match(ctx.gapRationale(few), /^Only 2 of your 85 check-ins land here\. These move roast up/);
+  assert.match(ctx.gapRationale(few), /^Only 2 of your 85 check-ins this past year land here\. These move roast up/);
   const enough = gapByKey(ctx, [...big, ...times(3, () => g('Stout - American', 90))], 'roast:high');
   assert.doesNotMatch(ctx.gapRationale(enough), /rule out/);
 });
@@ -878,8 +913,8 @@ test('Switching mode or context clears the previous card', () => {
 
 test('Counts in copy get thousands separators', () => {
   const { ctx } = gridCtx();
-  const g2 = { count: 74, total: 2838, axis: 'sweetness', end: 'high', rated: 3 };
-  assert.match(ctx.gapRationale(g2), /^Only 74 of your 2,838 check-ins land here\./);
+  const g2 = { yearCount: 74, yearTotal: 2838, axis: 'sweetness', end: 'high', rated: 3 };
+  assert.match(ctx.gapRationale(g2), /^Only 74 of your 2,838 check-ins this past year land here\./);
 });
 
 // ── §9 battery: cross-mode guards ──────────────────────────────

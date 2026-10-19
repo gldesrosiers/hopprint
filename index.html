@@ -2370,12 +2370,17 @@ function retireShownBeer() {
 
 // ── Dimension Gaps (§4) ───────────────────────────────────────
 // DG1: project every matched check-in (rated or not) onto the axes through
-// STYLE_MATRIX; a region holding under 5% of them is a gap. Regions are the
+// STYLE_MATRIX; a region holding under 5% of them is a gap. Coverage is
+// recency-weighted (180-day half-life, like affinity) so a direction the
+// user has drifted away from reopens — all-time counts let a heavy explorer
+// run out of gaps for good. Regions are the
 // high end (≥ 4) of every axis, plus low alcohol (= 1) — DG4; low haze and
 // low carbonation are not discoveries. DG3: a region with ≥ 3 rated check-ins
 // whose recency-weighted average is in the Never band is a known dislike and
 // never shown. DG2: picks sit in the gap on the target axis and as close as
-// possible to the hopprint on the other seven; untried styles first.
+// possible to the hopprint on the other seven; untried styles first, then
+// the least-logged (a user who has had every style still gets the corner of
+// the region they barely touched).
 const GAP_REGIONS = [
   { axis: 'bitterness', end: 'high' }, { axis: 'sweetness', end: 'high' }, { axis: 'roast', end: 'high' },
   { axis: 'body', end: 'high' }, { axis: 'fruit', end: 'high' }, { axis: 'carbonation', end: 'high' },
@@ -2390,6 +2395,7 @@ const GAP_LABELS = {
 const GAP_HIGH_MIN = 4;
 const GAP_LOW_MAX = 1;
 const GAP_THIN_SHARE = 0.05;
+const GAP_HALF_LIFE_DAYS = 180;
 const GAP_DISLIKE_MIN_RATED = 3;
 const GAP_MIN_STYLES = 4;      // the hopprint's own gate (DG6)
 const GAP_PICKS = 3;
@@ -2410,13 +2416,20 @@ function dimensionGaps(entriesList) {
   const matched = [];
   entriesList.forEach(e => {
     const style = resolveMatrixStyle(e.beer_type);
-    if (style) matched.push({ e, style });
+    if (!style) return;
+    const days = (now - new Date(e.created_at).getTime()) / 86400000;
+    const weight = Number.isFinite(days) ? Math.pow(0.5, Math.max(0, days) / GAP_HALF_LIFE_DAYS) : 0;
+    matched.push({ e, style, weight, pastYear: Number.isFinite(days) && days <= 365 });
   });
-  const tried = new Set(matched.map(m => m.style));
+  const totalWeight = matched.reduce((sum, m) => sum + m.weight, 0);
+  if (!totalWeight) return { gaps: [], matchedStyles: hp.matchedStyles };
+  const logged = {};
+  matched.forEach(m => { logged[m.style] = (logged[m.style] || 0) + 1; });
+  const yearTotal = matched.filter(m => m.pastYear).length;
   const gaps = [];
   GAP_REGIONS.forEach(region => {
     const inside = matched.filter(m => inGapRegion(region, STYLE_MATRIX[m.style]));
-    const share = inside.length / matched.length;
+    const share = inside.reduce((sum, m) => sum + m.weight, 0) / totalWeight;
     if (share >= GAP_THIN_SHARE) return;
     let rated = 0, sumW = 0, sumWR = 0;
     inside.forEach(({ e }) => {
@@ -2433,14 +2446,14 @@ function dimensionGaps(entriesList) {
     const distance = style => Math.sqrt(others.reduce((sum, d) => sum + (STYLE_MATRIX[style][d] - center[d]) ** 2, 0));
     const picks = Object.keys(STYLE_MATRIX)
       .filter(style => isRecommendableStyle(style) && inGapRegion(region, STYLE_MATRIX[style]))   // OF3
-      .map(style => ({ style, distance: distance(style), tried: tried.has(style) }))
-      .sort((a, b) => (a.tried - b.tried) || (a.distance - b.distance))
+      .map(style => ({ style, distance: distance(style), logged: logged[style] || 0, tried: !!logged[style] }))
+      .sort((a, b) => (a.tried - b.tried) || (a.logged - b.logged) || (a.distance - b.distance))
       .slice(0, GAP_PICKS);
     if (picks.length < GAP_MIN_PICKS) return;
     const key = `${region.axis}:${region.end}`;
     gaps.push({
       key, axis: region.axis, end: region.end, label: GAP_LABELS[key],
-      share, count: inside.length, total: matched.length, rated, picks,
+      share, yearCount: inside.filter(m => m.pastYear).length, yearTotal, rated, picks,
       step: picks.reduce((sum, p) => sum + p.distance, 0) / picks.length,
     });
   });
@@ -2464,9 +2477,12 @@ function buildGaps(entriesList) {
 // DG6: admits it can't rule out a dislike on thin ratings.
 const GAP_ZONES = ['coverage', 'change', 'caution'];
 const GAP_COPY = [
-  { id: 'gp_coverage', zone: 'coverage', priority: 10,
+  { id: 'gp_coverage_year', zone: 'coverage', priority: 20,
+    condition: g => g.yearTotal > 0,
+    render: g => `only ${g.yearCount.toLocaleString()} of your ${g.yearTotal.toLocaleString()} check-ins this past year land here` },
+  { id: 'gp_coverage_lately', zone: 'coverage', priority: 10,
     condition: () => true,
-    render: g => `only ${g.count.toLocaleString()} of your ${g.total.toLocaleString()} check-ins land here` },
+    render: () => `not much of your drinking has landed here lately` },
   { id: 'gp_change', zone: 'change', priority: 10,
     condition: () => true,
     render: g => `these move ${g.axis} ${g.end === 'high' ? 'up' : 'down'} and stay close to your usual on everything else` },
