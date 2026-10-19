@@ -73,7 +73,7 @@ function printApp(entries, { now = '2026-09-28T12:00:00' } = {}) {
     crypto: nodeCrypto.webcrypto,
     FileReader: function () { this.readAsText = () => this.onload({ target: { result: ctx.csv } }); },
     // Other pages and side effects a tab switch, pull or import touches.
-    enterHistory: stub('enterHistory'), enterAnalytics: stub('enterAnalytics'), renderWishlist: stub('renderWishlist'),
+    enterHistory: stub('enterHistory'), enterAnalytics: stub('enterAnalytics'), enterDiscover: stub('enterDiscover'), renderWishlist: stub('renderWishlist'),
     refreshHistory: stub('refreshHistory'), refreshAnalytics: stub('refreshAnalytics'),
     buildLiveLists: stub('buildLiveLists'), updateHeaderMeta: stub('updateHeaderMeta'), showToast: stub('showToast'),
     queueSyncMany: stub('queueSyncMany'), upsertBeerDB() {}, upsertBreweryDB() {},

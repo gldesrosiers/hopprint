@@ -22,7 +22,7 @@ const ALLOWED_CHANGES = {
   skipRating: 'rating modal closes through closeRatingModal() (deferred "Checked in!" toast)',
   saveEdit: 'SY6 queue; HL6 refreshHistory(); VR9a normalizeVenue, VR12 buildLiveLists()',
   deleteEntry: 'SY6 queue delete; HL6 refreshHistory(); VR12 buildLiveLists()',
-  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue; HL7 reset My Beers position; PT6 refresh Print; VR3 normalizeVenue',
+  handleImport: 'SY4 uuids, SY7(d) undated skip + report, SY6 queue; HL7 reset My Beers position; PT6 refresh Print; VR3 normalizeVenue; Discover redesign: diagnostic comment no longer names retired modes',
   addWishlistItem: 'SY11 uuid id + SY6 queue',
   removeWish: 'SY11 remove by id + SY6 queue delete',
   // Phase 2 — quoted ids in inline handlers (SY4 build-time catch)
@@ -36,7 +36,7 @@ const ALLOWED_CHANGES = {
   openRatingModal: 'IN20 rating band icon()',
   buildFeedbackCatGrid: 'IN20 feedback category icon()',
   drillBandSection: 'IN20 band segment icon() (IN7)',
-  buildModeGrid: 'IN20 mode icon()',
+  buildModeGrid: 'IN20 mode icon(); DS4 per-mode gates, greyed reasons, DS5 all-gated locked state',
   // IT4 — milestones keyed by kind (IN19)
   computeMilestones: 'IN19 kind replaces emoji icon',
   renderAnalytics: 'IN19 milestone icon from kind; ST5 card order; ST7/ST11 collapsible cards, lazy charts',
@@ -50,15 +50,15 @@ const ALLOWED_CHANGES = {
   buildAnalyticsInsightCard: 'IN1 insight icon',
   buildHopprintSVG: 'Phase E (c) DE5 geometry moved to hopprintGeometry() for the canvas share card; SVG output identical (SP1)',
   renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years; Phase E (c) Hopprint Share pill in the hero kicker row',
-  generateRecs: 'IN1/IN18 empty state + CTA',
-  renderNextRec: 'IN1/IN18 empty state, Show Another',
+  generateRecs: 'IN1/IN18 empty state + CTA; DS1/DS6 dispatches to the selected mode\'s build()',
+  renderNextRec: 'IN1/IN18 empty state, Show Another; DS6 per-mode card renderer + suppression key',
   // IT7 — showToast(msg, iconName) (IN8)
   showToast: 'IN8 icon + textContent span',
   submitFeedback: 'IN8 toast iconName',
   exportCSV: 'IN8 toast iconName',
   exportJSON: 'IN8 toast iconName',
   // IT9 — bottom nav (IN16)
-  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll; ST10 enterAnalytics(); PT2 enterProfile()',
+  switchTab: 'IN16 .bn-item selector + aria-current; HL5 scroll save, HL4 enterHistory(); ST1/ST2 per-page scroll; ST10 enterAnalytics(); PT2 enterProfile(); DS4 enterDiscover() re-evaluates mode gates',
   // Autofill details rebuilt from every check-in (tests/autofill.test.js)
   buildLiveLists: 'autofill BEER_DB/BREWERY_DB from entries on every rebuild; VR12 venue/purchase frecency scores',
   // History perf (HISTORY_PERF_WORKPLAN.md)
@@ -69,10 +69,21 @@ const ALLOWED_CHANGES = {
   setupAC: 'VR18 optional rank argument, passed through to showDrop',
   showDrop: 'VR18 optional rank sorts matches before the cap of 8',
   resetForm: 'OC1 drops the two context-tag reset lines; VR16 re-shows the recall chips',
+  // Discover redesign (DISCOVER_REDESIGN_HANDOFF.md) — per-mode suppression keys (§8), gating (DS4)
+  recordShown: '§8 rows are { mode, key, timestamp }; 31-day prune',
+  notInterestedRec: '§8 param renamed style → key (body unchanged in behavior)',
+  selectMode: 'DS4 gated modes cannot be selected',
 };
 
 // Original functions deliberately deleted, each with the decision that removed it.
 const ALLOWED_REMOVALS = {
+  // (listed in source order — the test compares against the baseline's order)
+  // Discover redesign — DS1 retires Wheelhouse / Slightly Outside / Way Outside / Random (§8)
+  isStyleSuppressed: '§8 replaced by isSuppressed(key, mode, …)',
+  pickStyleRanking: 'DS1 retired with the old modes',
+  buildAffinityRecs: 'DS1 retired with the old modes',
+  wildcardConfidence: 'DS1 retired with the old modes',
+  rationaleFor: 'DS1 retired with the old modes',
   buildCtxPills: 'OC1 context tags removed from the check-in form',
   toggleCtx: 'OC1 context tags removed from the check-in form',
 };

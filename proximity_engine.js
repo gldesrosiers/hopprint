@@ -85,9 +85,10 @@ function transferredAffinity(styleName, userAffinityMap, neighborIndex, styleMat
 // Combines transferred affinity with the user's real signal data (if any)
 // and novelty, weighted per recommendation mode.
 const MODE_WEIGHTS = {
-  wheelhouse: { affinity: 0.75, novelty: 0.25 },
-  adjacent:   { affinity: 0.45, novelty: 0.55 },
-  wildcard:   { affinity: 0.15, novelty: 0.85 },
+  // Occasion (DISCOVER_REDESIGN_HANDOFF.md §5): the retired Wheelhouse
+  // weighting — a "what should I order now" pick, where the occasion filter,
+  // not novelty, keeps it from repeating the usual favorites.
+  occasion: { affinity: 0.75, novelty: 0.25 },
 };
 
 // DIRECT_SIGNAL_THRESHOLD: familiarity above which we trust the user's own

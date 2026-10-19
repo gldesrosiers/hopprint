@@ -176,7 +176,7 @@ function navSandbox() {
   });
   vm.runInContext([
     'var currentTab = "checkin"; var tabScroll = {};',
-    'function restoreScroll() {} function enterHistory() {} function enterAnalytics() {} function enterProfile() {} function renderWishlist() {}',
+    'function restoreScroll() {} function enterHistory() {} function enterAnalytics() {} function enterProfile() {} function enterDiscover() {}',
     extractFunction('switchTab'),
   ].join('\n'), ctx);
   return ctx;

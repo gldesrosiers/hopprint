@@ -82,7 +82,7 @@ function app(entries, { query = '', observer = true } = {}) {
     localStorage: { setItem() {} },
     enterAnalytics: () => rendered.push('analytics'),
     enterProfile: () => rendered.push('profile'), refreshProfile() {},
-    renderWishlist: () => rendered.push('discover'),
+    enterDiscover: () => rendered.push('discover'), renderWishlist() {},
     queueSync() {}, queueSyncMany() {}, showToast() {}, updateHeaderMeta() {}, buildLiveLists() {},
     upsertBeerDB() {}, upsertBreweryDB() {}, resolveMatrixStyle: () => true,
     confirm: () => true,

@@ -756,6 +756,10 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 }
 .mode-card:hover { border-color: var(--border-orange); }
 .mode-card.sel { background: var(--orange-glow); border-color: var(--orange); }
+.mode-card.gated { opacity: 0.45; cursor: not-allowed; }
+.mode-card.gated:hover { border-color: var(--border); }
+.mode-reason { font-size: 11px; color: var(--text-dim); margin-top: 6px; font-style: italic; font-weight: 300; line-height: 1.3; }
+.btn-discover:disabled { opacity: 0.45; cursor: not-allowed; }
 .mode-icon { display: flex; align-items: center; justify-content: center; height: 32px; margin-bottom: 5px; }
 .mode-name { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
 .mode-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 300; line-height: 1.3; }
@@ -802,11 +806,6 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
   text-transform: uppercase; padding: 3px 9px; border-radius: 20px; margin-bottom: 7px;
 }
-.badge-wheelhouse { background: var(--orange); color: var(--charcoal); }
-.badge-adjacent { background: var(--lime); color: var(--charcoal); }
-.badge-wildcard-confident { background: var(--yellow); color: var(--charcoal); }
-.badge-wildcard-hedged { background: transparent; border: 1px dashed var(--yellow); color: var(--yellow); }
-.badge-random { background: var(--charcoal3); color: var(--text-muted); border: 1px solid var(--border); }
 .rec-starve-note {
   font-size: 12px; color: var(--text-dim); font-style: italic; font-weight: 300;
   text-align: center; margin-top: 10px; padding: 0 8px;
@@ -1225,12 +1224,14 @@ body.first-sync .first-sync-hint { display: block; }
 <div class="screen" id="screen-discover">
 <div class="screen-inner">
 
+  <div id="discoverLocked"></div>
+
   <div class="discover-step">
     <div class="discover-step-title">What kind of recommendation?</div>
     <div class="mode-grid" id="modeGrid"></div>
   </div>
 
-  <button class="btn-discover" onclick="generateRecs()">Find My Next Beer</button>
+  <button class="btn-discover" id="discoverGo" onclick="generateRecs()">Find My Next Beer</button>
 
   <div id="recResults" style="margin-top:16px"></div>
 
@@ -1507,7 +1508,9 @@ let discoverMode = '';
 let discoverQueue = [];
 let discoverQueueMode = '';
 let discoverStarved = false;
-let discoverUsedFallback = false;
+// Suppression key of the card on screen. Read by the Not Interested handler
+// rather than inlined into it, since keys can be beer names with any quotes.
+let discoverShownKey = '';
 let currentPromptIdx = 0;
 let analyticsYear = 'all';
 let analyticsCharts = {};
@@ -1545,12 +1548,25 @@ let fbCategory = null;
 
 const SERVE_TYPES = ['Bottle','Can','Cask','Crowler','Draft','Growler','Nitro','Side Pull','Taster'];
 
+// Discover modes (DISCOVER_REDESIGN_HANDOFF.md §2). Each mode owns its gate,
+// batch builder, card renderer, and suppression key (DS4/DS6) — they return
+// different kinds of object, so nothing is shared beyond this shape:
+//   gate(entries)      -> { open, reason }  reason is shown on a greyed card
+//   build(entries)     -> { cards, starved }
+//   renderCard(card)   -> inner HTML for one card
+//   suppressionKey(c)  -> string; per-mode namespace, see isSuppressed
+// Names, descriptions, and reasons are placeholders until the copy pass (BP1).
+// A mode without build() isn't implemented yet and stays gated.
+const DISC_NOT_BUILT = () => ({ open: false, reason: 'Not built yet' });
 const DISC_MODES = [
-  { id:'wheelhouse', iconName:'mode-wheelhouse', name:'In Your Wheelhouse', desc:'Beers that match your pattern' },
-  { id:'adjacent', iconName:'mode-adjacent', name:'Slightly Outside', desc:'One or two steps from your norm' },
-  { id:'wildcard', iconName:'mode-wildcard', name:'Way Outside', desc:'Styles you rarely or never drink' },
-  { id:'random', iconName:'mode-random', name:'Random', desc:'Anything goes — surprise me' },
+  { id:'gaps', iconName:'mode-adjacent', name:'Dimension Gaps', desc:'Flavor directions you haven\'t explored', gate: DISC_NOT_BUILT },
+  { id:'occasion', iconName:'occasion-bar', name:'Occasion', desc:'Picks for home or out', gate: DISC_NOT_BUILT },
+  { id:'brewery', iconName:'trend-loyal', name:'Brewery Gaps', desc:'More from breweries you love', gate: DISC_NOT_BUILT },
+  { id:'rediscovery', iconName:'mode-random', name:'Rediscovery', desc:'Old favorites worth another round', gate: DISC_NOT_BUILT },
 ];
+function discModeById(id) {
+  return DISC_MODES.find(m => m.id === id) || null;
+}
 
 // Resolve a raw beer_type string (as stored on an entry — could come from
 // live check-in autocomplete, CSV import, or years-old data) to the exact
@@ -1570,6 +1586,34 @@ function resolveMatrixStyle(rawStyle) {
     Object.keys(STYLE_MATRIX).forEach(k => { STYLE_KEY_INDEX[normalizeStyleKey(k)] = k; });
   }
   return STYLE_KEY_INDEX[normalizeStyleKey(rawStyle)] || null;
+}
+
+// Non-recommendable styles (§3, OF1–OF3): valid input, never output. These
+// still count toward familiarity, affinity, coverage, and the hopprint — they
+// are real drinking — but are never rendered as a recommended style or cited
+// as a card's reason. An explicit list, not a string match: 'Sour - Other Gose'
+// is orderable (it's a gose) and 'Dark Ale' / 'Traditional Ale' fail the
+// actionability test without containing "Other". Keys are canonical
+// STYLE_MATRIX keys; pass resolveMatrixStyle output.
+const NON_RECOMMENDABLE_STYLES = new Set([
+  'Other',
+  'Blonde / Golden Ale - Other',
+  'Brown Ale - Other',
+  'Lager - Other',
+  'Mild - Other',
+  'Pale Ale - Other',
+  'Pilsner - Other',
+  'Porter - Other',
+  'Red Ale - Other',
+  'Sour - Other',
+  'Stout - Other',
+  'Wheat Beer - Other',
+  'Historical Beer - Other',
+  'Dark Ale',
+  'Traditional Ale',
+]);
+function isRecommendableStyle(style) {
+  return !!style && !!STYLE_MATRIX[style] && !NON_RECOMMENDABLE_STYLES.has(style);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1905,9 +1949,15 @@ function computeSignalModel(entriesList) {
   return { signalData, userAffinityMap };
 }
 
-// Suppression / rotation tracking — per style, per mode, independently.
-// Windows are midpoints of the ranges locked in the handoff doc.
-const SUPPRESSION_WINDOWS = { wheelhouse: 4, adjacent: 8, wildcard: 18, random: 6 };
+// Suppression / rotation tracking — per mode, keyed by whatever that mode
+// recommends (§8): axis (gaps), style|occasion (occasion), brewery (brewery),
+// beer (rediscovery). Rows are { mode, key, timestamp }; the mode namespaces
+// the key, so equal keys in different modes never collide. Rows from the
+// retired modes ({ style, mode }) never match a current mode and age out at
+// the prune. Local only — not synced. RD4's permanent "can't get it anymore"
+// retirement is a separate, synced store.
+const SUPPRESSION_WINDOWS = { gaps: 7, occasion: 4, brewery: 14, rediscovery: 30 };
+const SUPPRESSION_PRUNE_DAYS = 31; // one past the longest window
 
 function loadSuppression() {
   return JSON.parse(localStorage.getItem('hopprint_rec_suppression') || '[]');
@@ -1915,18 +1965,32 @@ function loadSuppression() {
 function saveSuppression(list) {
   localStorage.setItem('hopprint_rec_suppression', JSON.stringify(list));
 }
-function isStyleSuppressed(style, mode, windowDays, suppressionList) {
+function isSuppressed(key, mode, windowDays, suppressionList) {
   if (windowDays <= 0) return false;
   const now = Date.now();
-  return suppressionList.some(s => s.style === style && s.mode === mode && (now - s.timestamp) < windowDays * 86400000);
+  return suppressionList.some(s => s.key === key && s.mode === mode && (now - s.timestamp) < windowDays * 86400000);
 }
-function recordShown(styles, mode) {
-  if (!styles.length) return;
+function recordShown(keys, mode) {
+  if (!keys.length) return;
   const list = loadSuppression();
   const now = Date.now();
-  styles.forEach(style => list.push({ style, mode, timestamp: now }));
-  const cutoff = now - 25 * 86400000; // prune anything older than the longest window
+  keys.forEach(key => list.push({ mode, key, timestamp: now }));
+  const cutoff = now - SUPPRESSION_PRUNE_DAYS * 86400000;
   saveSuppression(list.filter(s => s.timestamp > cutoff));
+}
+// Starvation ladder shared by every mode's build(): full window, then half,
+// then none — so a mode with a small candidate pool still fills its batch
+// rather than going blank because everything was shown recently. candidates
+// arrive ranked (or shuffled, for Rediscovery); keyOf maps one to its key.
+function takeUnsuppressed(candidates, mode, keyOf, target) {
+  const baseWindow = SUPPRESSION_WINDOWS[mode];
+  const suppressionList = loadSuppression();
+  let picked = [];
+  for (const windowDays of [baseWindow, baseWindow / 2, 0]) {
+    picked = candidates.filter(c => !isSuppressed(keyOf(c), mode, windowDays, suppressionList)).slice(0, target);
+    if (picked.length >= target) break;
+  }
+  return { cards: picked, starved: picked.length < target };
 }
 function showAnotherRec() {
   // Neutral cycle — no extra suppression stamp beyond the normal
@@ -1935,11 +1999,11 @@ function showAnotherRec() {
   renderNextRec();
 }
 
-function notInterestedRec(style, mode) {
+function notInterestedRec(key, mode) {
   // Explicit negative signal — re-stamp suppression to *now* on top of the
-  // shown-at-render entry, so this style is pushed out further than one
+  // shown-at-render entry, so this key is pushed out further than one
   // that was simply shown and cycled past.
-  recordShown([style], mode);
+  recordShown([key], mode);
   renderNextRec();
 }
 
@@ -1977,87 +2041,6 @@ function buildFamiliarityFallbackSignal(entriesList) {
     userAffinityMap[style] = pseudoAffinity;
   });
   return { signalData, userAffinityMap };
-}
-
-function pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex) {
-  return Object.keys(STYLE_MATRIX)
-    .map(style => {
-      const result = scoreRecommendation(style, signalData, userAffinityMap, neighborIndex, mode, STYLE_MATRIX);
-      result.count = (signalData[style] && signalData[style].count) || 0;
-      return result;
-    })
-    .sort((a, b) => b.score - a.score);
-}
-
-// Style-only recommendations: no specific-beer lookup, so no candidate-pool
-// exhaustion is possible here. Starvation ladder now only has to work around
-// suppression (a style recently shown), not beer availability.
-function buildAffinityRecs(mode, entriesList) {
-  let { signalData, userAffinityMap } = computeSignalModel(entriesList);
-  let usedFallback = false;
-  if (Object.keys(userAffinityMap).length === 0) {
-    // No rated check-ins anywhere, so real taste affinity can't be computed
-    // at all (not "sparse" — zero). Fall back to ranking by drinking
-    // frequency rather than returning nothing. Genuinely empty history (no
-    // matched styles at all, e.g. brand-new account) still falls through to
-    // the real "not enough data" empty state below via an empty `ranked`.
-    const fallback = buildFamiliarityFallbackSignal(entriesList);
-    if (fallback) { signalData = fallback.signalData; userAffinityMap = fallback.userAffinityMap; usedFallback = true; }
-  }
-  const neighborIndex = getNeighborIndex();
-  const ranked = pickStyleRanking(mode, signalData, userAffinityMap, neighborIndex);
-  // Every result in a fallback pass is frequency-derived, not taste-derived —
-  // normalize the source label uniformly (regardless of the internal
-  // direct/blended/transferred distinction scoreRecommendation assigned)
-  // so the UI renders one honest rationale rather than mixing real-taste
-  // and frequency-only copy in the same list.
-  if (usedFallback) ranked.forEach(r => { r.source = 'familiarity_fallback'; });
-  const target = 5;
-  const baseWindow = SUPPRESSION_WINDOWS[mode];
-  const attempts = [baseWindow, baseWindow / 2, 0];
-  const suppressionList = loadSuppression();
-  let cards = [];
-  for (const windowDays of attempts) {
-    cards = [];
-    for (const result of ranked) {
-      if (cards.length >= target) break;
-      if (isStyleSuppressed(result.style, mode, windowDays, suppressionList)) continue;
-      // Negative recommendations are internal-only (used to suppress bad Wildcard
-      // picks) and must never render as a card — filter them out here rather than
-      // relying on generateRationale's own negative-branch text staying unused.
-      if (result.source !== 'direct' && result.source !== 'familiarity_fallback' && result.predictedAffinity < 2.5) continue;
-      cards.push({ style: result.style, result });
-    }
-    if (cards.length >= target) break;
-  }
-  return { cards, starved: cards.length < target, usedFallback };
-}
-
-function wildcardConfidence(result) {
-  if (result.source === 'direct') return null;
-  const positive = (result.contributors || []).filter(c => c.affinity >= 2.5);
-  if (positive.length >= 2) return 'confident';
-  if (positive.length === 1) return 'hedged';
-  return 'insufficient';
-}
-
-function rationaleFor(card, mode) {
-  if (mode === 'random') return 'A completely random pick — adventure awaits.';
-  const result = card.result;
-  if (result.source === 'familiarity_fallback') {
-    // No rated check-ins exist yet, so this list is ranked by drinking
-    // frequency, not taste — say so plainly rather than borrowing the
-    // confidence language real ratings earn (see buildFamiliarityFallbackSignal).
-    const times = result.count || 0;
-    if (mode === 'wheelhouse') return `You've logged this style ${times} time${times===1?'':'s'} — no ratings yet, so this is based on how often you reach for it. Rate a few check-ins to sharpen these picks.`;
-    if (mode === 'adjacent') return `Close in flavor to styles you log often. Rate a few check-ins and this list gets more precise.`;
-    return `Haven't seen this one in your history — suggested from your drinking habits, not rated taste, since there's no rating data yet.`;
-  }
-  if (result.source === 'direct') {
-    if (mode === 'wheelhouse') return `One of your go-tos — you've had this style ${result.count} times and keep rating it near the top.`;
-    if (mode === 'adjacent') return `You've only had this a handful of times, but you've rated it well every time. Feels like one to revisit.`;
-  }
-  return generateRationale(result, mode);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -5389,18 +5372,45 @@ function renderProfile() {
 // ═══════════════════════════════════════════════════════════════
 // DISCOVER
 // ═══════════════════════════════════════════════════════════════
+// DS4: gates are evaluated against the current history every time Discover
+// opens, so a mode unlocks as soon as the data for it exists. A gated mode
+// renders greyed with its reason and can't be selected. DS5: when every mode
+// is gated, the tab-level locked state is just that — no fallback mode.
+function discGates() {
+  return Object.fromEntries(DISC_MODES.map(m => [m.id, m.build ? m.gate(entries) : DISC_NOT_BUILT()]));
+}
+
 function buildModeGrid() {
-  document.getElementById('modeGrid').innerHTML = DISC_MODES.map(m => `
-    <div class="mode-card" id="mode-${m.id}" onclick="selectMode('${m.id}')">
+  const gates = discGates();
+  if (discoverMode && !gates[discoverMode].open) discoverMode = '';
+  document.getElementById('modeGrid').innerHTML = DISC_MODES.map(m => {
+    const g = gates[m.id];
+    const cls = !g.open ? ' gated' : discoverMode === m.id ? ' sel' : '';
+    return `
+    <div class="mode-card${cls}" id="mode-${m.id}" onclick="selectMode('${m.id}')"${g.open ? '' : ' aria-disabled="true"'}>
       <div class="mode-icon">${icon(m.iconName, 24, 2.2)}</div>
       <div class="mode-name">${m.name}</div>
       <div class="mode-desc">${m.desc}</div>
-    </div>`).join('');
+      ${g.open ? '' : `<div class="mode-reason">${esc(g.reason)}</div>`}
+    </div>`;
+  }).join('');
+  const allGated = DISC_MODES.every(m => !gates[m.id].open);
+  document.getElementById('discoverLocked').innerHTML = allGated
+    ? `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Discover opens up as your history grows. Each mode below says what it needs.</p></div>`
+    : '';
+  document.getElementById('discoverGo').disabled = allGated;
 }
 
 function selectMode(id) {
+  const m = discModeById(id);
+  if (!m || !m.build || !m.gate(entries).open) return;
   discoverMode = discoverMode === id ? '' : id;
   document.querySelectorAll('.mode-card').forEach(c => c.classList.toggle('sel', c.id === `mode-${id}` && discoverMode === id));
+}
+
+function enterDiscover() {
+  renderWishlist();
+  buildModeGrid();
 }
 
 function generateRecs() {
@@ -5408,32 +5418,9 @@ function generateRecs() {
   const el = document.getElementById('recResults');
   el.innerHTML = '';
 
-  const mode = discoverMode || 'wheelhouse';
-  let cards = [];
-  let starved = false;
-  let usedFallback = false;
-
-  if (mode === 'random') {
-    // Random stays beer-specific (paired with its style) and allows repeats —
-    // "surprise me with anything" doesn't carry the same unobtainability risk
-    // as a targeted pick, so it keeps sampling straight from BEER_DB. Still
-    // pulls a small batch — just held as a queue, one shown at a time.
-    const suppressionList = loadSuppression();
-    const windowDays = SUPPRESSION_WINDOWS.random;
-    const allBeers = Object.entries(BEER_DB);
-    const candidates = allBeers.filter(([name, b]) => !(b.s && isStyleSuppressed(b.s, 'random', windowDays, suppressionList)));
-    const pool = candidates.length >= 5 ? candidates : allBeers;
-    cards = [...pool].sort(() => Math.random() - 0.5).slice(0, 5)
-      .map(([name, b]) => ({ name, brewery: b.b || '', style: b.s || '', abv: b.a || '', result: { source: 'direct' } }));
-  } else {
-    // Wheelhouse / Adjacent / Wildcard now recommend a style, not a specific
-    // beer — see buildAffinityRecs for why. Still ranks a small batch — just
-    // held as a queue, one shown at a time.
-    const built = buildAffinityRecs(mode, entries);
-    cards = built.cards;
-    starved = built.starved;
-    usedFallback = built.usedFallback;
-  }
+  const m = discModeById(discoverMode);
+  if (!m) { showToast('Pick a recommendation type first', 'warning'); return; }
+  const { cards, starved } = m.build(entries);
 
   if (!cards.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>Not enough data to generate recommendations in this mode yet.</p><button class="empty-cta" onclick="switchTab('checkin')">${icon('checkin', 16, 2.4)}Log a Beer</button></div>`;
@@ -5442,9 +5429,8 @@ function generateRecs() {
   }
 
   discoverQueue = cards;
-  discoverQueueMode = mode;
+  discoverQueueMode = m.id;
   discoverStarved = starved;
-  discoverUsedFallback = usedFallback;
   renderNextRec();
 }
 
@@ -5452,69 +5438,32 @@ function generateRecs() {
 // was built for. Dismissing pulls the next queued pick instead of vanishing
 // to blank; running out points back at "Find My Next Beer" rather than
 // silently re-querying, since a fresh tap is the honest place to re-ask
-// affinity/suppression for a new batch.
+// for a new batch. The card body comes from the mode's own renderer (DS6);
+// the footer and suppression stamp are shared.
 function renderNextRec() {
   const el = document.getElementById('recResults');
-  const mode = discoverQueueMode;
+  const m = discModeById(discoverQueueMode);
 
-  if (!discoverQueue.length) {
+  if (!discoverQueue.length || !m) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">${icon('mode-wildcard', 44, 2.2)}</div><p>That's the pick for now in this mode — tap Find My Next Beer for another, or log/rate a few more to sharpen things up.</p></div>`;
     return;
   }
 
   const c = discoverQueue.shift();
-  let badgeHtml = '';
-  let nameClass = '';
-  if (mode === 'random') {
-    badgeHtml = `<span class="rec-badge badge-random">Random</span>`;
-  } else if (mode === 'wheelhouse') {
-    badgeHtml = `<span class="rec-badge badge-wheelhouse">In Your Wheelhouse</span>`;
-  } else if (mode === 'adjacent') {
-    badgeHtml = `<span class="rec-badge badge-adjacent">Slightly Outside</span>`;
-  } else if (mode === 'wildcard') {
-    const conf = wildcardConfidence(c.result);
-    if (conf === 'confident') {
-      badgeHtml = `<span class="rec-badge badge-wildcard-confident">Wildcard</span>`;
-    } else {
-      badgeHtml = `<span class="rec-badge badge-wildcard-hedged">Wildcard</span>`;
-      nameClass = 'muted';
-    }
-  }
-  const why = rationaleFor(c, mode);
-  // Random is still beer-specific (name + brewery/ABV, style as a tag).
-  // Wheelhouse/Adjacent/Wildcard recommend a style, so the style name is
-  // the headline and there's no brewery/ABV/tag line to show.
-  const headline = mode === 'random' ? c.name : c.style;
-  const subhead = mode === 'random' ? `${c.brewery || ''}${c.abv ? ` · ${c.abv}% ABV` : ''}` : '';
-  const styleTag = mode === 'random' && c.style ? `<div class="rec-tags"><span class="etag style">${c.style}</span></div>` : '';
-
+  const key = discoverShownKey = m.suppressionKey(c);
   el.innerHTML = `<div class="rec-card fade-up">
-    <div class="rec-top">
-      <div>
-        ${badgeHtml}
-        <div class="rec-name ${nameClass}">${headline}</div>
-        ${subhead ? `<div class="rec-brewery">${subhead}</div>` : ''}
-      </div>
-    </div>
-    ${styleTag}
-    ${why ? `<div class="rec-why">${why}</div>` : ''}
+    ${m.renderCard(c)}
     <div class="rec-footer">
       <div class="rec-footer-btn" onclick="showAnotherRec()"><span class="ico-pair">${icon('refresh', 14, 2.2)}Show Another</span></div>
-      <div class="rec-footer-btn negative" onclick="notInterestedRec('${(c.style||'').replace(/'/g,"\\'")}','${mode}')">✕ Not Interested</div>
+      <div class="rec-footer-btn negative" onclick="notInterestedRec(discoverShownKey, discoverQueueMode)">✕ Not Interested</div>
     </div>
   </div>`;
 
-  recordShown([c.style].filter(Boolean), mode);
+  recordShown([key], m.id);
 
-  let notes = '';
-  if (discoverUsedFallback) {
-    notes += `<div class="rec-starve-note">No rated check-ins yet, so this is ranked by what you log most, not what you'd like most. Rate a few and this sharpens.</div>`;
-  }
   if (discoverStarved && !discoverQueue.length) {
-    const modeName = (DISC_MODES.find(m => m.id === mode) || {}).name || mode;
-    notes += `<div class="rec-starve-note">Your ${modeName} history is still pretty focused — more variety will show up as you explore.</div>`;
+    el.insertAdjacentHTML('beforeend', `<div class="rec-starve-note">Your ${m.name} history is still pretty focused — more variety will show up as you explore.</div>`);
   }
-  if (notes) el.insertAdjacentHTML('beforeend', notes);
 }
 
 function addWishlistItem() {
@@ -5642,8 +5591,8 @@ function handleImport(event) {
       showToast(`Imported ${newOnes.length} entries`, 'success');
 
       // Diagnostic, not decoration: style-match and rating coverage directly
-      // determine whether Discover's wheelhouse/adjacent/wildcard modes will
-      // have anything to work with (see buildAffinityRecs / resolveMatrixStyle).
+      // determine whether Discover's modes will have anything to work with
+      // (see DISC_MODES / resolveMatrixStyle).
       // Only surface this when it reveals something actionable — a clean
       // import shouldn't nag the user with a status report.
       const diagEl = document.getElementById('importDiagnostic');
@@ -5756,7 +5705,7 @@ function switchTab(tab) {
   if (tab === 'history') enterHistory();
   if (tab === 'analytics') enterAnalytics();
   if (tab === 'profile') enterProfile();
-  if (tab === 'discover') renderWishlist();
+  if (tab === 'discover') enterDiscover();
   restoreScroll(tabScroll[tab]);   // ST1: after the page has rendered
 }
 
