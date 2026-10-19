@@ -1640,6 +1640,9 @@ const NON_RECOMMENDABLE_STYLES = new Set([
   'Historical Beer - Other',
   'Dark Ale',
   'Traditional Ale',
+  // Not a beer discovery for a full-strength beer drinker (Oct 19 walkthrough).
+  'Root Beer',
+  'Non-Alcoholic - Porter / Stout',
 ]);
 function isRecommendableStyle(style) {
   return !!style && !!STYLE_MATRIX[style] && !NON_RECOMMENDABLE_STYLES.has(style);
