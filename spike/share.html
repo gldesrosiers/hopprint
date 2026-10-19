@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HP Spike">
+<meta name="theme-color" content="#242223">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="../icons/icon-180.png">
+<title>Hopprint share spike</title>
+<!--
+  Phase E session (b) spike. Temporary and unlinked: delete after the spike note is written.
+  Tests: canvas text with self-hosted fonts, PNG render at story/portrait sizes,
+  navigator.share({ files }) inside a tap, and the <a download> fallback.
+-->
+<style>
+@font-face { font-family: 'Arial Narrow'; src: url('../fonts/arial-narrow-regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Arial Narrow'; src: url('../fonts/arial-narrow-bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Unica One'; src: url('../fonts/unica-one-regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Big Shoulders'; src: url('../fonts/big-shoulders-variable.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
+:root {
+  --charcoal: #242223; --charcoal2: #2e2b2c; --charcoal3: #3a3637;
+  --orange: #e97324; --lime: #8fc640; --text: #f5f0e8; --text-muted: #b8b2ac; --text-dim: #7a7370;
+  --danger: #ff6060;
+  --font-headline: 'Big Shoulders', Impact, sans-serif;
+  --font-display: 'Unica One', sans-serif;
+  --font-body: 'Arial Narrow', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { background: var(--charcoal); color: var(--text); font-family: var(--font-body); font-size: 15px; padding: 16px 16px max(env(safe-area-inset-bottom), 20px); }
+h1 { font-family: var(--font-headline); font-weight: 800; font-size: 30px; letter-spacing: 0.5px; }
+h2 { font-family: var(--font-body); font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin: 18px 0 8px; }
+p.sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font-family: var(--font-body); font-weight: 700; font-size: 14px; color: var(--text); background: var(--charcoal3); border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 11px 12px; cursor: pointer; text-align: left; }
+button.primary { background: var(--orange); color: #fff; border-color: transparent; }
+button.on { outline: 2px solid var(--orange); }
+button small { display: block; font-weight: 400; font-size: 12px; color: inherit; opacity: 0.75; margin-top: 2px; }
+.shares { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#preview { display: block; width: 100%; max-width: 360px; margin: 0 auto; border-radius: 9px; background: var(--charcoal2); }
+#previewMeta { text-align: center; color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+#fontSamples { max-width: 520px; background: var(--charcoal2); border-radius: 9px; padding: 10px; }
+#fontSamples canvas { width: 100%; display: block; }
+#log { background: #161415; border-radius: 9px; padding: 10px; font: 12px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; color: var(--text-muted); }
+#log .ok { color: var(--lime); } #log .bad { color: var(--danger); } #log .warn { color: var(--orange); }
+</style>
+</head>
+<body>
+<h1>SHARE SPIKE</h1>
+<p class="sub">Phase E (b). Temporary test page; nothing is uploaded.</p>
+
+<h2>1 · Fonts on canvas</h2>
+<div id="fontSamples"><canvas id="fontCanvas" width="1000" height="560"></canvas></div>
+
+<h2>2 · Card (pre-rendered)</h2>
+<div class="row" style="margin-bottom:10px">
+  <button id="fmtStory" class="on" onclick="setFormat('story')">Story 1080×1920</button>
+  <button id="fmtPortrait" onclick="setFormat('portrait')">Portrait 1080×1350</button>
+</div>
+<img id="preview" alt="Rendered card preview">
+<div id="previewMeta">rendering…</div>
+
+<h2>3 · Share tests</h2>
+<div class="shares">
+  <button class="primary" onclick="shareA()">A · Pre-rendered<small>files only, sync in tap (DE12)</small></button>
+  <button onclick="shareB(0)">B · Render, then share<small>await toBlob inside tap</small></button>
+  <button onclick="shareB(2000)">B+ · Render + 2s wait<small>expect activation expiry</small></button>
+  <button onclick="shareC()">C · Files + text + url<small>compare targets</small></button>
+  <button onclick="downloadD()">D · Download fallback<small>&lt;a download&gt;</small></button>
+  <button onclick="shareAuto()">E · DE6 as specced<small>canShare → share, else download</small></button>
+</div>
+
+<h2>4 · Results</h2>
+<div class="row" style="margin-bottom:8px">
+  <button onclick="copyLog()">Copy results</button>
+  <button onclick="clearLog()">Clear</button>
+</div>
+<div id="log"></div>
+
+<script>
+'use strict';
+// ── log ─────────────────────────────────────────────────────────────
+const lines = [];
+function log(msg, cls) {
+  const t = new Date().toISOString().slice(11, 23);
+  lines.push(`[${t}] ${msg}`);
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = `[${t}] ${msg}`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { lines.length = 0; document.getElementById('log').textContent = ''; logEnv(); }
+function copyLog() {
+  const text = lines.join('\n');
+  const done = () => log('copied ' + lines.length + ' lines to clipboard', 'ok');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, e => { log('clipboard failed: ' + e.name, 'bad'); fallbackCopy(text); });
+  } else fallbackCopy(text);
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); log('copied via execCommand', 'ok'); } catch (e) { log('execCommand copy failed', 'bad'); }
+  ta.remove();
+}
+const activation = () => navigator.userActivation ? `activation isActive=${navigator.userActivation.isActive}` : 'activation n/a';
+
+// ── environment ─────────────────────────────────────────────────────
+function logEnv() {
+  const standalone = window.matchMedia('(display-mode: standalone)').matches;
+  log('UA: ' + navigator.userAgent);
+  log(`mode: ${standalone ? 'standalone (installed)' : 'browser tab'}; navigator.standalone=${navigator.standalone}`);
+  log(`secure=${window.isSecureContext} dpr=${window.devicePixelRatio} share=${'share' in navigator} canShare=${'canShare' in navigator}`);
+  if (navigator.canShare) {
+    const probe = new File([new Uint8Array([137, 80, 78, 71])], 'probe.png', { type: 'image/png' });
+    try { log(`canShare({files:[png]})=${navigator.canShare({ files: [probe] })}`); } catch (e) { log('canShare(files) threw ' + e.name, 'bad'); }
+    try { log(`canShare({files,text,url})=${navigator.canShare({ files: [probe], text: 't', url: location.origin })}`); } catch (e) { log('canShare(files+text) threw ' + e.name, 'bad'); }
+  }
+}
+
+// ── fonts ───────────────────────────────────────────────────────────
+const FACES = [
+  { label: 'Arial Narrow 400', font: '400 48px "Arial Narrow"' },
+  { label: 'Arial Narrow 700', font: '700 48px "Arial Narrow"' },
+  { label: 'Unica One 400', font: '400 48px "Unica One"' },
+  { label: 'Big Shoulders 300', font: '300 48px "Big Shoulders"' },
+  { label: 'Big Shoulders 800', font: '800 48px "Big Shoulders"' },
+];
+const SAMPLE = 'Hazy IPA 786 beers';
+
+// Width against a monospace-only fallback: identical widths mean the face never applied.
+function widthOf(ctx, font, text) { ctx.font = font; return ctx.measureText(text).width; }
+
+async function loadFonts() {
+  const t0 = performance.now();
+  for (const f of FACES) {
+    try {
+      const faces = await document.fonts.load(f.font, SAMPLE);
+      log(`fonts.load(${f.font}) → ${faces.length} face(s), check=${document.fonts.check(f.font)}`, faces.length ? 'ok' : 'bad');
+    } catch (e) { log(`fonts.load(${f.font}) threw ${e.name}: ${e.message}`, 'bad'); }
+  }
+  log(`fonts loaded in ${Math.round(performance.now() - t0)}ms`);
+  const c = document.createElement('canvas').getContext('2d');
+  for (const f of FACES) {
+    const fam = f.font.replace(/"[^"]+"/, m => m + ', monospace');
+    const w = widthOf(c, fam, SAMPLE), wFallback = widthOf(c, f.font.replace(/"[^"]+"/, 'monospace'), SAMPLE);
+    const applied = Math.abs(w - wFallback) > 0.5;
+    log(`canvas ${f.label}: width ${w.toFixed(1)} vs fallback ${wFallback.toFixed(1)} → ${applied ? 'APPLIED' : 'FALLBACK'}`, applied ? 'ok' : 'bad');
+  }
+  const w300 = widthOf(c, '300 48px "Big Shoulders"', SAMPLE), w800 = widthOf(c, '800 48px "Big Shoulders"', SAMPLE);
+  const varOk = Math.abs(w300 - w800) > 0.5;
+  log(`variable weight on canvas: 300=${w300.toFixed(1)} 800=${w800.toFixed(1)} → ${varOk ? 'weights differ' : 'SAME WIDTH (variable axis ignored?)'}`, varOk ? 'ok' : 'warn');
+}
+
+function drawFontSamples() {
+  const cv = document.getElementById('fontCanvas'), ctx = cv.getContext('2d');
+  ctx.fillStyle = '#2e2b2c'; ctx.fillRect(0, 0, cv.width, cv.height);
+  FACES.forEach((f, i) => {
+    const y = 70 + i * 100;
+    ctx.fillStyle = '#7a7370'; ctx.font = '400 22px "Arial Narrow"'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(f.label, 20, y - 40);
+    ctx.fillStyle = '#f5f0e8'; ctx.font = f.font.replace('48px', '52px');
+    ctx.fillText(SAMPLE, 20, y + 14);
+  });
+}
+
+// ── card render ─────────────────────────────────────────────────────
+const FORMATS = { story: { w: 1080, h: 1920 }, portrait: { w: 1080, h: 1350 } };
+let format = 'story';
+let ready = null;          // { file, blob, url, ms } for the current format
+let hopImg = null;
+
+function loadHop() {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => { log(`hop SVG decoded ${img.naturalWidth}×${img.naturalHeight}`, 'ok'); res(img); };
+    img.onerror = () => { log('hop SVG failed to decode as <img>', 'bad'); res(null); };
+    img.src = '../assets/hopprint-hop.svg';
+  });
+}
+
+// Copy line with <b> runs, the DE3 emphasis model: body muted, emphasis bold orange.
+const COPY = 'A <b>bigger year</b> than 2024 &mdash; <b>27%</b> more check-ins. You tried <b>9 styles</b> for the first time';
+function toRuns(html) {
+  const decode = s => s.replace(/&mdash;/g, '—').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&quot;/g, '"');
+  const runs = [];
+  html.split(/(<b>.*?<\/b>)/).forEach(part => {
+    if (!part) return;
+    const bold = part.startsWith('<b>');
+    runs.push({ text: decode(bold ? part.slice(3, -4) : part), bold });
+  });
+  return runs;
+}
+// Word-wrap across runs; returns lines of [{text,bold,x}]
+function wrapRuns(ctx, runs, maxW, size) {
+  const fontFor = b => `${b ? 700 : 400} ${size}px "Arial Narrow"`;
+  const words = [];
+  runs.forEach(r => r.text.split(/(\s+)/).forEach(w => { if (w) words.push({ text: w, bold: r.bold }); }));
+  const out = []; let line = [], x = 0;
+  for (const w of words) {
+    ctx.font = fontFor(w.bold);
+    const ww = ctx.measureText(w.text).width;
+    if (/^\s+$/.test(w.text)) { if (line.length) { line.push({ ...w, x }); x += ww; } continue; }
+    if (x + ww > maxW && line.length) {
+      while (line.length && /^\s+$/.test(line[line.length - 1].text)) line.pop();
+      out.push(line); line = []; x = 0;
+    }
+    line.push({ ...w, x }); x += ww;
+  }
+  if (line.length) out.push(line);
+  return { lines: out, fontFor };
+}
+
+function drawCard(fmt) {
+  const { w, h } = FORMATS[fmt];
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const pad = 96;
+  ctx.fillStyle = '#242223'; ctx.fillRect(0, 0, w, h);
+  const glow = ctx.createRadialGradient(w / 2, h * 0.42, 40, w / 2, h * 0.42, w * 0.7);
+  glow.addColorStop(0, 'rgba(233,115,36,0.18)'); glow.addColorStop(1, 'rgba(233,115,36,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+
+  let y = fmt === 'story' ? 220 : 140;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#e97324'; ctx.font = '700 34px "Arial Narrow"';
+  ctx.fillText('2025 WRAPPED', pad, y);
+  y += 150;
+  ctx.fillStyle = '#f5f0e8'; ctx.font = '800 170px "Big Shoulders"';
+  ctx.fillText('786', pad, y);
+  const nw = ctx.measureText('786').width;
+  ctx.font = '400 64px "Unica One"'; ctx.fillStyle = '#b8b2ac';
+  ctx.fillText('beers logged', pad + nw + 28, y);
+
+  // radar placeholder: 8-axis polygon (geometry comes from buildHopprintSVG in c)
+  const cx = w / 2, cy = y + (fmt === 'story' ? 400 : 280), r = fmt === 'story' ? 300 : 210;
+  const vals = [0.9, 0.55, 0.7, 0.35, 0.8, 0.45, 0.6, 0.3];
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 2;
+  [0.33, 0.66, 1].forEach(k => {
+    ctx.beginPath();
+    vals.forEach((_, i) => { const a = -Math.PI / 2 + i * Math.PI / 4; ctx.lineTo(cx + Math.cos(a) * r * k, cy + Math.sin(a) * r * k); });
+    ctx.closePath(); ctx.stroke();
+  });
+  ctx.beginPath();
+  vals.forEach((v, i) => { const a = -Math.PI / 2 + i * Math.PI / 4; ctx.lineTo(cx + Math.cos(a) * r * v, cy + Math.sin(a) * r * v); });
+  ctx.closePath(); ctx.fillStyle = 'rgba(233,115,36,0.28)'; ctx.fill();
+  ctx.strokeStyle = '#e97324'; ctx.lineWidth = 5; ctx.stroke();
+  y = cy + r + (fmt === 'story' ? 130 : 90);
+
+  // stats row
+  const stats = [['94', 'BREWERIES'], ['31', 'STYLES'], ['12', 'MONTHS']];
+  const colW = (w - pad * 2) / 3;
+  stats.forEach(([n, l], i) => {
+    const x = pad + colW * i;
+    ctx.fillStyle = '#e97324'; ctx.font = '800 92px "Big Shoulders"'; ctx.fillText(n, x, y);
+    ctx.fillStyle = '#7a7370'; ctx.font = '700 26px "Arial Narrow"'; ctx.fillText(l, x, y + 40);
+  });
+  y += fmt === 'story' ? 150 : 110;
+
+  // emphasis copy line
+  const size = 44;
+  const { lines: wrapped, fontFor } = wrapRuns(ctx, toRuns(COPY), w - pad * 2, size);
+  wrapped.slice(0, 3).forEach(line => {
+    line.forEach(seg => {
+      ctx.font = fontFor(seg.bold);
+      ctx.fillStyle = seg.bold ? '#e97324' : '#b8b2ac';
+      ctx.fillText(seg.text, pad + seg.x, y);
+    });
+    y += size * 1.3;
+  });
+
+  // footer: hop mark + wordmark + URL
+  const fy = h - (fmt === 'story' ? 160 : 100);
+  let fx = pad;
+  if (hopImg) {
+    const hh = 56, hw = hh * (hopImg.naturalWidth / hopImg.naturalHeight || 1);
+    ctx.drawImage(hopImg, fx, fy - hh + 4, hw, hh); fx += hw + 20;
+  }
+  ctx.fillStyle = '#f5f0e8'; ctx.font = '800 56px "Big Shoulders"'; ctx.fillText('HOPPRINT', fx, fy);
+  ctx.fillStyle = '#7a7370'; ctx.font = '400 30px "Arial Narrow"';
+  ctx.textAlign = 'right'; ctx.fillText('hopprint.app', w - pad, fy); ctx.textAlign = 'left';
+  return cv;
+}
+
+function canvasToBlob(cv) {
+  return new Promise((res, rej) => cv.toBlob(b => (b ? res(b) : rej(new Error('toBlob returned null'))), 'image/png'));
+}
+
+async function render(fmt) {
+  const t0 = performance.now();
+  const cv = drawCard(fmt);
+  const t1 = performance.now();
+  const blob = await canvasToBlob(cv);
+  const t2 = performance.now();
+  const file = new File([blob], `hopprint-2025-wrapped-${fmt}.png`, { type: 'image/png' });
+  return { file, blob, draw: Math.round(t1 - t0), encode: Math.round(t2 - t1), fmt };
+}
+
+async function prerender() {
+  document.getElementById('previewMeta').textContent = 'rendering…';
+  const r = await render(format);
+  if (ready && ready.url) URL.revokeObjectURL(ready.url);
+  r.url = URL.createObjectURL(r.blob);
+  ready = r;
+  document.getElementById('preview').src = r.url;
+  const meta = `${FORMATS[format].w}×${FORMATS[format].h} · ${(r.blob.size / 1024).toFixed(0)} KB · draw ${r.draw}ms · encode ${r.encode}ms`;
+  document.getElementById('previewMeta').textContent = meta;
+  log(`pre-rendered ${format}: ${meta}`);
+}
+
+function setFormat(f) {
+  format = f;
+  document.getElementById('fmtStory').classList.toggle('on', f === 'story');
+  document.getElementById('fmtPortrait').classList.toggle('on', f === 'portrait');
+  prerender();
+}
+
+// ── share tests ─────────────────────────────────────────────────────
+function report(label, p, t0) {
+  return p.then(
+    () => log(`${label}: resolved (shared) after ${Math.round(performance.now() - t0)}ms`, 'ok'),
+    e => log(`${label}: ${e.name} — ${e.message}`, e.name === 'AbortError' ? 'warn' : 'bad')
+  );
+}
+
+// A: the DE12 design. No await between the tap and share().
+function shareA() {
+  if (!ready) return log('A: not rendered yet', 'bad');
+  const t0 = performance.now();
+  log(`A: tap (${activation()}) → share(${ready.file.name})`);
+  if (!navigator.share) return log('A: navigator.share missing', 'bad');
+  try { report('A', navigator.share({ files: [ready.file] }), t0); }
+  catch (e) { log('A: threw synchronously ' + e.name + ' — ' + e.message, 'bad'); }
+}
+
+// B: render inside the tap, then share. delay adds an artificial gap to probe activation expiry.
+async function shareB(delay) {
+  const label = delay ? 'B+' : 'B';
+  const t0 = performance.now();
+  log(`${label}: tap (${activation()}) → render ${format}${delay ? ` + ${delay}ms wait` : ''}`);
+  if (!navigator.share) return log(`${label}: navigator.share missing`, 'bad');
+  const r = await render(format);
+  if (delay) await new Promise(res => setTimeout(res, delay));
+  log(`${label}: ${Math.round(performance.now() - t0)}ms after tap (${activation()}) → share`);
+  try { await report(label, navigator.share({ files: [r.file] }), t0); }
+  catch (e) { log(`${label}: threw synchronously ${e.name} — ${e.message}`, 'bad'); }
+}
+
+// C: files plus text and url, to see which targets keep the image.
+function shareC() {
+  if (!ready) return log('C: not rendered yet', 'bad');
+  const t0 = performance.now();
+  const data = { files: [ready.file], text: 'My 2025 on Hopprint', url: 'https://hopprint.app' };
+  log(`C: tap → share(files+text+url) canShare=${navigator.canShare ? navigator.canShare(data) : 'n/a'}`);
+  if (!navigator.share) return log('C: navigator.share missing', 'bad');
+  try { report('C', navigator.share(data), t0); }
+  catch (e) { log('C: threw synchronously ' + e.name + ' — ' + e.message, 'bad'); }
+}
+
+// D: programmatic <a download> on the pre-rendered blob.
+function downloadD() {
+  if (!ready) return log('D: not rendered yet', 'bad');
+  const a = document.createElement('a');
+  a.href = ready.url; a.download = ready.file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  log(`D: clicked <a download="${ready.file.name}"> (observe what the browser does)`);
+}
+
+// E: DE6 exactly as specified.
+function shareAuto() {
+  if (!ready) return log('E: not rendered yet', 'bad');
+  const data = { files: [ready.file] };
+  if (navigator.canShare && navigator.canShare(data)) {
+    log('E: canShare true → share');
+    const t0 = performance.now();
+    navigator.share(data).then(
+      () => log(`E: resolved after ${Math.round(performance.now() - t0)}ms`, 'ok'),
+      e => log(e.name === 'AbortError' ? 'E: user cancelled (AbortError, silent in app)' : `E: ${e.name} — ${e.message}`, e.name === 'AbortError' ? 'warn' : 'bad')
+    );
+  } else {
+    log('E: canShare false → download fallback');
+    downloadD();
+  }
+}
+
+// ── boot ────────────────────────────────────────────────────────────
+(async () => {
+  logEnv();
+  await loadFonts();
+  drawFontSamples();
+  hopImg = await loadHop();
+  await prerender();
+  log('ready — run A–E, then Copy results', 'ok');
+})().catch(e => log('boot failed: ' + e.name + ' — ' + e.message, 'bad'));
+</script>
+</body>
+</html>
