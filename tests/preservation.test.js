@@ -39,7 +39,7 @@ const ALLOWED_CHANGES = {
   buildModeGrid: 'IN20 mode icon(); DS4 per-mode gates, greyed reasons, DS5 all-gated locked state',
   // IT4 — milestones keyed by kind (IN19)
   computeMilestones: 'IN19 kind replaces emoji icon',
-  renderAnalytics: 'IN19 milestone icon from kind; ST5 card order; ST7/ST11 collapsible cards, lazy charts; SC10 beerKeyOf for New vs Repeat Beers, SC21 validAbv; SC14/SC15 same-date comparisonWindow() for deltas + insights, SC23 normalized counts (stat grid + YoY table)',
+  renderAnalytics: 'IN19 milestone icon from kind; ST5 card order; ST7/ST11 collapsible cards, lazy charts; SC10 beerKeyOf for New vs Repeat Beers, SC21 validAbv; SC14/SC15 same-date comparisonWindow() for deltas + insights, SC23 normalized counts (stat grid + YoY table); SC1–SC7 hero subheads, SC29 ▲/▼ deltas',
   buildBandCard: 'ST7 collapsible card via statsCard()',
   setNvrField: 'ST14 keep position on rebuild',
   toggleAnalyticsCompare: 'ST4 jump to top',

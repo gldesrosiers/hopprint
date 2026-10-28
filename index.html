@@ -549,12 +549,16 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 .stat-card {
   background: var(--charcoal2); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px 14px;
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; min-width: 0;
 }
 .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent, var(--orange)); }
 .stat-num { font-family: var(--font-headline); font-size: 32px; font-weight: 800; color: var(--accent, var(--orange)); line-height: 1; }
 .stat-label { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
 .stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-weight: 300; }
+/* SC18: only the name truncates; label and count never shrink. */
+.stat-sup { display: flex; min-width: 0; }
+.stat-sup > span { white-space: pre; flex-shrink: 0; }
+.stat-sup > .sup-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
 
 .chart-card {
   background: var(--charcoal2); border: 1px solid var(--border);
@@ -873,7 +877,7 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 /* Stat-card delta line (comparison mode) */
 .stat-delta { font-size: 11px; font-weight: 700; margin-top: 3px; letter-spacing: 0.3px; }
 .stat-delta.up { color: var(--lime); }
-.stat-delta.down { color: var(--text-dim); }
+.stat-delta.down { color: var(--danger); }
 .stat-delta.flat { color: var(--text-dim); }
 
 /* New-vs-repeat headline */
@@ -3759,6 +3763,24 @@ function distinctCount(list, field) {
   return new Set(list.map(e => breweryKeyOf(e[field])).filter(Boolean)).size;
 }
 
+// The standout group in a list (SC13): most check-ins under keyOf, ties to
+// the group checked in most recently. { key, count, entries }, or null when
+// nothing has a key. Also picks a display spelling: the most-logged one, ties
+// to the most recent (SC28).
+function topGroup(list, keyOf) {
+  const groups = new Map();
+  list.forEach(e => {
+    const k = keyOf(e); if (!k) return;
+    const t = new Date(e.created_at).getTime() || 0;
+    const g = groups.get(k) || { key: k, count: 0, last: -Infinity, entries: [] };
+    g.count++; g.entries.push(e); if (t > g.last) g.last = t;
+    groups.set(k, g);
+  });
+  let best = null;
+  groups.forEach(g => { if (!best || g.count > best.count || (g.count === best.count && g.last > best.last)) best = g; });
+  return best && { key: best.key, count: best.count, entries: best.entries };
+}
+
 // The prior-year side of every delta (SC14–SC17, SC31, SC32): the stat cards
 // and the insights card both read it, so they can't drift. For the current
 // year it's Jan 1 → the same month/day of the prior year (end of day, local;
@@ -4141,13 +4163,56 @@ function renderAnalytics() {
   const prevBreweries = distinctCount(cmpEntries, 'brewery_name');
   const prevStyles = distinctCount(cmpEntries, 'beer_type');
   const pct = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
+  // ▲ green / ▼ red, no sign; zero is neutral (SC29). Null when there's
+  // nothing to compare against, so the card keeps its superlative (SC17/SC30).
+  const deltaHTML = (diff, text) => `<div class="stat-delta ${diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat'}">${diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : ''}${text} ${cmp.label}</div>`;
   const deltaLine = (cur, prev) => {
     const p = pct(cur, prev);
-    if (p === null) return `<div class="stat-delta flat">new ${cmp.label}</div>`;
-    if (p > 0) return `<div class="stat-delta up">+${p}% ${cmp.label}</div>`;
-    if (p < 0) return `<div class="stat-delta down">${p}% ${cmp.label}</div>`;
-    return `<div class="stat-delta flat">same ${cmp.label}</div>`;
+    return p === null ? null : deltaHTML(p, `${Math.abs(p)}%`);
   };
+  const prevAbvVals = cmpEntries.map(e => validAbv(e.beer_abv)).filter(v => v !== null);
+  const abvDelta = () => {
+    if (!abvVals.length || !prevAbvVals.length) return null;
+    const prevAvg = (prevAbvVals.reduce((s, v) => s + v, 0) / prevAbvVals.length).toFixed(1);
+    const d = Math.round((Number(avgAbv) - Number(prevAvg)) * 10) / 10;   // points, from the shown averages (SC5)
+    return deltaHTML(d, `${Math.abs(d).toFixed(1)} pts`);
+  };
+
+  // ── Hero subheads (SC1–SC7): a superlative naming the standout behind each
+  //    number; with compare on, the delta replaces it — one line either way.
+  //    An empty superlative hides the line (SC19). ──
+  const supLine = (label, name, num) => `<div class="stat-sub stat-sup"><span>${label}</span><span class="sup-name">${esc(name)}</span><span>${num}</span></div>`;
+  const subOf = (delta, sup) => (analyticsCompare && delta) || sup;
+
+  const countable = es.filter(e => beerKeyOf(e));                      // SC25
+  let checkinSup = '';
+  if (countable.length && analyticsYear === 'all') {
+    const unique = new Set(countable.map(beerKeyOf)).size;
+    checkinSup = `<div class="stat-sub">${unique} unique beers · ${Math.round((countable.length - unique) / countable.length * 100)}% repeats</div>`;
+  } else if (countable.length) {
+    const firstBeerIds = firstOccurrenceIds(beerKeyOf);                  // SC8: against full history
+    checkinSup = `<div class="stat-sub">${countable.filter(e => firstBeerIds.has(e.id)).length} new to you</div>`;
+  }
+
+  let strongest = null;                                                  // ties → most recent (SC13)
+  es.forEach(e => {
+    const v = validAbv(e.beer_abv); if (v === null) return;
+    if (!strongest || v > strongest.v || (v === strongest.v && new Date(e.created_at) > new Date(strongest.e.created_at))) strongest = { v, e };
+  });
+  const abvSup = strongest
+    ? supLine('Strongest: ', [strongest.e.beer_name, strongest.e.brewery_name].map(s => String(s || '').trim()).filter(Boolean).join(' · '), ` · ${strongest.v.toFixed(1)}%`)
+    : '';
+
+  const topBrew = topGroup(es, e => breweryKeyOf(e.brewery_name));
+  const brewSup = topBrew
+    ? supLine('Top: ', topGroup(topBrew.entries, e => String(e.brewery_name).trim()).key, ` · ${topBrew.count}`)
+    : '';
+
+  const famOf = e => familyOf(e.beer_type);                              // SC11: null / unresolved are ineligible
+  const topFam = topGroup(es, famOf);
+  const styleSup = topFam
+    ? supLine('Go-to: ', topFam.key, ` · ${Math.round(topFam.count / es.filter(famOf).length * 100)}%`)
+    : '';
 
   // ── DOW (Phase A: highlight follows the user's real top-3 days) ──
   const dowCounts = Array(7).fill(0);
@@ -4246,10 +4311,10 @@ function renderAnalytics() {
   inner.innerHTML = yearHTML + `
 
   <div class="stat-grid">
-    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${analyticsCompare ? deltaLine(es.length, cmpEntries.length) : `<div class="stat-sub">${breweries} breweries · ${styles} styles</div>`}</div>
-    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
-    <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${analyticsCompare ? deltaLine(breweries, prevBreweries) : `<div class="stat-sub">${homePct}% at home</div>`}</div>
-    <div class="stat-card" style="--accent:var(--creamsicle)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
+    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${subOf(deltaLine(es.length, cmpEntries.length), checkinSup)}</div>
+    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div>${subOf(abvDelta(), abvSup)}</div>
+    <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${subOf(deltaLine(breweries, prevBreweries), brewSup)}</div>
+    <div class="stat-card" style="--accent:var(--creamsicle)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${subOf(deltaLine(styles, prevStyles), styleSup)}</div>
   </div>
 
   ${buildAnalyticsInsightCard(es, cmpEntries, analyticsYear, analyticsCompare)}

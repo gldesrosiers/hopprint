@@ -182,3 +182,23 @@ test('SC23: the Year-over-Year table counts normalized breweries and styles', ()
   assert.match(src, /byYear\[y\]\.styles\.add\(breweryKeyOf\(e\.beer_type\)\)/);
   assert.match(src, /byYear\[y\]\.breweries\.add\(breweryKeyOf\(e\.brewery_name\)\)/);
 });
+
+// ── SC13 / SC28 topGroup ────────────────────────────────────────
+test('SC13/SC28: topGroup picks the most check-ins, ties to the most recent; same rule picks the spelling', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(['breweryKeyOf', 'topGroup'].map(extractFunction).join('\n'), ctx);
+  const list = [
+    ci(1, 'x', 'SweetWater', '2025-01-01T12:00'), ci(2, 'x', 'sweetwater ', '2025-02-01T12:00'),
+    ci(3, 'x', 'SweetWater', '2025-03-01T12:00'), ci(4, 'x', 'Allagash', '2025-04-01T12:00'),
+    ci(5, 'x', 'Allagash', '2025-05-01T12:00'), ci(6, 'x', 'Allagash', '2025-01-15T12:00'),
+    ci(7, 'x', '', '2025-06-01T12:00'),
+  ];
+  const top = ctx.topGroup(list, e => ctx.breweryKeyOf(e.brewery_name));
+  assert.equal(top.key, 'allagash');                                    // 3–3 tie, Allagash's latest is later
+  assert.equal(top.count, 3);
+  const sw = ctx.topGroup(list.slice(0, 3), e => e.brewery_name.trim());
+  assert.equal(sw.key, 'SweetWater');                                   // most-logged spelling
+  const tie = ctx.topGroup([list[0], list[1]], e => e.brewery_name.trim());
+  assert.equal(tie.key, 'sweetwater');                                  // 1–1 → most recent spelling
+  assert.equal(ctx.topGroup([list[6]], e => e.brewery_name), null);
+});
