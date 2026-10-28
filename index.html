@@ -4152,9 +4152,6 @@ function renderAnalytics() {
   // ── Core stats ──
   const breweries = distinctCount(es, 'brewery_name');
   const styles = distinctCount(es, 'beer_type');
-  const venues = new Set(es.map(e => e.venue_name).filter(Boolean)).size;
-  const homeCount = es.filter(isHomeEntry).length;
-  const homePct = Math.round(homeCount / es.length * 100);
   const abvVals = es.map(e => validAbv(e.beer_abv)).filter(v => v !== null);
   const avgAbv = abvVals.length ? (abvVals.reduce((s, v) => s + v, 0) / abvVals.length).toFixed(1) : '—';
 

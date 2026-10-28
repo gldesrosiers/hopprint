@@ -584,3 +584,10 @@ test('SC18: names are escaped', () => {
   assert.match(html, /Brew &amp; Co/);
   assert.doesNotMatch(html, /<b>x<\/b>/);
 });
+
+test('SC3: the hero grid no longer shows venues, home %, or the notes count', () => {
+  for (const year of ['all', 2025]) {
+    const grid = statsApp(script, cardLog(), { year }).html.match(/<div class="stat-grid">[\s\S]*?\n  <\/div>/)[0];
+    assert.doesNotMatch(grid, /venues|at home|with notes|breweries ·/, String(year));
+  }
+});
