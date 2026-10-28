@@ -3753,6 +3753,33 @@ function firstOccurrenceIds(field) {
   return ids;
 }
 
+// Distinct normalized values of a field (SC23), so "SweetWater" and
+// "sweetwater " are one brewery wherever the stat grid and insights count.
+function distinctCount(list, field) {
+  return new Set(list.map(e => breweryKeyOf(e[field])).filter(Boolean)).size;
+}
+
+// The prior-year side of every delta (SC14–SC17, SC31, SC32): the stat cards
+// and the insights card both read it, so they can't drift. For the current
+// year it's Jan 1 → the same month/day of the prior year (end of day, local;
+// Feb 29 → Feb 28), labeled "to date"; a past year compares full year vs full
+// year. Delta math only — month-aligned overlays (Monthly Pattern) keep the
+// full prior year (SC16). Null for All Time.
+function comparisonWindow(year, now = new Date()) {
+  if (typeof year !== 'number') return null;
+  const prevYear = year - 1;
+  const toDate = year === now.getFullYear();
+  let end = new Date(year, 0, 1);                                   // exclusive
+  if (toDate) {
+    const m = now.getMonth();
+    const day = Math.min(now.getDate(), new Date(prevYear, m + 1, 0).getDate());
+    end = new Date(prevYear, m, day + 1);
+  }
+  const start = new Date(prevYear, 0, 1);
+  const list = entries.filter(e => { const d = new Date(e.created_at); return d >= start && d < end; });
+  return { prevYear, toDate, entries: list, label: toDate ? `vs ${prevYear} to date` : `vs ${prevYear}` };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // DRILL-DOWN PANEL (Phase C 6.1) — one generic slide-up panel,
 // parameterized by entity type. Panels are ALWAYS all-time for the
@@ -4081,8 +4108,10 @@ function renderAnalytics() {
   // data. Force it off otherwise so state can't get stranded on.
   const prevYear = (analyticsYear !== 'all') ? analyticsYear - 1 : null;
   const prevYrEntries = prevYear !== null ? entries.filter(e => new Date(e.created_at).getFullYear() === prevYear) : [];
-  const canCompare = prevYrEntries.length > 0;
+  const canCompare = prevYrEntries.length > 0;   // full prior year: the chart can still compare (SC31)
   if (!canCompare) analyticsCompare = false;
+  const cmp = comparisonWindow(analyticsYear);
+  const cmpEntries = cmp ? cmp.entries : [];
 
   // Year selector
   let yearHTML = `<div class="year-row">
@@ -4099,24 +4128,25 @@ function renderAnalytics() {
   }
 
   // ── Core stats ──
-  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
-  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
+  const breweries = distinctCount(es, 'brewery_name');
+  const styles = distinctCount(es, 'beer_type');
   const venues = new Set(es.map(e => e.venue_name).filter(Boolean)).size;
   const homeCount = es.filter(isHomeEntry).length;
   const homePct = Math.round(homeCount / es.length * 100);
   const abvVals = es.map(e => validAbv(e.beer_abv)).filter(v => v !== null);
   const avgAbv = abvVals.length ? (abvVals.reduce((s, v) => s + v, 0) / abvVals.length).toFixed(1) : '—';
 
-  // Comparison deltas (only used when analyticsCompare).
-  const prevBreweries = new Set(prevYrEntries.map(e => e.brewery_name).filter(Boolean)).size;
-  const prevStyles = new Set(prevYrEntries.map(e => e.beer_type).filter(Boolean)).size;
+  // Comparison deltas (only used when analyticsCompare), against the
+  // same-date window (SC14).
+  const prevBreweries = distinctCount(cmpEntries, 'brewery_name');
+  const prevStyles = distinctCount(cmpEntries, 'beer_type');
   const pct = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
   const deltaLine = (cur, prev) => {
     const p = pct(cur, prev);
-    if (p === null) return `<div class="stat-delta flat">new vs ${prevYear}</div>`;
-    if (p > 0) return `<div class="stat-delta up">+${p}% vs ${prevYear}</div>`;
-    if (p < 0) return `<div class="stat-delta down">${p}% vs ${prevYear}</div>`;
-    return `<div class="stat-delta flat">same as ${prevYear}</div>`;
+    if (p === null) return `<div class="stat-delta flat">new ${cmp.label}</div>`;
+    if (p > 0) return `<div class="stat-delta up">+${p}% ${cmp.label}</div>`;
+    if (p < 0) return `<div class="stat-delta down">${p}% ${cmp.label}</div>`;
+    return `<div class="stat-delta flat">same ${cmp.label}</div>`;
   };
 
   // ── DOW (Phase A: highlight follows the user's real top-3 days) ──
@@ -4207,8 +4237,8 @@ function renderAnalytics() {
     byYear[y].total++;
     const abv = validAbv(e.beer_abv);
     if (abv !== null) byYear[y].abvs.push(abv);
-    if (e.beer_type) byYear[y].styles.add(e.beer_type);
-    if (e.brewery_name) byYear[y].breweries.add(e.brewery_name);
+    if (breweryKeyOf(e.beer_type)) byYear[y].styles.add(breweryKeyOf(e.beer_type));          // SC23
+    if (breweryKeyOf(e.brewery_name)) byYear[y].breweries.add(breweryKeyOf(e.brewery_name));
   });
   const yoyYears = Object.keys(byYear).sort();
 
@@ -4216,13 +4246,13 @@ function renderAnalytics() {
   inner.innerHTML = yearHTML + `
 
   <div class="stat-grid">
-    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${analyticsCompare ? deltaLine(es.length, prevYrEntries.length) : `<div class="stat-sub">${breweries} breweries · ${styles} styles</div>`}</div>
+    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${analyticsCompare ? deltaLine(es.length, cmpEntries.length) : `<div class="stat-sub">${breweries} breweries · ${styles} styles</div>`}</div>
     <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
     <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${analyticsCompare ? deltaLine(breweries, prevBreweries) : `<div class="stat-sub">${homePct}% at home</div>`}</div>
     <div class="stat-card" style="--accent:var(--creamsicle)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
   </div>
 
-  ${buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, analyticsCompare)}
+  ${buildAnalyticsInsightCard(es, cmpEntries, analyticsYear, analyticsCompare)}
 
   ${showMilestones ? `
   ${statsCard('milestones', `Firsts & Milestones`, `The moments worth a screenshot`, `
@@ -4843,11 +4873,13 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
   const total = es.length;
 
   // ── comparison (descriptive counts; the zone is gated on compareOn at the
-  //    candidate level per DD3). Same pct formula the stat-grid deltas use.
-  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
-  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
-  const prevBreweries = new Set(prevYrEntries.map(e => e.brewery_name).filter(Boolean)).size;
-  const prevStyles = new Set(prevYrEntries.map(e => e.beer_type).filter(Boolean)).size;
+  //    candidate level per DD3). Same pct formula and normalized counts the
+  //    stat-grid deltas use; prevYrEntries is comparisonWindow()'s same-date
+  //    set, so the current year compares to date (SC15).
+  const breweries = distinctCount(es, 'brewery_name');
+  const styles = distinctCount(es, 'beer_type');
+  const prevBreweries = distinctCount(prevYrEntries, 'brewery_name');
+  const prevStyles = distinctCount(prevYrEntries, 'beer_type');
   const prevTotal = prevYrEntries.length;
   const pctDelta = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
   const deltaBreweriesPct = pctDelta(breweries, prevBreweries);
@@ -4925,24 +4957,25 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
 // sanity-checked against seed data, never derived from it (Q6). Ordered within
 // each zone highest-priority first so registry order and priority agree.
 const ANALYTICS_COPY = [
-  // ── comparison (only alive when the compare toggle is on — DD3). For the
-  //    in-progress current year a raw count comparison to a *completed* prior
-  //    year is only honest as an "already surpassed" up-claim; the quieter/down
-  //    variant gates to completed years so an unfinished year is never called
-  //    smaller than the last one. ───────────────────────────────────────────
+  // ── comparison (only alive when the compare toggle is on — DD3). The
+  //    in-progress current year compares to the prior year at the same date
+  //    (SC14/SC15), so up and down claims are both fair; the current-year
+  //    wording says "at this point" rather than "all of". ──────────────────
   { id: 'cmp_range_up', zone: 'comparison', priority: 25,
     condition: c => c.compareOn && c.deltaBreweriesPct !== null && c.deltaBreweriesPct >= 20,
     render: c => c.isCurrentYear
-      ? `you've already logged <b>${c.deltaBreweriesPct}%</b> more breweries than in all of ${c.prevYear}`
+      ? `<b>${c.deltaBreweriesPct}%</b> more breweries than ${c.prevYear} at this point`
       : `you cast a wider net — <b>${c.deltaBreweriesPct}%</b> more breweries than ${c.prevYear}` },
   { id: 'cmp_volume_up', zone: 'comparison', priority: 20,
     condition: c => c.compareOn && c.deltaVolumePct !== null && c.deltaVolumePct >= 25,
     render: c => c.isCurrentYear
-      ? `already a bigger year than ${c.prevYear} — <b>${c.deltaVolumePct}%</b> more check-ins`
+      ? `ahead of ${c.prevYear}'s pace — <b>${c.deltaVolumePct}%</b> more check-ins than at this point last year`
       : `a bigger year all around — <b>${c.deltaVolumePct}%</b> more check-ins than ${c.prevYear}` },
   { id: 'cmp_volume_down', zone: 'comparison', priority: 15,
-    condition: c => c.compareOn && !c.isCurrentYear && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,
-    render: c => `a quieter year — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than ${c.prevYear}` },
+    condition: c => c.compareOn && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,   // SC24
+    render: c => c.isCurrentYear
+      ? `a quieter year so far — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than at this point last year`
+      : `a quieter year — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than ${c.prevYear}` },
 
   // ── exploration (descriptive → imports counted) ──────────────────────────
   { id: 'explore_heavy', zone: 'exploration', priority: 20,
