@@ -2543,6 +2543,21 @@ const BREWERY_SUGGESTIONS = 2;
 function breweryKeyOf(name) {
   return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
+// One beer across check-ins (SC9): the catalog id once check-ins carry one,
+// else normalized name + brewery so every brewery's "IPA" stays distinct and
+// "Keeper" / "keeper " stay one. '' (no beer name) means not countable (SC25).
+function beerKeyOf(e) {
+  if (e.beer_id) return String(e.beer_id);
+  const name = breweryKeyOf(e.beer_name);
+  return name ? `${name}\u0001${breweryKeyOf(e.brewery_name)}` : '';
+}
+// The one ABV validity check for every ABV summary (SC12/SC21/SC22): the
+// parsed value when 0–20 inclusive (0 = non-alcoholic), else null. Anything
+// higher is a typo (a 65 for 6.5); blank / unparseable is skipped as before.
+function validAbv(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) && n >= 0 && n <= 20 ? n : null;
+}
 function familyOf(rawStyle) {
   const style = resolveMatrixStyle(rawStyle);
   return style ? STYLE_FAMILY[style] : null;
@@ -3727,11 +3742,14 @@ function fmtDay(s) { const d = new Date(s); return isNaN(d) ? '—' : d.toLocale
 // year is on screen. Ties on identical timestamps resolve to array order
 // (stable sort) — a coin flip that doesn't affect the aggregate counts.
 function firstOccurrenceIds(field) {
+  // A field name, or a key function (beerKeyOf, SC10) for identities that
+  // span more than one field. A falsy key is skipped either way.
+  const keyOf = typeof field === 'function' ? field : e => e[field];
   const seen = new Set(), ids = new Set();
   [...entries]
-    .filter(e => e[field])
+    .filter(e => keyOf(e))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    .forEach(e => { if (!seen.has(e[field])) { seen.add(e[field]); ids.add(e.id); } });
+    .forEach(e => { const k = keyOf(e); if (!seen.has(k)) { seen.add(k); ids.add(e.id); } });
   return ids;
 }
 
@@ -4086,7 +4104,7 @@ function renderAnalytics() {
   const venues = new Set(es.map(e => e.venue_name).filter(Boolean)).size;
   const homeCount = es.filter(isHomeEntry).length;
   const homePct = Math.round(homeCount / es.length * 100);
-  const abvVals = es.filter(e => e.beer_abv).map(e => parseFloat(e.beer_abv)).filter(v => !isNaN(v));
+  const abvVals = es.map(e => validAbv(e.beer_abv)).filter(v => v !== null);
   const avgAbv = abvVals.length ? (abvVals.reduce((s, v) => s + v, 0) / abvVals.length).toFixed(1) : '—';
 
   // Comparison deltas (only used when analyticsCompare).
@@ -4118,7 +4136,7 @@ function renderAnalytics() {
   const tlKeys = Object.keys(timelineMap).sort();
 
   // ── New vs repeat (6.2.1) ──
-  const nvrFirstIds = firstOccurrenceIds(nvrField);
+  const nvrFirstIds = firstOccurrenceIds(nvrField === 'beer_name' ? beerKeyOf : nvrField);   // SC10
   const nvrTotal = {}, nvrFirst = {};
   es.forEach(e => {
     const dt = new Date(e.created_at); if (isNaN(dt)) return;
@@ -4187,7 +4205,8 @@ function renderAnalytics() {
     const y = new Date(e.created_at).getFullYear();
     if (!byYear[y]) byYear[y] = { total: 0, abvs: [], styles: new Set(), breweries: new Set() };
     byYear[y].total++;
-    if (e.beer_abv) byYear[y].abvs.push(parseFloat(e.beer_abv));
+    const abv = validAbv(e.beer_abv);
+    if (abv !== null) byYear[y].abvs.push(abv);
     if (e.beer_type) byYear[y].styles.add(e.beer_type);
     if (e.brewery_name) byYear[y].breweries.add(e.brewery_name);
   });
@@ -4633,18 +4652,18 @@ function computeProfileContext(allEntries) {
     : null;
 
   // ABV character
-  const abvNums = useEntries.filter(e => e.beer_abv).map(e => parseFloat(e.beer_abv)).filter(n => !isNaN(n));
+  const abvNums = useEntries.map(e => validAbv(e.beer_abv)).filter(n => n !== null);
   const avgAbv = abvNums.length ? abvNums.reduce((a, b) => a + b, 0) / abvNums.length : 0;
   const abvCount = abvNums.length;
 
   // ABV trajectory — TREND claim, so it reads trendEntries only.
-  const tSorted = [...trendEntries].filter(e => e.beer_abv)
+  const tSorted = [...trendEntries].filter(e => validAbv(e.beer_abv) !== null)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   let abvDirection = null; // 'stronger' | 'lighter' | null
   if (tSorted.length >= 12) {
     const half = Math.floor(tSorted.length / 2);
-    const fh = tSorted.slice(0, half).map(e => parseFloat(e.beer_abv));
-    const sh = tSorted.slice(half).map(e => parseFloat(e.beer_abv));
+    const fh = tSorted.slice(0, half).map(e => validAbv(e.beer_abv));
+    const sh = tSorted.slice(half).map(e => validAbv(e.beer_abv));
     const af = fh.reduce((a, b) => a + b, 0) / fh.length;
     const as = sh.reduce((a, b) => a + b, 0) / sh.length;
     if (as > af + 0.3) abvDirection = 'stronger';
@@ -6055,9 +6074,9 @@ function renderProfile() {
   const explorationScore = recentTotal ? Math.round(recentFirstTime / recentTotal * 100) : null;
 
   // ABV trend
-  const sorted = [...useEntries].filter(e=>e.beer_abv).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  const firstHalf = sorted.slice(0, Math.floor(sorted.length/2)).map(e=>parseFloat(e.beer_abv));
-  const secHalf = sorted.slice(Math.floor(sorted.length/2)).map(e=>parseFloat(e.beer_abv));
+  const sorted = [...useEntries].filter(e=>validAbv(e.beer_abv)!==null).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const firstHalf = sorted.slice(0, Math.floor(sorted.length/2)).map(e=>validAbv(e.beer_abv));
+  const secHalf = sorted.slice(Math.floor(sorted.length/2)).map(e=>validAbv(e.beer_abv));
   const avgFirst = firstHalf.reduce((a,b)=>a+b,0)/firstHalf.length||0;
   const avgSec = secHalf.reduce((a,b)=>a+b,0)/secHalf.length||0;
   const abvTrend = avgSec > avgFirst + 0.2 ? `<span class="ico-pair">${icon('trend-up', 14, 2.2)}trending stronger</span>` : avgSec < avgFirst - 0.2 ? `<span class="ico-pair">${icon('trend-down', 14, 2.2)}trending lighter</span>` : '→ holding steady';

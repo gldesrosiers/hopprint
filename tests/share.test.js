@@ -553,7 +553,7 @@ function hopCardSandbox() {
     ...['HOPPRINT_DIMS', 'RATING_BANDS', 'HOME_VENUE', 'SHARE_COPY', 'PROFILE_COPY', 'PROFILE_ZONE_ORDER', 'PROFILE_MAX_EARNED'].map(n => constFrom(script, n)),
     'let STYLE_KEY_INDEX = null;',
     ...['normalizeStyleKey', 'resolveMatrixStyle', 'computeHopprint', 'countBy', 'bandOf', 'computeBandAnalytics',
-      'isHomeEntry', 'computeProfileContext', 'esc', 'selectCopy', 'buildProfileHeroCopy', 'buildHopprintCardSpec'].map(extractFunction),
+      'isHomeEntry', 'validAbv', 'computeProfileContext', 'esc', 'selectCopy', 'buildProfileHeroCopy', 'buildHopprintCardSpec'].map(extractFunction),
     'var entries = [];',
     'this.PROFILE_COPY = PROFILE_COPY; this.SHARE_COPY = SHARE_COPY;',
   ].join('\n'), ctx);

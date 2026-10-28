@@ -28,7 +28,7 @@ function sandbox() {
       'WRAPPED_COPY'].map(constFrom),
     'let STYLE_KEY_INDEX = null;',
     ...['normalizeStyleKey', 'resolveMatrixStyle', 'computeHopprint', 'countBy', 'bandOf', 'computeBandAnalytics',
-      'isHomeEntry', 'computeProfileContext', 'esc', 'selectCopy', 'buildProfileHeroCopy', 'computeMilestones',
+      'isHomeEntry', 'validAbv', 'computeProfileContext', 'esc', 'selectCopy', 'buildProfileHeroCopy', 'computeMilestones',
       'milestonesCrossedIn', 'firstOccurrenceIds', 'wrappedTop', 'computeWrappedContext', 'buildWrappedCopy',
       'wrappedSentences', 'hopprintGeometry', 'shareRuns', 'wrapShareRuns', 'fitShareText', 'shareFont',
       'shareSpacedWidth', 'layoutShareCard', 'buildHopprintCardSpec', 'buildWrappedCardSpec'].map(extractFunction),
