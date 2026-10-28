@@ -549,12 +549,16 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 .stat-card {
   background: var(--charcoal2); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px 14px;
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; min-width: 0;
 }
 .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent, var(--orange)); }
 .stat-num { font-family: var(--font-headline); font-size: 32px; font-weight: 800; color: var(--accent, var(--orange)); line-height: 1; }
 .stat-label { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
 .stat-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-weight: 300; }
+/* SC18: only the name truncates; label and count never shrink. */
+.stat-sup { display: flex; min-width: 0; }
+.stat-sup > span { white-space: pre; flex-shrink: 0; }
+.stat-sup > .sup-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
 
 .chart-card {
   background: var(--charcoal2); border: 1px solid var(--border);
@@ -873,7 +877,7 @@ html:has(.modal-backdrop.open) { overflow: hidden; }
 /* Stat-card delta line (comparison mode) */
 .stat-delta { font-size: 11px; font-weight: 700; margin-top: 3px; letter-spacing: 0.3px; }
 .stat-delta.up { color: var(--lime); }
-.stat-delta.down { color: var(--text-dim); }
+.stat-delta.down { color: var(--danger); }
 .stat-delta.flat { color: var(--text-dim); }
 
 /* New-vs-repeat headline */
@@ -2543,6 +2547,21 @@ const BREWERY_SUGGESTIONS = 2;
 function breweryKeyOf(name) {
   return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
+// One beer across check-ins (SC9): the catalog id once check-ins carry one,
+// else normalized name + brewery so every brewery's "IPA" stays distinct and
+// "Keeper" / "keeper " stay one. '' (no beer name) means not countable (SC25).
+function beerKeyOf(e) {
+  if (e.beer_id) return String(e.beer_id);
+  const name = breweryKeyOf(e.beer_name);
+  return name ? `${name}\u0001${breweryKeyOf(e.brewery_name)}` : '';
+}
+// The one ABV validity check for every ABV summary (SC12/SC21/SC22): the
+// parsed value when 0–20 inclusive (0 = non-alcoholic), else null. Anything
+// higher is a typo (a 65 for 6.5); blank / unparseable is skipped as before.
+function validAbv(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) && n >= 0 && n <= 20 ? n : null;
+}
 function familyOf(rawStyle) {
   const style = resolveMatrixStyle(rawStyle);
   return style ? STYLE_FAMILY[style] : null;
@@ -3727,12 +3746,60 @@ function fmtDay(s) { const d = new Date(s); return isNaN(d) ? '—' : d.toLocale
 // year is on screen. Ties on identical timestamps resolve to array order
 // (stable sort) — a coin flip that doesn't affect the aggregate counts.
 function firstOccurrenceIds(field) {
+  // A field name, or a key function (beerKeyOf, SC10) for identities that
+  // span more than one field. A falsy key is skipped either way.
+  const keyOf = typeof field === 'function' ? field : e => e[field];
   const seen = new Set(), ids = new Set();
   [...entries]
-    .filter(e => e[field])
+    .filter(e => keyOf(e))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    .forEach(e => { if (!seen.has(e[field])) { seen.add(e[field]); ids.add(e.id); } });
+    .forEach(e => { const k = keyOf(e); if (!seen.has(k)) { seen.add(k); ids.add(e.id); } });
   return ids;
+}
+
+// Distinct normalized values of a field (SC23), so "SweetWater" and
+// "sweetwater " are one brewery wherever the stat grid and insights count.
+function distinctCount(list, field) {
+  return new Set(list.map(e => breweryKeyOf(e[field])).filter(Boolean)).size;
+}
+
+// The standout group in a list (SC13): most check-ins under keyOf, ties to
+// the group checked in most recently. { key, count, entries }, or null when
+// nothing has a key. Also picks a display spelling: the most-logged one, ties
+// to the most recent (SC28).
+function topGroup(list, keyOf) {
+  const groups = new Map();
+  list.forEach(e => {
+    const k = keyOf(e); if (!k) return;
+    const t = new Date(e.created_at).getTime() || 0;
+    const g = groups.get(k) || { key: k, count: 0, last: -Infinity, entries: [] };
+    g.count++; g.entries.push(e); if (t > g.last) g.last = t;
+    groups.set(k, g);
+  });
+  let best = null;
+  groups.forEach(g => { if (!best || g.count > best.count || (g.count === best.count && g.last > best.last)) best = g; });
+  return best && { key: best.key, count: best.count, entries: best.entries };
+}
+
+// The prior-year side of every delta (SC14–SC17, SC31, SC32): the stat cards
+// and the insights card both read it, so they can't drift. For the current
+// year it's Jan 1 → the same month/day of the prior year (end of day, local;
+// Feb 29 → Feb 28), labeled "to date"; a past year compares full year vs full
+// year. Delta math only — month-aligned overlays (Monthly Pattern) keep the
+// full prior year (SC16). Null for All Time.
+function comparisonWindow(year, now = new Date()) {
+  if (typeof year !== 'number') return null;
+  const prevYear = year - 1;
+  const toDate = year === now.getFullYear();
+  let end = new Date(year, 0, 1);                                   // exclusive
+  if (toDate) {
+    const m = now.getMonth();
+    const day = Math.min(now.getDate(), new Date(prevYear, m + 1, 0).getDate());
+    end = new Date(prevYear, m, day + 1);
+  }
+  const start = new Date(prevYear, 0, 1);
+  const list = entries.filter(e => { const d = new Date(e.created_at); return d >= start && d < end; });
+  return { prevYear, toDate, entries: list, label: toDate ? `vs ${prevYear} to date` : `vs ${prevYear}` };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4063,8 +4130,10 @@ function renderAnalytics() {
   // data. Force it off otherwise so state can't get stranded on.
   const prevYear = (analyticsYear !== 'all') ? analyticsYear - 1 : null;
   const prevYrEntries = prevYear !== null ? entries.filter(e => new Date(e.created_at).getFullYear() === prevYear) : [];
-  const canCompare = prevYrEntries.length > 0;
+  const canCompare = prevYrEntries.length > 0;   // full prior year: the chart can still compare (SC31)
   if (!canCompare) analyticsCompare = false;
+  const cmp = comparisonWindow(analyticsYear);
+  const cmpEntries = cmp ? cmp.entries : [];
 
   // Year selector
   let yearHTML = `<div class="year-row">
@@ -4081,25 +4150,66 @@ function renderAnalytics() {
   }
 
   // ── Core stats ──
-  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
-  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
-  const venues = new Set(es.map(e => e.venue_name).filter(Boolean)).size;
-  const homeCount = es.filter(isHomeEntry).length;
-  const homePct = Math.round(homeCount / es.length * 100);
-  const abvVals = es.filter(e => e.beer_abv).map(e => parseFloat(e.beer_abv)).filter(v => !isNaN(v));
+  const breweries = distinctCount(es, 'brewery_name');
+  const styles = distinctCount(es, 'beer_type');
+  const abvVals = es.map(e => validAbv(e.beer_abv)).filter(v => v !== null);
   const avgAbv = abvVals.length ? (abvVals.reduce((s, v) => s + v, 0) / abvVals.length).toFixed(1) : '—';
 
-  // Comparison deltas (only used when analyticsCompare).
-  const prevBreweries = new Set(prevYrEntries.map(e => e.brewery_name).filter(Boolean)).size;
-  const prevStyles = new Set(prevYrEntries.map(e => e.beer_type).filter(Boolean)).size;
+  // Comparison deltas (only used when analyticsCompare), against the
+  // same-date window (SC14).
+  const prevBreweries = distinctCount(cmpEntries, 'brewery_name');
+  const prevStyles = distinctCount(cmpEntries, 'beer_type');
   const pct = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
+  // ▲ green / ▼ red, no sign; zero is neutral (SC29). Null when there's
+  // nothing to compare against, so the card keeps its superlative (SC17/SC30).
+  const deltaHTML = (diff, text) => `<div class="stat-delta ${diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat'}">${diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : ''}${text} ${cmp.label}</div>`;
   const deltaLine = (cur, prev) => {
     const p = pct(cur, prev);
-    if (p === null) return `<div class="stat-delta flat">new vs ${prevYear}</div>`;
-    if (p > 0) return `<div class="stat-delta up">+${p}% vs ${prevYear}</div>`;
-    if (p < 0) return `<div class="stat-delta down">${p}% vs ${prevYear}</div>`;
-    return `<div class="stat-delta flat">same as ${prevYear}</div>`;
+    return p === null ? null : deltaHTML(p, `${Math.abs(p)}%`);
   };
+  const prevAbvVals = cmpEntries.map(e => validAbv(e.beer_abv)).filter(v => v !== null);
+  const abvDelta = () => {
+    if (!abvVals.length || !prevAbvVals.length) return null;
+    const prevAvg = (prevAbvVals.reduce((s, v) => s + v, 0) / prevAbvVals.length).toFixed(1);
+    const d = Math.round((Number(avgAbv) - Number(prevAvg)) * 10) / 10;   // points, from the shown averages (SC5)
+    return deltaHTML(d, `${Math.abs(d).toFixed(1)} pts`);
+  };
+
+  // ── Hero subheads (SC1–SC7): a superlative naming the standout behind each
+  //    number; with compare on, the delta replaces it — one line either way.
+  //    An empty superlative hides the line (SC19). ──
+  const supLine = (label, name, num) => `<div class="stat-sub stat-sup"><span>${label}</span><span class="sup-name">${esc(name)}</span><span>${num}</span></div>`;
+  const subOf = (delta, sup) => (analyticsCompare && delta) || sup;
+
+  const countable = es.filter(e => beerKeyOf(e));                      // SC25
+  let checkinSup = '';
+  if (countable.length && analyticsYear === 'all') {
+    const unique = new Set(countable.map(beerKeyOf)).size;
+    checkinSup = `<div class="stat-sub">${unique} unique beers · ${Math.round((countable.length - unique) / countable.length * 100)}% repeats</div>`;
+  } else if (countable.length) {
+    const firstBeerIds = firstOccurrenceIds(beerKeyOf);                  // SC8: against full history
+    checkinSup = `<div class="stat-sub">${countable.filter(e => firstBeerIds.has(e.id)).length} new to you</div>`;
+  }
+
+  let strongest = null;                                                  // ties → most recent (SC13)
+  es.forEach(e => {
+    const v = validAbv(e.beer_abv); if (v === null) return;
+    if (!strongest || v > strongest.v || (v === strongest.v && new Date(e.created_at) > new Date(strongest.e.created_at))) strongest = { v, e };
+  });
+  const abvSup = strongest
+    ? supLine('Strongest: ', [strongest.e.beer_name, strongest.e.brewery_name].map(s => String(s || '').trim()).filter(Boolean).join(' · '), ` · ${strongest.v.toFixed(1)}%`)
+    : '';
+
+  const topBrew = topGroup(es, e => breweryKeyOf(e.brewery_name));
+  const brewSup = topBrew
+    ? supLine('Top: ', topGroup(topBrew.entries, e => String(e.brewery_name).trim()).key, ` · ${topBrew.count}`)
+    : '';
+
+  const famOf = e => familyOf(e.beer_type);                              // SC11: null / unresolved are ineligible
+  const topFam = topGroup(es, famOf);
+  const styleSup = topFam
+    ? supLine('Go-to: ', topFam.key, ` · ${Math.round(topFam.count / es.filter(famOf).length * 100)}%`)
+    : '';
 
   // ── DOW (Phase A: highlight follows the user's real top-3 days) ──
   const dowCounts = Array(7).fill(0);
@@ -4118,7 +4228,7 @@ function renderAnalytics() {
   const tlKeys = Object.keys(timelineMap).sort();
 
   // ── New vs repeat (6.2.1) ──
-  const nvrFirstIds = firstOccurrenceIds(nvrField);
+  const nvrFirstIds = firstOccurrenceIds(nvrField === 'beer_name' ? beerKeyOf : nvrField);   // SC10
   const nvrTotal = {}, nvrFirst = {};
   es.forEach(e => {
     const dt = new Date(e.created_at); if (isNaN(dt)) return;
@@ -4187,9 +4297,10 @@ function renderAnalytics() {
     const y = new Date(e.created_at).getFullYear();
     if (!byYear[y]) byYear[y] = { total: 0, abvs: [], styles: new Set(), breweries: new Set() };
     byYear[y].total++;
-    if (e.beer_abv) byYear[y].abvs.push(parseFloat(e.beer_abv));
-    if (e.beer_type) byYear[y].styles.add(e.beer_type);
-    if (e.brewery_name) byYear[y].breweries.add(e.brewery_name);
+    const abv = validAbv(e.beer_abv);
+    if (abv !== null) byYear[y].abvs.push(abv);
+    if (breweryKeyOf(e.beer_type)) byYear[y].styles.add(breweryKeyOf(e.beer_type));          // SC23
+    if (breweryKeyOf(e.brewery_name)) byYear[y].breweries.add(breweryKeyOf(e.brewery_name));
   });
   const yoyYears = Object.keys(byYear).sort();
 
@@ -4197,13 +4308,13 @@ function renderAnalytics() {
   inner.innerHTML = yearHTML + `
 
   <div class="stat-grid">
-    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${analyticsCompare ? deltaLine(es.length, prevYrEntries.length) : `<div class="stat-sub">${breweries} breweries · ${styles} styles</div>`}</div>
-    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div><div class="stat-sub">${venues} unique venues</div></div>
-    <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${analyticsCompare ? deltaLine(breweries, prevBreweries) : `<div class="stat-sub">${homePct}% at home</div>`}</div>
-    <div class="stat-card" style="--accent:var(--creamsicle)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${analyticsCompare ? deltaLine(styles, prevStyles) : `<div class="stat-sub">${es.filter(e => e.comment).length} with notes</div>`}</div>
+    <div class="stat-card" style="--accent:var(--orange)"><div class="stat-num">${es.length}</div><div class="stat-label">Check-ins</div>${subOf(deltaLine(es.length, cmpEntries.length), checkinSup)}</div>
+    <div class="stat-card" style="--accent:var(--lime)"><div class="stat-num">${avgAbv}${avgAbv === '—' ? '' : '%'}</div><div class="stat-label">Avg ABV</div>${subOf(abvDelta(), abvSup)}</div>
+    <div class="stat-card" style="--accent:var(--yellow)"><div class="stat-num">${breweries}</div><div class="stat-label">Breweries</div>${subOf(deltaLine(breweries, prevBreweries), brewSup)}</div>
+    <div class="stat-card" style="--accent:var(--creamsicle)"><div class="stat-num">${styles}</div><div class="stat-label">Styles</div>${subOf(deltaLine(styles, prevStyles), styleSup)}</div>
   </div>
 
-  ${buildAnalyticsInsightCard(es, prevYrEntries, analyticsYear, analyticsCompare)}
+  ${buildAnalyticsInsightCard(es, cmpEntries, analyticsYear, analyticsCompare)}
 
   ${showMilestones ? `
   ${statsCard('milestones', `Firsts & Milestones`, `The moments worth a screenshot`, `
@@ -4633,18 +4744,18 @@ function computeProfileContext(allEntries) {
     : null;
 
   // ABV character
-  const abvNums = useEntries.filter(e => e.beer_abv).map(e => parseFloat(e.beer_abv)).filter(n => !isNaN(n));
+  const abvNums = useEntries.map(e => validAbv(e.beer_abv)).filter(n => n !== null);
   const avgAbv = abvNums.length ? abvNums.reduce((a, b) => a + b, 0) / abvNums.length : 0;
   const abvCount = abvNums.length;
 
   // ABV trajectory — TREND claim, so it reads trendEntries only.
-  const tSorted = [...trendEntries].filter(e => e.beer_abv)
+  const tSorted = [...trendEntries].filter(e => validAbv(e.beer_abv) !== null)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   let abvDirection = null; // 'stronger' | 'lighter' | null
   if (tSorted.length >= 12) {
     const half = Math.floor(tSorted.length / 2);
-    const fh = tSorted.slice(0, half).map(e => parseFloat(e.beer_abv));
-    const sh = tSorted.slice(half).map(e => parseFloat(e.beer_abv));
+    const fh = tSorted.slice(0, half).map(e => validAbv(e.beer_abv));
+    const sh = tSorted.slice(half).map(e => validAbv(e.beer_abv));
     const af = fh.reduce((a, b) => a + b, 0) / fh.length;
     const as = sh.reduce((a, b) => a + b, 0) / sh.length;
     if (as > af + 0.3) abvDirection = 'stronger';
@@ -4824,11 +4935,13 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
   const total = es.length;
 
   // ── comparison (descriptive counts; the zone is gated on compareOn at the
-  //    candidate level per DD3). Same pct formula the stat-grid deltas use.
-  const breweries = new Set(es.map(e => e.brewery_name).filter(Boolean)).size;
-  const styles = new Set(es.map(e => e.beer_type).filter(Boolean)).size;
-  const prevBreweries = new Set(prevYrEntries.map(e => e.brewery_name).filter(Boolean)).size;
-  const prevStyles = new Set(prevYrEntries.map(e => e.beer_type).filter(Boolean)).size;
+  //    candidate level per DD3). Same pct formula and normalized counts the
+  //    stat-grid deltas use; prevYrEntries is comparisonWindow()'s same-date
+  //    set, so the current year compares to date (SC15).
+  const breweries = distinctCount(es, 'brewery_name');
+  const styles = distinctCount(es, 'beer_type');
+  const prevBreweries = distinctCount(prevYrEntries, 'brewery_name');
+  const prevStyles = distinctCount(prevYrEntries, 'beer_type');
   const prevTotal = prevYrEntries.length;
   const pctDelta = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
   const deltaBreweriesPct = pctDelta(breweries, prevBreweries);
@@ -4906,24 +5019,25 @@ function computeAnalyticsContext(es, prevYrEntries, analyticsYear, compareOn) {
 // sanity-checked against seed data, never derived from it (Q6). Ordered within
 // each zone highest-priority first so registry order and priority agree.
 const ANALYTICS_COPY = [
-  // ── comparison (only alive when the compare toggle is on — DD3). For the
-  //    in-progress current year a raw count comparison to a *completed* prior
-  //    year is only honest as an "already surpassed" up-claim; the quieter/down
-  //    variant gates to completed years so an unfinished year is never called
-  //    smaller than the last one. ───────────────────────────────────────────
+  // ── comparison (only alive when the compare toggle is on — DD3). The
+  //    in-progress current year compares to the prior year at the same date
+  //    (SC14/SC15), so up and down claims are both fair; the current-year
+  //    wording says "at this point" rather than "all of". ──────────────────
   { id: 'cmp_range_up', zone: 'comparison', priority: 25,
     condition: c => c.compareOn && c.deltaBreweriesPct !== null && c.deltaBreweriesPct >= 20,
     render: c => c.isCurrentYear
-      ? `you've already logged <b>${c.deltaBreweriesPct}%</b> more breweries than in all of ${c.prevYear}`
+      ? `<b>${c.deltaBreweriesPct}%</b> more breweries than ${c.prevYear} at this point`
       : `you cast a wider net — <b>${c.deltaBreweriesPct}%</b> more breweries than ${c.prevYear}` },
   { id: 'cmp_volume_up', zone: 'comparison', priority: 20,
     condition: c => c.compareOn && c.deltaVolumePct !== null && c.deltaVolumePct >= 25,
     render: c => c.isCurrentYear
-      ? `already a bigger year than ${c.prevYear} — <b>${c.deltaVolumePct}%</b> more check-ins`
+      ? `ahead of ${c.prevYear}'s pace — <b>${c.deltaVolumePct}%</b> more check-ins than at this point last year`
       : `a bigger year all around — <b>${c.deltaVolumePct}%</b> more check-ins than ${c.prevYear}` },
   { id: 'cmp_volume_down', zone: 'comparison', priority: 15,
-    condition: c => c.compareOn && !c.isCurrentYear && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,
-    render: c => `a quieter year — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than ${c.prevYear}` },
+    condition: c => c.compareOn && c.deltaVolumePct !== null && c.deltaVolumePct <= -25,   // SC24
+    render: c => c.isCurrentYear
+      ? `a quieter year so far — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than at this point last year`
+      : `a quieter year — <b>${Math.abs(c.deltaVolumePct)}%</b> fewer check-ins than ${c.prevYear}` },
 
   // ── exploration (descriptive → imports counted) ──────────────────────────
   { id: 'explore_heavy', zone: 'exploration', priority: 20,
@@ -6055,9 +6169,9 @@ function renderProfile() {
   const explorationScore = recentTotal ? Math.round(recentFirstTime / recentTotal * 100) : null;
 
   // ABV trend
-  const sorted = [...useEntries].filter(e=>e.beer_abv).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  const firstHalf = sorted.slice(0, Math.floor(sorted.length/2)).map(e=>parseFloat(e.beer_abv));
-  const secHalf = sorted.slice(Math.floor(sorted.length/2)).map(e=>parseFloat(e.beer_abv));
+  const sorted = [...useEntries].filter(e=>validAbv(e.beer_abv)!==null).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const firstHalf = sorted.slice(0, Math.floor(sorted.length/2)).map(e=>validAbv(e.beer_abv));
+  const secHalf = sorted.slice(Math.floor(sorted.length/2)).map(e=>validAbv(e.beer_abv));
   const avgFirst = firstHalf.reduce((a,b)=>a+b,0)/firstHalf.length||0;
   const avgSec = secHalf.reduce((a,b)=>a+b,0)/secHalf.length||0;
   const abvTrend = avgSec > avgFirst + 0.2 ? `<span class="ico-pair">${icon('trend-up', 14, 2.2)}trending stronger</span>` : avgSec < avgFirst - 0.2 ? `<span class="ico-pair">${icon('trend-down', 14, 2.2)}trending lighter</span>` : '→ holding steady';

@@ -39,17 +39,20 @@ const ALLOWED_CHANGES = {
   buildModeGrid: 'IN20 mode icon(); DS4 per-mode gates, greyed reasons, DS5 all-gated locked state',
   // IT4 — milestones keyed by kind (IN19)
   computeMilestones: 'IN19 kind replaces emoji icon',
-  renderAnalytics: 'IN19 milestone icon from kind; ST5 card order; ST7/ST11 collapsible cards, lazy charts',
+  renderAnalytics: 'IN19 milestone icon from kind; ST5 card order; ST7/ST11 collapsible cards, lazy charts; SC10 beerKeyOf for New vs Repeat Beers, SC21 validAbv; SC14/SC15 same-date comparisonWindow() for deltas + insights, SC23 normalized counts (stat grid + YoY table); SC1–SC7 hero subheads, SC29 ▲/▼ deltas',
   buildBandCard: 'ST7 collapsible card via statsCard()',
   setNvrField: 'ST14 keep position on rebuild',
   toggleAnalyticsCompare: 'ST4 jump to top',
   setAnalyticsYear: 'ST4 jump to top',
-  computeAnalyticsContext: 'IN19 compare on kind; Phase E (a) milestone ranking moved to milestonesCrossedIn()',
+  // Stat cards (STAT_CARDS_WORKPLAN.md)
+  firstOccurrenceIds: 'SC10 accepts a key function (beerKeyOf) as well as a field name',
+  computeProfileContext: 'SC21/SC22 validAbv for Avg ABV and the ABV trajectory',
+  computeAnalyticsContext: 'IN19 compare on kind; Phase E (a) milestone ranking moved to milestonesCrossedIn(); SC23 normalized comparison counts',
   // IT6 — template icon slots (IN1)
   setPrompt: 'IN1 note icon + textContent span',
   buildAnalyticsInsightCard: 'IN1 insight icon',
   buildHopprintSVG: 'Phase E (c) DE5 geometry moved to hopprintGeometry() for the canvas share card; SVG output identical (SP1)',
-  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years; Phase E (c) Hopprint Share pill in the hero kicker row',
+  renderProfile: 'IN1 empty state, ABV trend, trend rows; PT1/PT5 clears dirty, records the build date; Phase E (a) Wrapped entry card + Earlier years; Phase E (c) Hopprint Share pill in the hero kicker row; SC21 validAbv in the ABV trend',
   generateRecs: 'IN1/IN18 empty state + CTA; DS1/DS6 dispatches to the selected mode\'s build(), after its precheck()',
   renderNextRec: 'IN1/IN18 empty state, Show Another; DS6 per-mode card renderer, suppression key, footer actions',
   // IT7 — showToast(msg, iconName) (IN8)

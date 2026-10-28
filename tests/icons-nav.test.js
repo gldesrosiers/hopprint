@@ -85,6 +85,8 @@ function analyticsSandbox(src) {
     // Phase E (a) extracted the year filter + ranking into a shared helper;
     // the pre-change build has it inline, so load it only where it exists.
     ...(/^function milestonesCrossedIn\(/m.test(src) ? [extractFunctionFrom(src, 'milestonesCrossedIn')] : []),
+    // Stat cards (SC23) normalized the comparison counts through distinctCount().
+    ...(/^function distinctCount\(/m.test(src) ? ['breweryKeyOf', 'distinctCount'].map(n => extractFunctionFrom(src, n)) : []),
     'var entries = [];',
   ].join('\n'), ctx);
   return ctx;

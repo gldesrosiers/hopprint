@@ -11,7 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('vm');
 
-const { script, extractFunction, extractFunctionFrom } = require('./helpers');
+const { script, style, extractFunction, extractFunctionFrom } = require('./helpers');
 
 const TABS = ['checkin', 'history', 'analytics', 'profile', 'discover'];
 
@@ -123,6 +123,7 @@ test('ST2: the logo is a Check In tap, so on Check In it jumps to the top', () =
 // Stand-ins: #analyticsInner is a markup string (inner.writes counts full
 // rebuilds); any other id present in that markup resolves to a fake element;
 // Chart records every chart made; requestAnimationFrame queues until flush().
+const STYLE_MATRIX = require('../style_matrix.js');
 const resolved = new Map();   // src → [code]; dependency resolution is per build
 function statsApp(src, entries, { year = 'all' } = {}) {
   let markup = '';
@@ -141,6 +142,7 @@ function statsApp(src, entries, { year = 'all' } = {}) {
   Chart.prototype.destroy = function () { this.destroyed = true; };
   const makeCtx = () => vm.createContext({
     console, entries, Chart,
+    STYLE_MATRIX,   // style_matrix.js is a separate <script>; the Styles card's go-to family reads it (SC11)
     document: {
       getElementById: id => (id === 'analyticsInner' ? inner
         : markup.includes(`id="${id}"`) || /^(tab|screen)-/.test(id) ? el(id) : null),
@@ -469,4 +471,123 @@ test('ST10: re-tapping Stats jumps to the top without a rebuild', () => {
   a.run(`switchTab('analytics')`);
   assert.equal(a.inner.writes, writes);
   assert.equal(a.win.scrollY, 0);
+});
+
+// ── Stat card subheads (STAT_CARDS_WORKPLAN.md SC1–SC33) ────────
+const sc = (id, beer_name, brewery_name, beer_abv, beer_type, created_at) => ({ id, beer_name, brewery_name, beer_abv, beer_type, created_at });
+function cardLog() {
+  return [
+    sc('q1', 'Old Ale', 'Brewery Z', '7', 'Altbier - Traditional', '2023-03-01T12:00'),
+    sc('q2', 'Old Ale', 'Brewery Z', '7', 'Altbier - Traditional', '2023-04-01T12:00'),
+    sc('q3', 'Old Ale', 'Brewery Z', '7', 'Altbier - Traditional', '2023-05-01T12:00'),
+    sc('p1', 'Old Ale', 'Brewery Z', '5', 'Altbier - Traditional', '2024-06-01T12:00'),
+    sc('p2', 'Keeper', 'Hill Farmstead', '5', '', '2024-07-01T12:00'),
+    sc('a', 'Keeper', 'Hill Farmstead', '6', 'Belgian Tripel', '2025-01-10T12:00'),        // repeat
+    sc('b', 'keeper ', 'hill farmstead ', '6', 'Dark Ale', '2025-02-10T12:00'),            // repeat, other spelling
+    sc('c', 'IPA', 'Brewery A', '65', 'Dark Ale', '2025-03-10T12:00'),                     // typo ABV
+    sc('d', 'IPA', 'Brewery B', '12', 'Dark Ale', '2025-04-10T12:00'),                     // a different IPA
+    sc('e', 'Big Stout', 'Brewery B', '12.0', 'Belgian Dubbel', '2025-05-10T12:00'),       // ties d on ABV, later
+    sc('f', '', 'Brewery A', '', 'Altbier - Traditional', '2025-06-10T12:00'),             // no beer name
+  ];
+}
+// Card label → { text, cls } of the line under the label.
+const subs = html => Object.fromEntries(html.split('\n').filter(l => l.includes('class="stat-card"')).map(l => {
+  const m = l.match(/stat-label">([^<]+)<\/div>(.*)<\/div>$/);
+  return [m[1], { text: m[2].replace(/<[^>]+>/g, ''), cls: (m[2].match(/^<div class="([^"]+)"/) || [])[1] || '' }];
+}));
+const statApp = (year, compare = false) => {
+  const a = statsApp(script, cardLog(), { year });
+  if (compare) a.run('analyticsCompare = true; renderAnalytics()');
+  return subs(a.html);
+};
+
+test('SC4/SC5/SC6/SC7: All Time shows four superlatives and no deltas', () => {
+  const s = statApp('all');
+  assert.equal(s['Check-ins'].text, '5 unique beers · 50% repeats');      // 10 named check-ins, 5 beers
+  assert.equal(s['Avg ABV'].text, 'Strongest: Big Stout · Brewery B · 12.0%');
+  assert.equal(s['Breweries'].text, 'Top: Brewery Z · 4');
+  assert.equal(s['Styles'].text, 'Go-to: Altbier · 71%');                // 5 of 7 eligible
+  assert.ok(Object.values(s).every(x => !x.cls.includes('stat-delta')));
+});
+
+test('SC4–SC13: a single year scopes the superlatives; new-to-you uses full history', () => {
+  const s = statApp(2025);
+  assert.equal(s['Check-ins'].text, '3 new to you');                      // c, d, e; a/b repeat 2024's Keeper
+  assert.equal(s['Avg ABV'].text, 'Strongest: Big Stout · Brewery B · 12.0%');   // 65% ignored; tie → later
+  assert.equal(s['Breweries'].text, 'Top: Brewery A · 2');                // three-way tie → most recent (f)
+  assert.equal(s['Styles'].text, 'Go-to: Belgian Ale · 67%');             // Dark Ale (null) skipped: 2 of 3 eligible
+});
+
+test('SC2/SC29: compare on replaces each superlative with a ▲ delta, ABV in points', () => {
+  const s = statApp(2025, true);
+  assert.deepEqual(Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.text])), {
+    'Check-ins': '▲ 200% vs 2024', 'Avg ABV': '▲ 4.0 pts vs 2024', 'Breweries': '▲ 50% vs 2024', 'Styles': '▲ 300% vs 2024',
+  });
+  assert.ok(Object.values(s).every(x => x.cls === 'stat-delta up'));
+});
+
+test('SC29: ▼ is red (down), zero reads 0% and is neutral', () => {
+  const s = statApp(2024, true);
+  assert.deepEqual(s['Check-ins'], { text: '▼ 33% vs 2023', cls: 'stat-delta down' });
+  assert.deepEqual(s['Avg ABV'], { text: '▼ 2.0 pts vs 2023', cls: 'stat-delta down' });
+  assert.deepEqual(s['Breweries'], { text: '▲ 100% vs 2023', cls: 'stat-delta up' });
+  assert.deepEqual(s['Styles'], { text: '0% vs 2023', cls: 'stat-delta flat' });
+  assert.match(style, /\.stat-delta\.up \{ color: var\(--lime\); \}/);
+  assert.match(style, /\.stat-delta\.down \{ color: var\(--danger\); \}/);
+  assert.doesNotMatch(Object.values(s).map(x => x.text).join(' '), /[+−-]\d/);
+});
+
+test('SC17: no prior year → no toggle and superlatives only, even if compare was left on', () => {
+  const a = statsApp(script, cardLog(), { year: 2023 });
+  assert.doesNotMatch(a.html, /toggleAnalyticsCompare\(\)/);
+  a.run('analyticsCompare = true; renderAnalytics()');
+  const s = subs(a.html);
+  assert.equal(s['Avg ABV'].text, 'Strongest: Old Ale · Brewery Z · 7.0%');
+  assert.ok(Object.values(s).every(x => !x.cls.includes('stat-delta')));
+});
+
+test('SC19/SC30: an empty superlative hides its line; a card with nothing to compare keeps its superlative', () => {
+  const log = [
+    sc('x1', 'Lager', 'Brewery Q', '', 'Dark Ale', '2024-03-01T12:00'),
+    sc('x2', 'Lager', 'Brewery Q', '', 'Dark Ale', '2024-04-01T12:00'),
+    sc('y1', 'Tripel', 'Brewery R', '9', 'Belgian Tripel', '2025-03-01T12:00'),
+  ];
+  const past = statsApp(script, log, { year: 2024 });
+  const p = subs(past.html);
+  assert.equal(p['Avg ABV'].text, '', 'no valid ABV → no Strongest line');
+  assert.equal(p['Styles'].text, '', 'only null-family styles → no Go-to line');
+  const cur = statsApp(script, log, { year: 2025 });
+  cur.run('analyticsCompare = true; renderAnalytics()');
+  const c = subs(cur.html);
+  assert.equal(c['Check-ins'].text, '▼ 50% vs 2024');
+  assert.equal(c['Avg ABV'].text, 'Strongest: Tripel · Brewery R · 9.0%', 'prior window has no valid ABV');
+});
+
+test('SC14: the current year labels its deltas "to date"', () => {
+  const y = new Date().getFullYear();
+  const log = [sc('n1', 'A', 'B', '5', 'Belgian Tripel', `${y - 1}-01-01T00:00`), sc('n2', 'C', 'D', '6', 'Belgian Tripel', `${y}-01-01T00:00`)];
+  const a = statsApp(script, log, { year: y });
+  a.run('analyticsCompare = true; renderAnalytics()');
+  assert.equal(subs(a.html)['Check-ins'].text, `0% vs ${y - 1} to date`);
+});
+
+test('SC18: names sit in their own truncating span; label and count never shrink', () => {
+  const html = statsApp(script, [sc('t', 'Hazy', 'SweetWater Brewing Company', '6', 'Belgian Tripel', '2025-01-01T12:00')], { year: 2025 }).html;
+  assert.match(html, /<span>Top: <\/span><span class="sup-name">SweetWater Brewing Company<\/span><span> · 1<\/span>/);
+  assert.match(style, /\.stat-sup > \.sup-name \{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; \}/);
+  assert.match(style, /\.stat-sup > span \{ white-space: pre; flex-shrink: 0; \}/);
+  assert.match(style, /\.stat-card \{[^}]*min-width: 0;/);
+});
+
+test('SC18: names are escaped', () => {
+  const html = statsApp(script, [sc('t', '<b>x</b>', 'Brew & Co', '6', 'Belgian Tripel', '2025-01-01T12:00')], { year: 2025 }).html;
+  assert.match(html, /Brew &amp; Co/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+});
+
+test('SC3: the hero grid no longer shows venues, home %, or the notes count', () => {
+  for (const year of ['all', 2025]) {
+    const grid = statsApp(script, cardLog(), { year }).html.match(/<div class="stat-grid">[\s\S]*?\n  <\/div>/)[0];
+    assert.doesNotMatch(grid, /venues|at home|with notes|breweries ·/, String(year));
+  }
 });
